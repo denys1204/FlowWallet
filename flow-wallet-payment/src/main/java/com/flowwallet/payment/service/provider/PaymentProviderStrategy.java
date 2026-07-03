@@ -2,6 +2,8 @@ package com.flowwallet.payment.service.provider;
 
 import com.flowwallet.payment.entity.PaymentTransaction;
 
+import java.util.Map;
+
 public interface PaymentProviderStrategy {
     
     /**
@@ -17,11 +19,13 @@ public interface PaymentProviderStrategy {
     String initiatePayment(PaymentTransaction transaction);
 
     /**
-     * Optional method to handle a provider-specific webhook payload if needed in the strategy.
-     * Often webhooks are handled directly by a dedicated controller/service, 
-     * but putting it in the strategy allows provider-specific signature verification and parsing.
+     * Parses and verifies a provider-specific webhook payload.
+     * Returns a provider-agnostic {@link WebhookResult} so the caller can decide
+     * what domain action to perform — keeping the strategy free of domain service dependencies.
+     *
      * @param payload The raw webhook payload
-     * @param signature The signature header
+     * @param headers The HTTP request headers (can be used to extract signatures, etc.)
+     * @return parsed result with provider transaction ID, event ID and classified event type
      */
-    void handleWebhook(String payload, String signature);
+    WebhookResult handleWebhook(String payload, Map<String, String> headers);
 }
