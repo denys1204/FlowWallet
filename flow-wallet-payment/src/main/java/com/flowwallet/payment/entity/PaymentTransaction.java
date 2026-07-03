@@ -78,6 +78,16 @@ public class PaymentTransaction {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    public void markAsSuccess(String providerEventId) {
+        this.status = TransactionStatus.SUCCESS;
+        this.providerEventId = providerEventId;
+    }
+
+    public void markAsFailed(String providerEventId) {
+        this.status = TransactionStatus.FAILED;
+        this.providerEventId = providerEventId;
+    }
+
     public static PaymentTransaction create(
             CreatePaymentIntentRequest request,
             PaymentProvider provider,

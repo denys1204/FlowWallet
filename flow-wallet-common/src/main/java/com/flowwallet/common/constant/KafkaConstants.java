@@ -16,4 +16,10 @@ public final class KafkaConstants {
 
     /** Kafka header carrying the transaction reference for tracing. */
     public static final String HEADER_TRANSACTION_REFERENCE = "X-Transaction-Reference";
+
+    /** Event type for payment completion */
+    public static final String EVENT_TYPE_PAYMENT_COMPLETED = "PaymentCompletedEvent";
+
+    /** Aggregate type for payment transaction */
+    public static final String AGGREGATE_TYPE_PAYMENT_TRANSACTION = "PaymentTransaction";
 }
