@@ -23,7 +23,7 @@ public class PaymentService {
     public PaymentIntentResponse initiatePayment(CreatePaymentIntentRequest request, String userId) {
         log.info("Initiating payment for user {} with amount {} {}", userId, request.amount(), request.currency());
 
-        PaymentProvider provider = PaymentProvider.valueOf(request.providerName().toUpperCase());
+        PaymentProvider provider = factory.resolve(request.providerName());
         PaymentProviderStrategy strategy = factory.getStrategy(provider);
 
         PaymentTransaction transaction = PaymentTransaction.create(request, provider, userId);

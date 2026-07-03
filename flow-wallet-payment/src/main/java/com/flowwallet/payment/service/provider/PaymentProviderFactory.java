@@ -17,4 +17,12 @@ public class PaymentProviderFactory {
             .findFirst()
             .orElseThrow(() -> new UnsupportedPaymentProviderException("No strategy found for provider: " + provider));
     }
+
+    public PaymentProvider resolve(String providerName) {
+        try {
+            return PaymentProvider.valueOf(providerName.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new UnsupportedPaymentProviderException("Unsupported payment provider: " + providerName);
+        }
+    }
 }
