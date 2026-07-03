@@ -7,13 +7,9 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 
 @Component
+@RequiredArgsConstructor
 public class PaymentProviderFactory {
-
     private final List<PaymentProviderStrategy> strategies;
-
-    public PaymentProviderFactory(List<PaymentProviderStrategy> strategies) {
-        this.strategies = strategies;
-    }
 
     public PaymentProviderStrategy getStrategy(PaymentProvider provider) {
         return strategies.stream()
