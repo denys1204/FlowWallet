@@ -1,6 +1,40 @@
 server:
-  port: 8080
+  port: ${GATEWAY_PORT:8080}
 
 spring:
   application:
     name: flow-wallet-gateway
+  cloud:
+    gateway:
+      server:
+        webflux:
+          # Enable CORS for frontend development
+          globalcors:
+            cors-configurations:
+              '[/**]':
+                allowedOrigins: "*"
+                allowedMethods:
+                  - GET
+                  - POST
+                  - PUT
+                  - DELETE
+                  - OPTIONS
+                allowedHeaders: "*"
+          routes:
+            # Route for Wallet Service
+            - id: wallet-service
+              uri: http://localhost:${WALLET_SERVICE_PORT:8081}
+              predicates:
+                - Path=/api/wallets/**
+
+            # Route for Payment Service
+            - id: payment-service
+              uri: http://localhost:${PAYMENT_SERVICE_PORT:8082}
+              predicates:
+                - Path=/api/payments/**
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

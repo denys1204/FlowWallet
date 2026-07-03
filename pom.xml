@@ -87,6 +87,13 @@
                 <artifactId>stripe-java</artifactId>
                 <version>${stripe.version}</version>
             </dependency>
+
+            <!-- Vulnerability Fixes -->
+            <dependency>
+                <groupId>org.bouncycastle</groupId>
+                <artifactId>bcprov-jdk18on</artifactId>
+                <version>1.84</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
