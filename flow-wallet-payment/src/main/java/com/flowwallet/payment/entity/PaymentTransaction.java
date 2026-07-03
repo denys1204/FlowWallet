@@ -1,6 +1,8 @@
 package com.flowwallet.payment.entity;
 
+import com.flowwallet.common.dto.CreatePaymentIntentRequest;
 import com.flowwallet.common.enums.TransactionStatus;
+import com.flowwallet.payment.service.provider.PaymentProvider;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -75,4 +77,20 @@ public class PaymentTransaction {
     @UpdateTimestamp
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
+
+    public static PaymentTransaction create(
+            CreatePaymentIntentRequest request,
+            PaymentProvider provider,
+            String userId
+    ) {
+        return PaymentTransaction.builder()
+                .transactionReference(request.transactionReference())
+                .providerName(provider.name())
+                .walletId(request.walletId())
+                .userId(userId)
+                .amount(request.amount())
+                .currency(request.currency().toUpperCase())
+                .status(TransactionStatus.PENDING)
+                .build();
+    }
 }
