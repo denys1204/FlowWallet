@@ -50,6 +50,13 @@
             <scope>provided</scope>
         </dependency>
 
+        <!-- Spring Boot Autoconfigure — for @AutoConfiguration of @CurrentUserId resolver -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
+            <optional>true</optional>
+        </dependency>
+
         <!-- MapStruct -->
         <dependency>
             <groupId>org.mapstruct</groupId>
