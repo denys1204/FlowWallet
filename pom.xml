@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!-- ============================================================= -->
+    <!-- Parent: Spring Boot 4.1.0                                     -->
+    <!-- ============================================================= -->
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>4.1.0</version>
+        <relativePath/> <!-- lookup parent from repository -->
+    </parent>
+
+    <!-- ============================================================= -->
+    <!-- Project coordinates                                           -->
+    <!-- ============================================================= -->
+    <groupId>com.flowwallet</groupId>
+    <artifactId>flow-wallet</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <name>FlowWallet</name>
+    <description>Event-driven microservices wallet system — engineering showcase</description>
+
+    <!-- ============================================================= -->
+    <!-- Modules                                                       -->
+    <!-- ============================================================= -->
+    <modules>
+        <module>flow-wallet-common</module>
+        <module>flow-wallet-gateway</module>
+        <module>flow-wallet-service</module>
+        <module>flow-wallet-payment</module>
+    </modules>
+
+    <!-- ============================================================= -->
+    <!-- Properties                                                    -->
+    <!-- ============================================================= -->
+    <properties>
+        <java.version>25</java.version>
+        <maven.compiler.source>${java.version}</maven.compiler.source>
+        <maven.compiler.target>${java.version}</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+        <!-- Spring Cloud BOM -->
+        <spring-cloud.version>2025.1.0</spring-cloud.version>
+
+        <!-- Library versions -->
+        <mapstruct.version>1.6.3</mapstruct.version>
+        <lombok-mapstruct-binding.version>0.2.0</lombok-mapstruct-binding.version>
+        <stripe.version>28.3.0</stripe.version>
+    </properties>
+
+    <!-- ============================================================= -->
+    <!-- Dependency Management                                         -->
+    <!-- ============================================================= -->
+    <dependencyManagement>
+        <dependencies>
+            <!-- Spring Cloud BOM -->
+            <dependency>
+                <groupId>org.springframework.cloud</groupId>
+                <artifactId>spring-cloud-dependencies</artifactId>
+                <version>${spring-cloud.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- Project modules -->
+            <dependency>
+                <groupId>com.flowwallet</groupId>
+                <artifactId>flow-wallet-common</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- MapStruct -->
+            <dependency>
+                <groupId>org.mapstruct</groupId>
+                <artifactId>mapstruct</artifactId>
+                <version>${mapstruct.version}</version>
+            </dependency>
+
+            <!-- Stripe -->
+            <dependency>
+                <groupId>com.stripe</groupId>
+                <artifactId>stripe-java</artifactId>
+                <version>${stripe.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <!-- ============================================================= -->
+    <!-- Common dependencies for ALL modules                           -->
+    <!-- ============================================================= -->
+    <dependencies>
+        <!-- Lombok — available everywhere -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- Testing -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <!-- ============================================================= -->
+    <!-- Build: Plugin Management                                      -->
+    <!-- ============================================================= -->
+    <build>
+        <pluginManagement>
+            <plugins>
+                <!-- Maven Compiler with Lombok + MapStruct annotation processors -->
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <configuration>
+                        <source>${java.version}</source>
+                        <target>${java.version}</target>
+                        <annotationProcessorPaths>
+                            <path>
+                                <groupId>org.projectlombok</groupId>
+                                <artifactId>lombok</artifactId>
+                                <version>${lombok.version}</version>
+                            </path>
+                            <path>
+                                <groupId>org.projectlombok</groupId>
+                                <artifactId>lombok-mapstruct-binding</artifactId>
+                                <version>${lombok-mapstruct-binding.version}</version>
+                            </path>
+                            <path>
+                                <groupId>org.mapstruct</groupId>
+                                <artifactId>mapstruct-processor</artifactId>
+                                <version>${mapstruct.version}</version>
+                            </path>
+                        </annotationProcessorPaths>
+                        <compilerArgs>
+                            <arg>-Amapstruct.defaultComponentModel=spring</arg>
+                            <arg>-Amapstruct.unmappedTargetPolicy=IGNORE</arg>
+                        </compilerArgs>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+
+</project>
