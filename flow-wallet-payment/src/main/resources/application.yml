@@ -22,10 +22,14 @@ spring:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
       acks: all
       properties:
         enable.idempotence: true
+    topic:
+      payment-events:
+        partitions: ${KAFKA_TOPIC_PAYMENT_EVENTS_PARTITIONS:3}
+        replicas: ${KAFKA_TOPIC_PAYMENT_EVENTS_REPLICAS:1}
 
 stripe:
   api:
