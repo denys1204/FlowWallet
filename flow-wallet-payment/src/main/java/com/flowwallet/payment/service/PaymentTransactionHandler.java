@@ -7,11 +7,13 @@ import com.flowwallet.common.event.PaymentCompletedEvent;
 import com.flowwallet.payment.entity.OutboxEvent;
 import com.flowwallet.payment.entity.PaymentTransaction;
 import com.flowwallet.payment.exception.TransactionNotFoundException;
+import com.flowwallet.payment.event.OutboxCreatedEvent;
 import com.flowwallet.payment.repository.OutboxEventRepository;
 import com.flowwallet.payment.repository.PaymentTransactionRepository;
 import com.flowwallet.payment.service.mapper.PaymentEventMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,6 +25,7 @@ public class PaymentTransactionHandler {
     private final OutboxEventRepository outboxEventRepository;
     private final PaymentEventMapper eventMapper;
     private final ObjectMapper objectMapper;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public void handleSuccess(String providerTransactionId, String providerEventId) {
@@ -78,6 +81,7 @@ public class PaymentTransactionHandler {
             PaymentCompletedEvent event = eventMapper.toPaymentCompletedEvent(tx);
             OutboxEvent outboxEvent = eventMapper.toOutboxEvent(tx, objectMapper.writeValueAsString(event));
             outboxEventRepository.save(outboxEvent);
+            eventPublisher.publishEvent(new OutboxCreatedEvent(outboxEvent.getId()));
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("Failed to serialize PaymentCompletedEvent for tx: " + tx.getTransactionReference(), e);
         }
