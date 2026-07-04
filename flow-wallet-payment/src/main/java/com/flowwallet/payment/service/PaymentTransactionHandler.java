@@ -1,7 +1,7 @@
 package com.flowwallet.payment.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import com.flowwallet.common.enums.TransactionStatus;
 import com.flowwallet.common.event.PaymentCompletedEvent;
 import com.flowwallet.payment.entity.OutboxEvent;
@@ -23,9 +23,9 @@ import org.springframework.transaction.annotation.Transactional;
 public class PaymentTransactionHandler {
     private final PaymentTransactionRepository transactionRepository;
     private final OutboxEventRepository outboxEventRepository;
+    private final ApplicationEventPublisher eventPublisher;
     private final PaymentEventMapper eventMapper;
     private final ObjectMapper objectMapper;
-    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public void handleSuccess(String providerTransactionId, String providerEventId) {
@@ -82,7 +82,7 @@ public class PaymentTransactionHandler {
             OutboxEvent outboxEvent = eventMapper.toOutboxEvent(tx, objectMapper.writeValueAsString(event));
             outboxEventRepository.save(outboxEvent);
             eventPublisher.publishEvent(new OutboxCreatedEvent(outboxEvent.getId()));
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             throw new IllegalStateException("Failed to serialize PaymentCompletedEvent for tx: " + tx.getTransactionReference(), e);
         }
     }
