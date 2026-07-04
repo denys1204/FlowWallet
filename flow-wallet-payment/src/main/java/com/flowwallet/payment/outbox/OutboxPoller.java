@@ -19,7 +19,7 @@ public class OutboxPoller {
     @Value("${outbox.batch-size:50}")
     private int batchSize;
 
-    @Scheduled(fixedDelayString = "${outbox.poll-interval-ms:5000}")
+    @Scheduled(fixedDelayString = "${outbox.poll-interval-ms:10000}")
     public void pollOutbox() {
         List<OutboxEvent> events = outboxEventRepository.findByProcessedAtIsNullOrderByCreatedAtAsc(PageRequest.of(0, batchSize));
 
