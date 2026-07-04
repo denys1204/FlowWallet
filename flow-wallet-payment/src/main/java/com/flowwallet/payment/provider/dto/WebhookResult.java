@@ -1,5 +1,7 @@
 package com.flowwallet.payment.provider.dto;
 
+import com.flowwallet.payment.provider.PaymentProviderStrategy;
+
 /**
  * Provider-agnostic result of webhook parsing.
  * Returned by {@link PaymentProviderStrategy#handleWebhook} so the strategy
