@@ -40,3 +40,10 @@ logs/
 
 # === Docker ===
 docker-compose.override.yml
+
+# === Postman ===
+.postman/
+postman/
+
+# === Secrets ===
+.env
