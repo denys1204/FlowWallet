@@ -4,6 +4,7 @@ import com.flowwallet.common.constant.KafkaConstants;
 import com.flowwallet.common.event.PaymentCompletedEvent;
 import com.flowwallet.payment.entity.OutboxEvent;
 import com.flowwallet.payment.entity.PaymentTransaction;
+import com.flowwallet.payment.service.provider.PaymentRequestContext;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 
@@ -23,4 +24,6 @@ public interface PaymentEventMapper {
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "processedAt", ignore = true)
     OutboxEvent toOutboxEvent(PaymentTransaction transaction, String payload);
+
+    PaymentRequestContext toRequestContext(PaymentTransaction transaction);
 }

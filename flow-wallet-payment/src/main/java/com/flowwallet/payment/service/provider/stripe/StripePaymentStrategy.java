@@ -1,11 +1,12 @@
 package com.flowwallet.payment.service.provider.stripe;
 
-import com.flowwallet.payment.entity.PaymentTransaction;
 import com.flowwallet.payment.exception.InvalidWebhookSignatureException;
 import com.flowwallet.payment.exception.PaymentInitiationException;
 import com.flowwallet.payment.exception.WebhookProcessingException;
+import com.flowwallet.payment.service.provider.PaymentInitiationResult;
 import com.flowwallet.payment.service.provider.PaymentProvider;
 import com.flowwallet.payment.service.provider.PaymentProviderStrategy;
+import com.flowwallet.payment.service.provider.PaymentRequestContext;
 import com.flowwallet.payment.service.provider.WebhookEventType;
 import com.flowwallet.payment.service.provider.WebhookResult;
 import com.flowwallet.payment.service.provider.stripe.client.StripeClient;
@@ -35,16 +36,14 @@ public class StripePaymentStrategy implements PaymentProviderStrategy {
     }
 
     @Override
-    public String initiatePayment(PaymentTransaction transaction) {
+    public PaymentInitiationResult initiatePayment(PaymentRequestContext context) {
         try {
-            PaymentIntentCreateParams params = requestMapper.toPaymentIntentParams(transaction);
+            PaymentIntentCreateParams params = requestMapper.toPaymentIntentParams(context);
             PaymentIntent paymentIntent = stripeClient.createPaymentIntent(params);
 
-            transaction.setProviderTransactionId(paymentIntent.getId());
-
-            return paymentIntent.getClientSecret();
+            return new PaymentInitiationResult(paymentIntent.getId(), paymentIntent.getClientSecret());
         } catch (StripeException e) {
-            log.error("Failed to initiate Stripe payment for transaction: {}", transaction.getTransactionReference(), e);
+            log.error("Failed to initiate Stripe payment for transaction: {}", context.transactionReference(), e);
             throw new PaymentInitiationException("Stripe payment initiation failed", e);
         }
     }

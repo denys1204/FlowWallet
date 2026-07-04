@@ -1,7 +1,5 @@
 package com.flowwallet.payment.service.provider;
 
-import com.flowwallet.payment.entity.PaymentTransaction;
-
 import java.util.Map;
 
 public interface PaymentProviderStrategy {
@@ -13,10 +11,10 @@ public interface PaymentProviderStrategy {
 
     /**
      * Initiates a payment process with the provider.
-     * @param transaction The local transaction record.
-     * @return Any provider-specific client secret or initialization data as a String (e.g. clientSecret for Stripe).
+     * @param context The local payment request context.
+     * @return Any provider-specific transaction ID and initialization data (e.g. clientSecret for Stripe).
      */
-    String initiatePayment(PaymentTransaction transaction);
+    PaymentInitiationResult initiatePayment(PaymentRequestContext context);
 
     /**
      * Parses and verifies a provider-specific webhook payload.
