@@ -11,6 +11,7 @@ import com.flowwallet.payment.provider.dto.WebhookEventType;
 import com.flowwallet.payment.provider.dto.WebhookResult;
 import com.flowwallet.payment.provider.stripe.client.StripeClient;
 import com.flowwallet.payment.provider.stripe.mapper.StripeRequestMapper;
+import com.stripe.exception.EventDataObjectDeserializationException;
 import com.stripe.exception.SignatureVerificationException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Event;
@@ -53,9 +54,21 @@ public class StripePaymentStrategy implements PaymentProviderStrategy {
         String signature = extractSignature(headers);
         Event event = parseEventOrThrow(payload, signature);
 
-        StripeObject stripeObject = event.getDataObjectDeserializer().getObject().orElse(null);
+        StripeObject stripeObject = event.getDataObjectDeserializer().getObject()
+                .orElseGet(() -> {
+                    log.warn("Stripe API version mismatch! Using deserializeUnsafe(). " +
+                            "Please update the Stripe Java SDK to match the dashboard version. Event ID: {}", event.getId()
+                    );
+
+                    try {
+                        return event.getDataObjectDeserializer().deserializeUnsafe();
+                    } catch (EventDataObjectDeserializationException e) {
+                        throw new WebhookProcessingException("Failed to deserialize Stripe event data", e);
+                    }
+                });
+
         if (!(stripeObject instanceof PaymentIntent paymentIntent)) {
-            log.debug("Unhandled Stripe object type for event: {}", event.getType());
+            log.debug("Ignoring non-PaymentIntent Stripe object for event: {}", event.getType());
             return WebhookResult.unknown();
         }
 
@@ -74,11 +87,11 @@ public class StripePaymentStrategy implements PaymentProviderStrategy {
     }
 
     private String extractSignature(Map<String, String> headers) {
-        return headers.entrySet().stream()
-                .filter(e -> "stripe-signature".equalsIgnoreCase(e.getKey()))
-                .map(Map.Entry::getValue)
-                .findFirst()
-                .orElseThrow(() -> new InvalidWebhookSignatureException("Missing Stripe signature header", null));
+        String signature = headers.get("stripe-signature");
+        if (signature == null) {
+            throw new InvalidWebhookSignatureException("Missing Stripe signature header", null);
+        }
+        return signature;
     }
 
     private Event parseEventOrThrow(String payload, String signature) {
