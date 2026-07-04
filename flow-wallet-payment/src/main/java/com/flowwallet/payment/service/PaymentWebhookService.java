@@ -1,6 +1,5 @@
 package com.flowwallet.payment.service;
 
-import com.flowwallet.payment.service.provider.PaymentProvider;
 import com.flowwallet.payment.service.provider.PaymentProviderFactory;
 import com.flowwallet.payment.service.provider.PaymentProviderStrategy;
 import com.flowwallet.payment.service.provider.WebhookResult;
@@ -18,8 +17,7 @@ public class PaymentWebhookService {
     private final PaymentProviderFactory factory;
 
     public void processWebhook(String providerName, String payload, Map<String, String> headers) {
-        PaymentProvider provider = factory.resolve(providerName);
-        PaymentProviderStrategy strategy = factory.getStrategy(provider);
+        PaymentProviderStrategy strategy = factory.getStrategy(providerName);
 
         WebhookResult result = strategy.handleWebhook(payload, headers);
 

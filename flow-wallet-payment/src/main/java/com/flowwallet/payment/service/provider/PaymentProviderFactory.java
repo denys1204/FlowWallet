@@ -25,4 +25,8 @@ public class PaymentProviderFactory {
             throw new UnsupportedPaymentProviderException("Unsupported payment provider: " + providerName);
         }
     }
+
+    public PaymentProviderStrategy getStrategy(String providerName) {
+        return getStrategy(resolve(providerName));
+    }
 }

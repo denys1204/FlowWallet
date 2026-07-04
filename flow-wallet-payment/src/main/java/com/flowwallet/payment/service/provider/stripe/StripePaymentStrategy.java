@@ -88,7 +88,7 @@ public class StripePaymentStrategy implements PaymentProviderStrategy {
         } catch (SignatureVerificationException e) {
             log.error("Invalid Stripe signature", e);
             throw new InvalidWebhookSignatureException("Invalid Stripe signature", e);
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.error("Error processing Stripe webhook payload", e);
             throw new WebhookProcessingException("Error processing webhook", e);
         }

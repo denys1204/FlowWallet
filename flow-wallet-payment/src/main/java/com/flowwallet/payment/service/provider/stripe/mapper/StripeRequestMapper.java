@@ -2,13 +2,14 @@ package com.flowwallet.payment.service.provider.stripe.mapper;
 
 import com.flowwallet.payment.entity.PaymentTransaction;
 import com.stripe.param.PaymentIntentCreateParams;
+import java.math.BigDecimal;
 import org.springframework.stereotype.Component;
 
 @Component
 public class StripeRequestMapper {
     public PaymentIntentCreateParams toPaymentIntentParams(PaymentTransaction transaction) {
         // Stripe uses smallest currency unit (e.g., cents for USD, pence for GBP)
-        long amountInCents = transaction.getAmount().movePointRight(2).longValue();
+        long amountInCents = transaction.getAmount().multiply(BigDecimal.valueOf(100)).longValue();
 
         return PaymentIntentCreateParams.builder()
                 .setAmount(amountInCents)
