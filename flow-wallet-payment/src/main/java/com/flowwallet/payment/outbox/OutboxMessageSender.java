@@ -29,13 +29,12 @@ public class OutboxMessageSender {
                         event.getPayload()
                 ).get();
 
-                event.setProcessedAt(Instant.now());
-                outboxEventRepository.save(event);
+                outboxEventRepository.markAsProcessed(event.getId(), Instant.now());
 
                 log.debug("Successfully sent outbox event {} to Kafka", event.getId());
             } catch (Exception e) {
                 log.error("Failed to process outbox event {}. It will be retried later.", event.getId(), e);
-                throw new RuntimeException("Failed to process outbox event", e); // Кидаємо далі, щоб поллер міг зробити break
+                throw new RuntimeException("Failed to process outbox event", e);
             }
         });
     }
