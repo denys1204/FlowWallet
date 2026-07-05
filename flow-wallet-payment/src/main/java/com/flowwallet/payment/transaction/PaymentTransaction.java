@@ -20,6 +20,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import java.math.BigDecimal;
@@ -65,6 +66,10 @@ public class PaymentTransaction {
 
     @Column(name = "provider_event_id", unique = true, length = 128)
     private String providerEventId;
+
+    @JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
+    @Column(name = "provider_metadata", columnDefinition = "jsonb")
+    private java.util.Map<String, Object> providerMetadata;
 
     @Version
     @Column(name = "version", nullable = false)

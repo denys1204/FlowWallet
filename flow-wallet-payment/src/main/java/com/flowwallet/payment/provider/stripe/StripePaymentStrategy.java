@@ -42,7 +42,10 @@ public class StripePaymentStrategy implements PaymentProviderStrategy {
             PaymentIntentCreateParams params = requestMapper.toPaymentIntentParams(context);
             PaymentIntent paymentIntent = stripeClient.createPaymentIntent(params);
 
-            return new PaymentInitiationResult(paymentIntent.getId(), paymentIntent.getClientSecret());
+            return new PaymentInitiationResult(
+                paymentIntent.getId(), 
+                Map.of("clientSecret", paymentIntent.getClientSecret())
+            );
         } catch (StripeException e) {
             log.error("Failed to initiate Stripe payment for transaction: {}", context.transactionReference(), e);
             throw new PaymentInitiationException("Stripe payment initiation failed", e);

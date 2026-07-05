@@ -1,15 +1,17 @@
 package com.flowwallet.common.dto;
 
+import java.util.Map;
+
 /**
  * Response returned to the client after initiating a top-up.
- * Contains the Stripe {@code client_secret} needed to complete payment on the frontend.
+ * Contains the provider-specific data needed to complete payment on the frontend.
  *
- * @param clientSecret         Stripe client secret for frontend payment confirmation
- * @param paymentIntentId      Stripe PaymentIntent ID (pi_xxx)
+ * @param providerData         Provider-specific data (e.g. client_secret for Stripe, redirectUrl for PayPal)
+ * @param paymentIntentId      Payment provider's intent ID
  * @param transactionReference unique reference linking this payment across services
  */
 public record PaymentIntentResponse(
-        String clientSecret,
+        Map<String, Object> providerData,
         String paymentIntentId,
         String transactionReference
 ) {

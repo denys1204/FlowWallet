@@ -92,3 +92,13 @@ databaseChangeLog:
             columns:
               - column:
                   name: provider_transaction_id
+  - changeSet:
+      id: 002-add-provider-metadata-to-payment-transactions
+      author: flow-wallet
+      changes:
+        - addColumn:
+            tableName: payment_transactions
+            columns:
+              - column:
+                  name: provider_metadata
+                  type: JSONB

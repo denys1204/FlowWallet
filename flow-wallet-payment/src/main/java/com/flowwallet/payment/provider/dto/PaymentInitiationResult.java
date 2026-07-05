@@ -1,6 +1,8 @@
 package com.flowwallet.payment.provider.dto;
 
+import java.util.Map;
+
 public record PaymentInitiationResult(
         String providerTransactionId,
-        String clientSecret
+        Map<String, Object> providerData
 ) {}
