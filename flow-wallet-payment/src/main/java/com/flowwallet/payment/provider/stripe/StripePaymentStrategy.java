@@ -90,11 +90,13 @@ public class StripePaymentStrategy implements PaymentProviderStrategy {
     }
 
     private String extractSignature(Map<String, String> headers) {
-        String signature = headers.get("stripe-signature");
-        if (signature == null) {
-            throw new InvalidWebhookSignatureException("Missing Stripe signature header", null);
-        }
-        return signature;
+        return headers.entrySet().stream()
+                .filter(entry -> entry.getKey().equalsIgnoreCase("stripe-signature"))
+                .map(Map.Entry::getValue)
+                .findFirst()
+                .orElseThrow(
+                        () -> new InvalidWebhookSignatureException("Missing Stripe signature header", null)
+                );
     }
 
     private Event parseEventOrThrow(String payload, String signature) {
