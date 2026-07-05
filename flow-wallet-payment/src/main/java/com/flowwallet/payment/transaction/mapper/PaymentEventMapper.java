@@ -23,6 +23,9 @@ public interface PaymentEventMapper {
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "processedAt", ignore = true)
+    @Mapping(target = "status", ignore = true)
+    @Mapping(target = "retryCount", ignore = true)
+    @Mapping(target = "errorMessage", ignore = true)
     OutboxEvent toOutboxEvent(PaymentTransaction transaction, String payload);
 
     PaymentRequestContext toRequestContext(PaymentTransaction transaction);

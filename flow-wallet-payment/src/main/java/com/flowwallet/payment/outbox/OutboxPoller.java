@@ -7,6 +7,8 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import com.flowwallet.payment.config.OutboxProperties;
+
 import java.util.List;
 
 @Slf4j
@@ -15,13 +17,11 @@ import java.util.List;
 public class OutboxPoller {
     private final OutboxEventRepository outboxEventRepository;
     private final OutboxMessageSender outboxMessageSender;
-
-    @Value("${outbox.batch-size:50}")
-    private int batchSize;
+    private final OutboxProperties outboxProperties;
 
     @Scheduled(fixedDelayString = "${outbox.poll-interval-ms:10000}")
     public void pollOutbox() {
-        List<OutboxEvent> events = outboxEventRepository.findByProcessedAtIsNullOrderByCreatedAtAsc(PageRequest.of(0, batchSize));
+        List<OutboxEvent> events = outboxEventRepository.findByStatusOrderByCreatedAtAsc(OutboxStatus.PENDING, PageRequest.of(0, outboxProperties.getBatchSize()));
 
         if (events.isEmpty()) {
             return;
@@ -32,7 +32,7 @@ public class OutboxPoller {
         for (OutboxEvent event : events) {
             try {
                 outboxMessageSender.processEvent(event.getId());
-            } catch (Exception e) {
+            } catch (OutboxMessageProcessingException e) {
                 log.error("Fallback Poller: Failed to process outbox event {}. Stopping batch to preserve order.", event.getId(), e);
                 break;
             }

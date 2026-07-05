@@ -46,13 +46,28 @@ databaseChangeLog:
                   constraints:
                     nullable: false
               - column:
+                  name: status
+                  type: VARCHAR(20)
+                  defaultValue: 'PENDING'
+                  constraints:
+                    nullable: false
+              - column:
+                  name: retry_count
+                  type: INT
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: error_message
+                  type: TEXT
+              - column:
                   name: processed_at
                   type: TIMESTAMP
                   constraints:
                     nullable: true
         - createIndex:
             tableName: outbox_events
-            indexName: idx_outbox_events_processed_at
+            indexName: idx_outbox_events_status
             columns:
               - column:
-                  name: processed_at
+                  name: status
