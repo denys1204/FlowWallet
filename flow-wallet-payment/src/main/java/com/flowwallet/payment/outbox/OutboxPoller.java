@@ -2,7 +2,8 @@ package com.flowwallet.payment.outbox;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -18,6 +19,14 @@ public class OutboxPoller {
     private final OutboxEventRepository outboxEventRepository;
     private final OutboxMessageSender outboxMessageSender;
     private final OutboxProperties outboxProperties;
+
+    @EventListener(ApplicationReadyEvent.class)
+    public void resetStuckEvents() {
+        int resetCount = outboxEventRepository.resetStuckEvents(OutboxStatus.PENDING, OutboxStatus.PROCESSING);
+        if (resetCount > 0) {
+            log.info("Reset {} stuck outbox events from PROCESSING to PENDING on startup", resetCount);
+        }
+    }
 
     @Scheduled(fixedDelayString = "${outbox.poll-interval-ms:10000}")
     public void pollOutbox() {

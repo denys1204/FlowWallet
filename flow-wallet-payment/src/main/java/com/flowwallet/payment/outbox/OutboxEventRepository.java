@@ -36,4 +36,10 @@ public interface OutboxEventRepository extends JpaRepository<OutboxEvent, Long> 
                               @Param("maxRetries") int maxRetries,
                               @Param("failedStatus") OutboxStatus failedStatus,
                               @Param("pendingStatus") OutboxStatus pendingStatus);
+
+    @Modifying
+    @Transactional
+    @Query("UPDATE OutboxEvent e SET e.status = :newStatus WHERE e.status = :expectedStatus")
+    int resetStuckEvents(@Param("newStatus") OutboxStatus newStatus, 
+                         @Param("expectedStatus") OutboxStatus expectedStatus);
 }

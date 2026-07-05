@@ -15,7 +15,7 @@ spring:
   jpa:
     hibernate:
       ddl-auto: validate
-    show-sql: true
+    show-sql: false
     properties:
       hibernate:
         format_sql: true
@@ -60,3 +60,7 @@ logging:
   level:
     root: ${LOG_LEVEL:INFO}
     com.flowwallet: ${APP_LOG_LEVEL:DEBUG}
+    # Reduce noise from Kafka when it's down
+    org.apache.kafka.clients.NetworkClient: ERROR
+    org.apache.kafka.clients.Metadata: ERROR
+    org.apache.kafka.clients.producer.internals.Sender: ERROR
