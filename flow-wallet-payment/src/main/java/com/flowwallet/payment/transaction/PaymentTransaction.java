@@ -2,7 +2,6 @@ package com.flowwallet.payment.transaction;
 
 import com.flowwallet.common.dto.CreatePaymentIntentRequest;
 import com.flowwallet.common.enums.TransactionStatus;
-import com.flowwallet.payment.provider.PaymentProvider;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -18,7 +17,6 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UpdateTimestamp;
@@ -28,7 +26,6 @@ import java.time.Instant;
 
 @Entity
 @Getter
-@Setter
 @Builder
 @AllArgsConstructor
 @Table(name = "payment_transactions")
@@ -93,14 +90,18 @@ public class PaymentTransaction {
         this.providerEventId = providerEventId;
     }
 
+    public void markAsInitiated(String providerTransactionId, java.util.Map<String, Object> providerMetadata) {
+        this.providerTransactionId = providerTransactionId;
+        this.providerMetadata = providerMetadata;
+    }
+
     public static PaymentTransaction create(
             CreatePaymentIntentRequest request,
-            PaymentProvider provider,
             String userId
     ) {
         return PaymentTransaction.builder()
                 .transactionReference(request.transactionReference())
-                .providerName(provider.name())
+                .providerName(request.providerName().toUpperCase())
                 .walletId(request.walletId())
                 .userId(userId)
                 .amount(request.amount())

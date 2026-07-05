@@ -25,7 +25,7 @@ public class PaymentWebhookService {
         switch (result.eventType()) {
             case PAYMENT_SUCCESS -> transactionHandler.handleSuccess(result.providerTransactionId(), result.providerEventId());
             case PAYMENT_FAILURE -> transactionHandler.handleFailure(result.providerTransactionId(), result.providerEventId());
-            case UNKNOWN -> log.warn("Ignoring unknown webhook event: {}", result);
+            case UNKNOWN -> log.debug("Ignoring unknown webhook event: {}", result);
         }
     }
 }

@@ -59,7 +59,7 @@ public class StripePaymentStrategy implements PaymentProviderStrategy {
 
         StripeObject stripeObject = event.getDataObjectDeserializer().getObject()
                 .orElseGet(() -> {
-                    log.warn("Stripe API version mismatch! Using deserializeUnsafe(). " +
+                    log.debug("Stripe API version mismatch! Using deserializeUnsafe(). " +
                             "Please update the Stripe Java SDK to match the dashboard version. Event ID: {}", event.getId()
                     );
 
