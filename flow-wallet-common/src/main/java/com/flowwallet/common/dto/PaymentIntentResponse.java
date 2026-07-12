@@ -14,5 +14,4 @@ public record PaymentIntentResponse(
         Map<String, Object> providerData,
         String paymentIntentId,
         String transactionReference
-) {
-}
+) {}

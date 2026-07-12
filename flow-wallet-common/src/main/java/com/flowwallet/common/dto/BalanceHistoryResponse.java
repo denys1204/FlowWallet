@@ -24,5 +24,4 @@ public record BalanceHistoryResponse(
         BigDecimal balanceAfter,
         String description,
         Instant createdAt
-) {
-}
+) {}

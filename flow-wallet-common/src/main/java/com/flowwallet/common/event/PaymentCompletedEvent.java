@@ -10,7 +10,7 @@ import java.time.Instant;
  * Consumed by Wallet Service to credit the user's balance.
  *
  * @param transactionReference unique reference for idempotency
- * @param paymentIntentId      Stripe PaymentIntent ID (pi_xxx)
+ * @param providerTransactionId Stripe PaymentIntent ID (pi_xxx) or provider equivalent
  * @param amount               payment amount in major currency units
  * @param currency             ISO 4217 currency code
  * @param walletId             target wallet to credit
@@ -19,11 +19,10 @@ import java.time.Instant;
  */
 public record PaymentCompletedEvent(
         String transactionReference,
-        String paymentIntentId,
+        String providerTransactionId,
         BigDecimal amount,
         String currency,
         Long walletId,
         String userId,
         Instant completedAt
-) {
-}
+) {}

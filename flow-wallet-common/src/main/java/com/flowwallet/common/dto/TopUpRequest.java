@@ -19,5 +19,4 @@ public record TopUpRequest(
         @DecimalMin(value = "1.00", message = "Minimum top-up amount is 1.00")
         @DecimalMax(value = "10000.00", message = "Maximum top-up amount is 10,000.00")
         BigDecimal amount
-) {
-}
+) {}

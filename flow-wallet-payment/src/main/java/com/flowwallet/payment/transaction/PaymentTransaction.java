@@ -2,21 +2,8 @@ package com.flowwallet.payment.transaction;
 
 import com.flowwallet.common.dto.CreatePaymentIntentRequest;
 import com.flowwallet.common.enums.TransactionStatus;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.SequenceGenerator;
-import jakarta.persistence.Table;
-import jakarta.persistence.Version;
-import lombok.AccessLevel;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
+import jakarta.persistence.*;
+import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UpdateTimestamp;
@@ -33,7 +20,7 @@ import java.time.Instant;
 public class PaymentTransaction {
     @Id
     @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "payment_transactions_seq_gen")
-    @SequenceGenerator(name = "payment_transactions_seq_gen", sequenceName = "payment_transactions_seq", allocationSize = 50)
+    @SequenceGenerator(name = "payment_transactions_seq_gen", sequenceName = "payment_transactions_seq")
     private Long id;
 
     @Column(name = "transaction_reference", nullable = false, unique = true, length = 64)

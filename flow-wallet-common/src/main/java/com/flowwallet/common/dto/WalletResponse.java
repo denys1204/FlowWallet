@@ -20,5 +20,4 @@ public record WalletResponse(
         String currency,
         Instant createdAt,
         Instant updatedAt
-) {
-}
+) {}

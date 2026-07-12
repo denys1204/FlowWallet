@@ -2,11 +2,11 @@ package com.flowwallet.payment.transaction;
 
 import com.flowwallet.common.dto.CreatePaymentIntentRequest;
 import com.flowwallet.common.dto.PaymentIntentResponse;
-import com.flowwallet.payment.transaction.mapper.PaymentEventMapper;
-import com.flowwallet.payment.provider.dto.PaymentInitiationResult;
 import com.flowwallet.payment.provider.PaymentProviderFactory;
 import com.flowwallet.payment.provider.PaymentProviderStrategy;
+import com.flowwallet.payment.provider.dto.PaymentInitiationResult;
 import com.flowwallet.payment.provider.dto.PaymentRequestContext;
+import com.flowwallet.payment.transaction.mapper.PaymentEventMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -27,6 +27,7 @@ public class PaymentService {
         log.info("Initiating payment for user {} with amount {} {}", userId, request.amount(), request.currency());
 
         Optional<PaymentIntentResponse> idempotentResponse = checkIdempotency(request.transactionReference());
+
         if (idempotentResponse.isPresent()) {
             return idempotentResponse.get();
         }

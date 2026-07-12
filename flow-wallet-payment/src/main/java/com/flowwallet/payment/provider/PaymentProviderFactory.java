@@ -1,8 +1,8 @@
 package com.flowwallet.payment.provider;
 
+import com.flowwallet.payment.provider.exception.UnsupportedPaymentProviderException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
-import com.flowwallet.payment.provider.exception.UnsupportedPaymentProviderException;
 
 import java.util.List;
 
@@ -13,6 +13,7 @@ public class PaymentProviderFactory {
 
     public PaymentProviderStrategy getStrategy(String providerName) {
         PaymentProvider provider = resolve(providerName);
+
         return strategies.stream()
             .filter(strategy -> strategy.supports(provider))
             .findFirst()
