@@ -1,5 +1,10 @@
 package com.flowwallet.payment.provider.stripe;
 
+import static com.flowwallet.payment.provider.stripe.StripeConstants.EVENT_PAYMENT_FAILED;
+import static com.flowwallet.payment.provider.stripe.StripeConstants.EVENT_PAYMENT_SUCCEEDED;
+import static com.flowwallet.payment.provider.stripe.StripeConstants.HEADER_SIGNATURE;
+import static com.flowwallet.payment.provider.stripe.StripeConstants.RESPONSE_CLIENT_SECRET;
+
 import com.flowwallet.payment.provider.exception.InvalidWebhookSignatureException;
 import com.flowwallet.payment.provider.exception.PaymentInitiationException;
 import com.flowwallet.payment.provider.exception.WebhookProcessingException;
@@ -17,7 +22,6 @@ import com.stripe.exception.StripeException;
 import com.stripe.model.Event;
 import com.stripe.model.PaymentIntent;
 import com.stripe.model.StripeObject;
-import com.stripe.param.PaymentIntentCreateParams;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -39,12 +43,12 @@ public class StripePaymentStrategy implements PaymentProviderStrategy {
     @Override
     public PaymentInitiationResult initiatePayment(PaymentRequestContext context) {
         try {
-            PaymentIntentCreateParams params = requestMapper.toPaymentIntentParams(context);
-            PaymentIntent paymentIntent = stripeClient.createPaymentIntent(params);
+            var params = requestMapper.toPaymentIntentParams(context);
+            var paymentIntent = stripeClient.createPaymentIntent(params);
 
             return new PaymentInitiationResult(
-                paymentIntent.getId(), 
-                Map.of("clientSecret", paymentIntent.getClientSecret())
+                paymentIntent.getId(),
+                Map.of(RESPONSE_CLIENT_SECRET, paymentIntent.getClientSecret())
             );
         } catch (StripeException e) {
             log.error("Failed to initiate Stripe payment for transaction: {}", context.transactionReference(), e);
@@ -56,31 +60,14 @@ public class StripePaymentStrategy implements PaymentProviderStrategy {
     public WebhookResult handleWebhook(String payload, Map<String, String> headers) {
         String signature = extractSignature(headers);
         Event event = parseEventOrThrow(payload, signature);
-
-        StripeObject stripeObject = event.getDataObjectDeserializer().getObject()
-                .orElseGet(() -> {
-                    log.debug("Stripe API version mismatch! Using deserializeUnsafe(). " +
-                            "Please update the Stripe Java SDK to match the dashboard version. Event ID: {}", event.getId()
-                    );
-
-                    try {
-                        return event.getDataObjectDeserializer().deserializeUnsafe();
-                    } catch (EventDataObjectDeserializationException e) {
-                        throw new WebhookProcessingException("Failed to deserialize Stripe event data", e);
-                    }
-                });
+        StripeObject stripeObject = deserializeEventData(event);
 
         if (!(stripeObject instanceof PaymentIntent paymentIntent)) {
             log.debug("Ignoring non-PaymentIntent Stripe object for event: {}", event.getType());
             return WebhookResult.unknown();
         }
 
-        WebhookEventType eventType = switch (event.getType()) {
-            case "payment_intent.succeeded" -> WebhookEventType.PAYMENT_SUCCESS;
-            case "payment_intent.payment_failed" -> WebhookEventType.PAYMENT_FAILURE;
-            default -> WebhookEventType.UNKNOWN;
-        };
-
+        WebhookEventType eventType = resolveEventType(event.getType());
         if (eventType == WebhookEventType.UNKNOWN) {
             log.debug("Unhandled Stripe event type: {}", event.getType());
             return WebhookResult.unknown();
@@ -89,13 +76,40 @@ public class StripePaymentStrategy implements PaymentProviderStrategy {
         return new WebhookResult(paymentIntent.getId(), event.getId(), eventType);
     }
 
+    // ── Private helpers ──────────────────────────────────────────────────
+
+    private StripeObject deserializeEventData(Event event) {
+        return event.getDataObjectDeserializer().getObject()
+                .orElseGet(() -> deserializeUnsafe(event));
+    }
+
+    private StripeObject deserializeUnsafe(Event event) {
+        log.warn("Stripe API version mismatch! Using deserializeUnsafe(). " +
+                "Please update the Stripe Java SDK to match the dashboard version. Event ID: {}", event.getId()
+        );
+
+        try {
+            return event.getDataObjectDeserializer().deserializeUnsafe();
+        } catch (EventDataObjectDeserializationException e) {
+            throw new WebhookProcessingException("Failed to deserialize Stripe event data", e);
+        }
+    }
+
+    private WebhookEventType resolveEventType(String stripeEventType) {
+        return switch (stripeEventType) {
+            case EVENT_PAYMENT_SUCCEEDED -> WebhookEventType.PAYMENT_SUCCESS;
+            case EVENT_PAYMENT_FAILED -> WebhookEventType.PAYMENT_FAILURE;
+            default -> WebhookEventType.UNKNOWN;
+        };
+    }
+
     private String extractSignature(Map<String, String> headers) {
         return headers.entrySet().stream()
-                .filter(entry -> entry.getKey().equalsIgnoreCase("stripe-signature"))
+                .filter(entry -> entry.getKey().equalsIgnoreCase(HEADER_SIGNATURE))
                 .map(Map.Entry::getValue)
                 .findFirst()
                 .orElseThrow(
-                        () -> new InvalidWebhookSignatureException("Missing Stripe signature header", null)
+                        () -> new InvalidWebhookSignatureException("Missing Stripe signature header")
                 );
     }
 
