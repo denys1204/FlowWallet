@@ -22,4 +22,7 @@ public final class KafkaConstants {
 
     /** Aggregate type for payment transaction */
     public static final String AGGREGATE_TYPE_PAYMENT_TRANSACTION = "PaymentTransaction";
+
+    /** Event type for payment failure */
+    public static final String EVENT_TYPE_PAYMENT_FAILED = "PaymentFailedEvent";
 }

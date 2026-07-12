@@ -2,6 +2,7 @@ package com.flowwallet.payment.transaction.mapper;
 
 import com.flowwallet.common.constant.KafkaConstants;
 import com.flowwallet.common.event.PaymentCompletedEvent;
+import com.flowwallet.common.event.PaymentFailedEvent;
 import com.flowwallet.payment.outbox.OutboxEvent;
 import com.flowwallet.payment.transaction.PaymentTransaction;
 import com.flowwallet.payment.provider.dto.PaymentRequestContext;
@@ -13,8 +14,10 @@ import java.time.Instant;
 @Mapper(componentModel = "spring", imports = {Instant.class, KafkaConstants.class})
 public interface PaymentEventMapper {
     @Mapping(target = "completedAt", expression = "java(Instant.now())")
-    @Mapping(target = "paymentIntentId", source = "providerTransactionId")
     PaymentCompletedEvent toPaymentCompletedEvent(PaymentTransaction transaction);
+
+    @Mapping(target = "failedAt", expression = "java(Instant.now())")
+    PaymentFailedEvent toPaymentFailedEvent(PaymentTransaction transaction, String reason);
 
     @Mapping(target = "aggregateType", constant = KafkaConstants.AGGREGATE_TYPE_PAYMENT_TRANSACTION)
     @Mapping(target = "aggregateId", source = "transaction.transactionReference")
@@ -27,6 +30,18 @@ public interface PaymentEventMapper {
     @Mapping(target = "retryCount", ignore = true)
     @Mapping(target = "errorMessage", ignore = true)
     OutboxEvent toOutboxEvent(PaymentTransaction transaction, String payload);
+
+    @Mapping(target = "aggregateType", constant = KafkaConstants.AGGREGATE_TYPE_PAYMENT_TRANSACTION)
+    @Mapping(target = "aggregateId", source = "transaction.transactionReference")
+    @Mapping(target = "eventType", constant = KafkaConstants.EVENT_TYPE_PAYMENT_FAILED)
+    @Mapping(target = "payload", source = "payload")
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "createdAt", ignore = true)
+    @Mapping(target = "processedAt", ignore = true)
+    @Mapping(target = "status", ignore = true)
+    @Mapping(target = "retryCount", ignore = true)
+    @Mapping(target = "errorMessage", ignore = true)
+    OutboxEvent toFailedOutboxEvent(PaymentTransaction transaction, String payload);
 
     PaymentRequestContext toRequestContext(PaymentTransaction transaction);
 }

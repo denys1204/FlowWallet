@@ -1,86 +1,65 @@
 package com.flowwallet.payment.transaction;
 
-import tools.jackson.core.JacksonException;
-import tools.jackson.databind.ObjectMapper;
 import com.flowwallet.common.enums.TransactionStatus;
-import com.flowwallet.common.event.PaymentCompletedEvent;
-import com.flowwallet.payment.outbox.OutboxEvent;
-import com.flowwallet.payment.outbox.OutboxCreatedEvent;
-import com.flowwallet.payment.outbox.OutboxEventRepository;
-import com.flowwallet.payment.transaction.mapper.PaymentEventMapper;
+import com.flowwallet.payment.outbox.PaymentOutboxService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.function.Consumer;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class PaymentTransactionHandler {
     private final PaymentTransactionRepository transactionRepository;
-    private final OutboxEventRepository outboxEventRepository;
-    private final ApplicationEventPublisher eventPublisher;
-    private final PaymentEventMapper eventMapper;
-    private final ObjectMapper objectMapper;
+    private final PaymentOutboxService outboxService;
 
     @Transactional
+    @Retryable(retryFor = ObjectOptimisticLockingFailureException.class)
     public void handleSuccess(String providerTransactionId, String providerEventId) {
         log.info("Processing payment success for provider tx: {}", providerTransactionId);
 
-        if (isAlreadyProcessed(providerEventId)) {
-            return;
-        }
+        processUnprocessedTransaction(providerTransactionId, providerEventId, tx -> {
+            if (tx.getStatus() == TransactionStatus.SUCCESS) {
+                return;
+            }
 
-        PaymentTransaction tx = findTransaction(providerTransactionId);
-        if (tx.getStatus() == TransactionStatus.SUCCESS) {
-            return;
-        }
+            tx.markAsSuccess(providerEventId);
+            transactionRepository.save(tx);
+            outboxService.publishPaymentCompleted(tx);
 
-        tx.markAsSuccess(providerEventId);
-        transactionRepository.save(tx);
-
-        saveOutboxEvent(tx);
-        log.info("Successfully processed payment success for tx: {}", tx.getTransactionReference());
+            log.info("Successfully processed payment success for tx: {}", tx.getTransactionReference());
+        });
     }
 
     @Transactional
+    @Retryable(retryFor = ObjectOptimisticLockingFailureException.class)
     public void handleFailure(String providerTransactionId, String providerEventId) {
         log.info("Processing payment failure for provider tx: {}", providerTransactionId);
 
-        if (isAlreadyProcessed(providerEventId)) {
+        processUnprocessedTransaction(providerTransactionId, providerEventId, tx -> {
+            tx.markAsFailed(providerEventId);
+            transactionRepository.save(tx);
+            outboxService.publishPaymentFailed(tx, "Payment failed via webhook");
+
+            log.info("Successfully processed payment failure for tx: {}", tx.getTransactionReference());
+        });
+    }
+
+    private void processUnprocessedTransaction(String providerTransactionId, String providerEventId, Consumer<PaymentTransaction> action) {
+        if (transactionRepository.existsByProviderEventId(providerEventId)) {
+            log.info("Event {} already processed. Ignoring.", providerEventId);
             return;
         }
 
-        PaymentTransaction tx = findTransaction(providerTransactionId);
-        tx.markAsFailed(providerEventId);
-        transactionRepository.save(tx);
-
-        log.info("Successfully processed payment failure for tx: {}", tx.getTransactionReference());
-    }
-
-    private boolean isAlreadyProcessed(String providerEventId) {
-        if (transactionRepository.existsByProviderEventId(providerEventId)) {
-            log.info("Event {} already processed. Ignoring.", providerEventId);
-            return true;
-        }
-        return false;
-    }
-
-    private PaymentTransaction findTransaction(String providerTransactionId) {
-        return transactionRepository.findByProviderTransactionId(providerTransactionId).orElseThrow(
+        PaymentTransaction tx = transactionRepository.findByProviderTransactionId(providerTransactionId).orElseThrow(
                 () -> new TransactionNotFoundException("Transaction not found for provider tx: " + providerTransactionId)
         );
-    }
 
-    private void saveOutboxEvent(PaymentTransaction tx) {
-        try {
-            PaymentCompletedEvent event = eventMapper.toPaymentCompletedEvent(tx);
-            OutboxEvent outboxEvent = eventMapper.toOutboxEvent(tx, objectMapper.writeValueAsString(event));
-            outboxEventRepository.save(outboxEvent);
-            eventPublisher.publishEvent(new OutboxCreatedEvent(outboxEvent.getId()));
-        } catch (JacksonException e) {
-            throw new IllegalStateException("Failed to serialize PaymentCompletedEvent for tx: " + tx.getTransactionReference(), e);
-        }
+        action.accept(tx);
     }
 }
