@@ -8,6 +8,8 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 
 public interface OutboxEventRepository extends JpaRepository<OutboxEvent, Long> {
@@ -25,7 +27,7 @@ public interface OutboxEventRepository extends JpaRepository<OutboxEvent, Long> 
     @Query("UPDATE OutboxEvent e SET e.status = :status, e.processedAt = :processedAt WHERE e.id = :id")
     void markAsCompleted(@Param("id") Long id, 
                          @Param("status") OutboxStatus status,
-                         @Param("processedAt") java.time.Instant processedAt);
+                         @Param("processedAt") Instant processedAt);
 
     @Modifying
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -42,4 +44,10 @@ public interface OutboxEventRepository extends JpaRepository<OutboxEvent, Long> 
     @Query("UPDATE OutboxEvent e SET e.status = :newStatus WHERE e.status = :expectedStatus")
     int resetStuckEvents(@Param("newStatus") OutboxStatus newStatus, 
                          @Param("expectedStatus") OutboxStatus expectedStatus);
+
+    @Modifying
+    @Transactional
+    @Query("DELETE FROM OutboxEvent e WHERE e.status IN :statuses AND e.createdAt < :before")
+    int deleteOldEvents(@Param("statuses") Collection<OutboxStatus> statuses,
+                        @Param("before") Instant before);
 }

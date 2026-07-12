@@ -10,6 +10,8 @@ import org.springframework.stereotype.Component;
 
 import com.flowwallet.payment.config.OutboxProperties;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 @Slf4j
@@ -45,6 +47,19 @@ public class OutboxPoller {
                 log.error("Fallback Poller: Failed to process outbox event {}. Stopping batch to preserve order.", event.getId(), e);
                 break;
             }
+        }
+    }
+
+    @Scheduled(cron = "${outbox.cleanup-cron:0 0 3 * * *}")
+    public void cleanupOldEvents() {
+        Instant cutoff = Instant.now().minus(outboxProperties.getRetentionDays(), ChronoUnit.DAYS);
+        int deleted = outboxEventRepository.deleteOldEvents(
+                List.of(OutboxStatus.COMPLETED, OutboxStatus.FAILED),
+                cutoff
+        );
+
+        if (deleted > 0) {
+            log.info("Cleaned up {} old outbox events (older than {} days)", deleted, outboxProperties.getRetentionDays());
         }
     }
 }

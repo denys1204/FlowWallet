@@ -67,7 +67,9 @@ databaseChangeLog:
                     nullable: true
         - createIndex:
             tableName: outbox_events
-            indexName: idx_outbox_events_status
+            indexName: idx_outbox_events_status_created_at
             columns:
               - column:
                   name: status
+              - column:
+                  name: created_at

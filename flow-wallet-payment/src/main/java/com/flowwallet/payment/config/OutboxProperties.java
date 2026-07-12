@@ -24,4 +24,9 @@ public class OutboxProperties {
      * Maximum number of retries before marking an event as FAILED.
      */
     private int maxRetries = 3;
+
+    /**
+     * Number of days to retain COMPLETED and FAILED outbox events before cleanup.
+     */
+    private int retentionDays = 7;
 }
