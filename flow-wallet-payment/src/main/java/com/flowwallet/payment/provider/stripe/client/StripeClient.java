@@ -11,6 +11,8 @@ import com.flowwallet.payment.provider.stripe.config.StripeConfig;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import static com.flowwallet.payment.provider.stripe.StripeConstants.WEBHOOK_TOLERANCE_SECONDS;
+
 /**
  * Wrapper for Stripe static methods to allow for easy unit testing via mocking.
  */
@@ -27,6 +29,6 @@ public class StripeClient {
     }
     
     public Event constructEvent(String payload, String signature) throws SignatureVerificationException {
-        return Webhook.constructEvent(payload, signature, config.getWebhookSecret(), 300L);
+        return Webhook.constructEvent(payload, signature, config.getWebhookSecret(), WEBHOOK_TOLERANCE_SECONDS);
     }
 }

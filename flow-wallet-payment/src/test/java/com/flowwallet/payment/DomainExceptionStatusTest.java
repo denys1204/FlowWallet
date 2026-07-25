@@ -4,6 +4,7 @@ import com.flowwallet.payment.provider.exception.InvalidPaymentRequestException;
 import com.flowwallet.payment.provider.exception.InvalidWebhookSignatureException;
 import com.flowwallet.payment.provider.exception.PaymentInitiationException;
 import com.flowwallet.payment.provider.exception.UnsupportedPaymentProviderException;
+import com.flowwallet.payment.provider.exception.WebhookProcessingException;
 import com.flowwallet.payment.transaction.DuplicateTransactionReferenceException;
 import com.flowwallet.payment.transaction.TransactionNotFoundException;
 import org.junit.jupiter.api.Test;
@@ -29,6 +30,8 @@ class DomainExceptionStatusTest {
                 .isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(new TransactionNotFoundException("missing").getStatus())
                 .isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(new WebhookProcessingException("processing failed", new RuntimeException()).getStatus())
+                .isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
         assertThat(DuplicateTransactionReferenceException.forReference("ref-1").getStatus())
                 .isEqualTo(HttpStatus.CONFLICT);
     }

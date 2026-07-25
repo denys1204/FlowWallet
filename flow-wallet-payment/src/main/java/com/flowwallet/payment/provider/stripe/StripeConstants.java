@@ -51,6 +51,11 @@ public final class StripeConstants {
     /** HTTP header carrying the Stripe webhook signature. */
     public static final String HEADER_SIGNATURE = "stripe-signature";
 
+    // ── Webhook verification ──────────────────────────────────────────────
+
+    /** Replay-tolerance window (seconds) for webhook signature verification. */
+    public static final long WEBHOOK_TOLERANCE_SECONDS = 300L;
+
     // ── Response keys ────────────────────────────────────────────────────
 
     /** Key used in the provider metadata map for the Stripe client secret. */
