@@ -67,3 +67,5 @@ logging:
     org.apache.kafka.clients.NetworkClient: ERROR
     org.apache.kafka.clients.Metadata: ERROR
     org.apache.kafka.clients.producer.internals.Sender: ERROR
+    # Suppress the verbose client config dump + "supplied but not used" notices at startup
+    org.apache.kafka.common.config.AbstractConfig: WARN
