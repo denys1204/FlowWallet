@@ -44,7 +44,8 @@ public class StripePaymentStrategy implements PaymentProviderStrategy {
     public PaymentInitiationResult initiatePayment(PaymentRequestContext context) {
         try {
             var params = requestMapper.toPaymentIntentParams(context);
-            var paymentIntent = stripeClient.createPaymentIntent(params);
+            // Use the transaction reference as Stripe's idempotency key so a retry never creates a duplicate intent.
+            var paymentIntent = stripeClient.createPaymentIntent(params, context.transactionReference());
 
             return new PaymentInitiationResult(
                 paymentIntent.getId(),
