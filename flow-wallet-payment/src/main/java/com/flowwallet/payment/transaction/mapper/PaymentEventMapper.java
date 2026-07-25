@@ -1,6 +1,7 @@
 package com.flowwallet.payment.transaction.mapper;
 
 import com.flowwallet.common.constant.KafkaConstants;
+import com.flowwallet.common.dto.PaymentIntentResponse;
 import com.flowwallet.common.event.PaymentCompletedEvent;
 import com.flowwallet.common.event.PaymentFailedEvent;
 import com.flowwallet.payment.outbox.OutboxEvent;
@@ -18,6 +19,10 @@ public interface PaymentEventMapper {
 
     @Mapping(target = "failedAt", expression = "java(Instant.now())")
     PaymentFailedEvent toPaymentFailedEvent(PaymentTransaction transaction, String reason);
+
+    @Mapping(target = "providerData", source = "providerMetadata")
+    @Mapping(target = "paymentIntentId", source = "providerTransactionId")
+    PaymentIntentResponse toResponse(PaymentTransaction transaction);
 
     @Mapping(target = "aggregateType", constant = KafkaConstants.AGGREGATE_TYPE_PAYMENT_TRANSACTION)
     @Mapping(target = "aggregateId", source = "transaction.transactionReference")

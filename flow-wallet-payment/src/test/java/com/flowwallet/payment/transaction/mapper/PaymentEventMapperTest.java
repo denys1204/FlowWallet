@@ -1,12 +1,14 @@
 package com.flowwallet.payment.transaction.mapper;
 
 import com.flowwallet.common.dto.CreatePaymentIntentRequest;
+import com.flowwallet.common.dto.PaymentIntentResponse;
 import com.flowwallet.common.event.PaymentCompletedEvent;
 import com.flowwallet.common.event.PaymentFailedEvent;
 import com.flowwallet.payment.transaction.PaymentTransaction;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -36,6 +38,18 @@ class PaymentEventMapperTest {
         assertThat(event.userId()).isEqualTo("user-1");
         assertThat(event.reason()).isEqualTo("card declined");
         assertThat(event.failedAt()).isNotNull();
+    }
+
+    @Test
+    void mapsTransactionToPaymentIntentResponse() {
+        PaymentTransaction tx = transaction();
+        tx.markAsInitiated("pi_9", Map.of("clientSecret", "cs_9"));
+
+        PaymentIntentResponse response = mapper.toResponse(tx);
+
+        assertThat(response.paymentIntentId()).isEqualTo("pi_9");
+        assertThat(response.transactionReference()).isEqualTo("ref-1");
+        assertThat(response.providerData()).containsEntry("clientSecret", "cs_9");
     }
 
     private PaymentTransaction transaction() {
