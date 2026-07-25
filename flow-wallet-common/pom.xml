@@ -57,6 +57,12 @@
             <optional>true</optional>
         </dependency>
 
+        <!-- SLF4J API — logging facade used by the shared GlobalExceptionHandler -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+
         <!-- MapStruct -->
         <dependency>
             <groupId>org.mapstruct</groupId>

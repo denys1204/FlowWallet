@@ -1,12 +1,13 @@
 package com.flowwallet.common.security;
 
+import com.flowwallet.common.exception.ApiException;
+import org.springframework.http.HttpStatus;
+
 /**
- * Thrown when the {@code X-User-Id} header is missing or blank.
- * <p>
- * Should be mapped to HTTP 401 Unauthorized by the global exception handler.
+ * Thrown when the {@code X-User-Id} header is missing or blank. Maps to HTTP 401 Unauthorized.
  */
-public class MissingUserIdException extends RuntimeException {
+public class MissingUserIdException extends ApiException {
     public MissingUserIdException(String message) {
-        super(message);
+        super(HttpStatus.UNAUTHORIZED, message);
     }
 }
