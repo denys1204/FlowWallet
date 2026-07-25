@@ -47,7 +47,7 @@ class OutboxMessageSenderTest {
 
     @Test
     void failedSendSchedulesRetryWithFutureBackoff() {
-        when(repository.lockForProcessing(1L, OutboxStatus.PROCESSING, OutboxStatus.PENDING)).thenReturn(1);
+        when(repository.lockForProcessing(eq(1L), eq(OutboxStatus.PROCESSING), eq(OutboxStatus.PENDING), any())).thenReturn(1);
         when(repository.findById(1L)).thenReturn(Optional.of(pendingEvent()));
         when(kafkaTemplate.send(anyString(), any(), any())).thenReturn(
                 CompletableFuture.failedFuture(new IllegalStateException("kafka down"))
@@ -73,7 +73,7 @@ class OutboxMessageSenderTest {
 
     @Test
     void successfulSendMarksCompleted() {
-        when(repository.lockForProcessing(1L, OutboxStatus.PROCESSING, OutboxStatus.PENDING)).thenReturn(1);
+        when(repository.lockForProcessing(eq(1L), eq(OutboxStatus.PROCESSING), eq(OutboxStatus.PENDING), any())).thenReturn(1);
         when(repository.findById(1L)).thenReturn(Optional.of(pendingEvent()));
         when(kafkaTemplate.send(anyString(), any(), any())).thenReturn(
                 CompletableFuture.completedFuture(mock(SendResult.class))
@@ -86,7 +86,7 @@ class OutboxMessageSenderTest {
 
     @Test
     void skipsWhenLockNotAcquired() {
-        when(repository.lockForProcessing(1L, OutboxStatus.PROCESSING, OutboxStatus.PENDING)).thenReturn(0);
+        when(repository.lockForProcessing(eq(1L), eq(OutboxStatus.PROCESSING), eq(OutboxStatus.PENDING), any())).thenReturn(0);
 
         sender.processEvent(1L);
 

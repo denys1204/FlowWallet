@@ -1,0 +1,12 @@
+databaseChangeLog:
+  - changeSet:
+      id: 004-add-processing-started-at-to-outbox-events
+      author: flow-wallet
+      changes:
+        - addColumn:
+            tableName: outbox_events
+            columns:
+              - column:
+                  name: processing_started_at
+                  type: TIMESTAMP
+                  remarks: "When the event entered PROCESSING (set at lock time); used by the reaper to recover events stuck in PROCESSING after a crash."

@@ -20,7 +20,13 @@ public class OutboxMessageSender {
     private final OutboxProperties outboxProperties;
 
     public void processEvent(Long eventId) {
-        int updated = outboxEventRepository.lockForProcessing(eventId, OutboxStatus.PROCESSING, OutboxStatus.PENDING);
+        int updated = outboxEventRepository.lockForProcessing(
+                eventId,
+                OutboxStatus.PROCESSING,
+                OutboxStatus.PENDING,
+                Instant.now()
+        );
+
         if (updated == 0) {
             log.debug("OutboxEvent {} is already being processed or is not in PENDING status. Skipping.", eventId);
             return;

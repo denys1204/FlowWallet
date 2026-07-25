@@ -53,4 +53,8 @@ public class OutboxEvent {
     /** Earliest time this event may be re-dispatched by the poller (retry backoff); null = eligible now. */
     @Column(name = "next_attempt_at")
     private Instant nextAttemptAt;
+
+    /** When the event entered PROCESSING (set at lock time); used by the reaper to recover crashed sends. */
+    @Column(name = "processing_started_at")
+    private Instant processingStartedAt;
 }

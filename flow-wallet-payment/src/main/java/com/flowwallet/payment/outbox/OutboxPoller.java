@@ -30,6 +30,29 @@ public class OutboxPoller {
         }
     }
 
+    /**
+     * Recovers events left in PROCESSING by a sender that died mid-send (the startup reset only runs once).
+     * The threshold must stay well above the longest possible single send so a live in-flight send is never reset.
+     */
+    @Scheduled(fixedDelayString = "${outbox.reaper-interval-ms:60000}")
+    public void reapStuckProcessing() {
+        Instant threshold = Instant.now().minusMillis(outboxProperties.getStuckProcessingThresholdMs());
+
+        int reaped = outboxEventRepository.resetStuckProcessing(
+                OutboxStatus.PENDING,
+                OutboxStatus.PROCESSING,
+                threshold
+        );
+
+        if (reaped > 0) {
+            log.warn(
+                    "Reaped {} outbox events stuck in PROCESSING longer than {} ms back to PENDING",
+                    reaped,
+                    outboxProperties.getStuckProcessingThresholdMs()
+            );
+        }
+    }
+
     @Scheduled(fixedDelayString = "${outbox.poll-interval-ms:10000}")
     public void pollOutbox() {
         List<OutboxEvent> events = outboxEventRepository.findDispatchable(

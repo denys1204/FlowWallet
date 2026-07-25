@@ -21,10 +21,12 @@ public interface OutboxEventRepository extends JpaRepository<OutboxEvent, Long> 
 
     @Modifying
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    @Query("UPDATE OutboxEvent e SET e.status = :newStatus WHERE e.id = :id AND e.status = :expectedStatus")
-    int lockForProcessing(@Param("id") Long id, 
-                          @Param("newStatus") OutboxStatus newStatus, 
-                          @Param("expectedStatus") OutboxStatus expectedStatus);
+    @Query("UPDATE OutboxEvent e SET e.status = :newStatus, e.processingStartedAt = :now "
+            + "WHERE e.id = :id AND e.status = :expectedStatus")
+    int lockForProcessing(@Param("id") Long id,
+                          @Param("newStatus") OutboxStatus newStatus,
+                          @Param("expectedStatus") OutboxStatus expectedStatus,
+                          @Param("now") Instant now);
 
     @Modifying
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -47,8 +49,16 @@ public interface OutboxEventRepository extends JpaRepository<OutboxEvent, Long> 
     @Modifying
     @Transactional
     @Query("UPDATE OutboxEvent e SET e.status = :newStatus WHERE e.status = :expectedStatus")
-    int resetStuckEvents(@Param("newStatus") OutboxStatus newStatus, 
+    int resetStuckEvents(@Param("newStatus") OutboxStatus newStatus,
                          @Param("expectedStatus") OutboxStatus expectedStatus);
+
+    @Modifying
+    @Transactional
+    @Query("UPDATE OutboxEvent e SET e.status = :newStatus, e.nextAttemptAt = null, e.processingStartedAt = null "
+            + "WHERE e.status = :expectedStatus AND e.processingStartedAt < :threshold")
+    int resetStuckProcessing(@Param("newStatus") OutboxStatus newStatus,
+                             @Param("expectedStatus") OutboxStatus expectedStatus,
+                             @Param("threshold") Instant threshold);
 
     @Modifying
     @Transactional

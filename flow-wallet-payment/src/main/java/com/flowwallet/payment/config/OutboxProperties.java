@@ -34,4 +34,11 @@ public class OutboxProperties {
      * Number of days to retain COMPLETED and FAILED outbox events before cleanup.
      */
     private int retentionDays = 7;
+
+    /**
+     * How long (ms) an event may stay in PROCESSING before the reaper assumes the sender crashed and
+     * returns it to PENDING. MUST be comfortably larger than the longest possible single send, otherwise
+     * a live in-flight send could be reset and re-published.
+     */
+    private long stuckProcessingThresholdMs = 300000;
 }
