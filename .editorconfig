@@ -1,0 +1,45 @@
+# EditorConfig — shared code style for FlowWallet.
+# IntelliJ IDEA reads this natively (including the ij_* keys); other editors honour the common subset.
+#
+# NOTE: this is a starter capturing the structural rules. For a 1:1 match with your IDE scheme,
+# regenerate it from IntelliJ: Settings > Editor > Code Style > (gear icon) > Export... > EditorConfig File
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{yml,yaml,json}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.java]
+indent_size = 4
+ij_continuation_indent_size = 8
+max_line_length = 120
+
+# No blank line between the class declaration and its first member.
+ij_java_blank_lines_after_class_header = 0
+
+# When a parameter list is wrapped: one per line, '(' followed by a newline,
+# ')' on its own line, and do NOT align the continuation to the opening paren.
+ij_java_method_parameters_wrap = on_every_item
+ij_java_method_parameters_new_line_after_left_paren = true
+ij_java_method_parameters_right_paren_on_new_line = true
+ij_java_align_multiline_parameters = false
+
+# Same policy for method-call argument lists.
+ij_java_call_parameters_wrap = on_every_item
+ij_java_call_parameters_new_line_after_left_paren = true
+ij_java_call_parameters_right_paren_on_new_line = true
+ij_java_align_multiline_parameters_in_calls = false
+
+# Fluent / builder chains: one call per line, not aligned.
+ij_java_method_call_chain_wrap = on_every_item
+ij_java_align_multiline_chained_methods = false
