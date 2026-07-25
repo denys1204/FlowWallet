@@ -79,8 +79,9 @@ class PaymentControllerErrorHandlingTest {
 
     @Test
     void unsupportedProviderReturns400AsProblemJson() throws Exception {
-        when(paymentService.initiatePayment(any(), anyString()))
-                .thenThrow(new UnsupportedPaymentProviderException("Unsupported payment provider: FOO"));
+        when(paymentService.initiatePayment(any(), anyString())).thenThrow(
+                new UnsupportedPaymentProviderException("Unsupported payment provider: FOO")
+        );
 
         mockMvc.perform(post("/api/payments/intent")
                         .header("X-User-Id", "user-1")

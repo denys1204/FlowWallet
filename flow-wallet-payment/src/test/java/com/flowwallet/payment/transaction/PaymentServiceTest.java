@@ -75,8 +75,9 @@ class PaymentServiceTest {
     @Test
     void unknownProviderFailsFastWithoutWritingAnyRow() {
         when(repository.findByTransactionReference("ref-1")).thenReturn(Optional.empty());
-        when(factory.getStrategy("FOO"))
-                .thenThrow(new UnsupportedPaymentProviderException("Unsupported payment provider: FOO"));
+        when(factory.getStrategy("FOO")).thenThrow(
+                new UnsupportedPaymentProviderException("Unsupported payment provider: FOO")
+        );
 
         assertThatThrownBy(() -> service.initiatePayment(request("ref-1", "FOO"), "user-1"))
                 .isInstanceOf(UnsupportedPaymentProviderException.class);
