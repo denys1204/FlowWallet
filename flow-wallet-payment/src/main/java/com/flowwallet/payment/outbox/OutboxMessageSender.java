@@ -42,22 +42,33 @@ public class OutboxMessageSender {
             log.debug("Successfully sent outbox event {} to Kafka", event.getId());
         } catch (ExecutionException | KafkaException e) {
             String errorMessage = e.getMessage() != null ? e.getMessage() : "Unknown error during Kafka send";
-            if (errorMessage.length() > 255) {
-                errorMessage = errorMessage.substring(0, 255);
-            }
-
-            log.error("Failed to process outbox event {}. Incrementing retry count.", event.getId(), e);
-            outboxEventRepository.incrementRetryOrFail(event.getId(), errorMessage, outboxProperties.getMaxRetries(), OutboxStatus.FAILED, OutboxStatus.PENDING);
-
-            // Throw custom exception so the poller breaks the loop
-            throw new OutboxMessageProcessingException("Failed to send outbox event to Kafka", e);
+            throw recordSendFailure(event, errorMessage, e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-
-            log.error("Thread interrupted while sending outbox event {}. Incrementing retry count.", event.getId(), e);
-            outboxEventRepository.incrementRetryOrFail(event.getId(), "Thread interrupted", outboxProperties.getMaxRetries(), OutboxStatus.FAILED, OutboxStatus.PENDING);
-
-            throw new OutboxMessageProcessingException("Thread interrupted during Kafka send", e);
+            throw recordSendFailure(event, "Thread interrupted", e);
         }
+    }
+
+    /**
+     * Records a failed send: increments the retry count (or marks FAILED once maxRetries is reached) and
+     * returns the exception to throw so the caller can retry later. The error message is stored as-is —
+     * the {@code error_message} column is TEXT, so no truncation is applied.
+     */
+    private OutboxMessageProcessingException recordSendFailure(
+            OutboxEvent event,
+            String errorMessage,
+            Throwable cause
+    ) {
+        log.error("Failed to process outbox event {}. Incrementing retry count.", event.getId(), cause);
+
+        outboxEventRepository.incrementRetryOrFail(
+                event.getId(),
+                errorMessage,
+                outboxProperties.getMaxRetries(),
+                OutboxStatus.FAILED,
+                OutboxStatus.PENDING
+        );
+
+        return new OutboxMessageProcessingException("Failed to send outbox event to Kafka", cause);
     }
 }

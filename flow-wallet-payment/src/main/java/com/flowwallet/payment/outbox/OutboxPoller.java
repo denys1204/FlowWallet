@@ -44,8 +44,10 @@ public class OutboxPoller {
             try {
                 outboxMessageSender.processEvent(event.getId());
             } catch (OutboxMessageProcessingException e) {
-                log.error("Fallback Poller: Failed to process outbox event {}. Stopping batch to preserve order.", event.getId(), e);
-                break;
+                // Skip this event and keep going: one failing event must not block delivery of unrelated
+                // transactions' events. Per-key ordering is preserved by Kafka's partition key (aggregateId),
+                // not by processing the batch strictly in order.
+                log.error("Fallback Poller: Failed to process outbox event {}. Skipping; it will be retried next poll.", event.getId(), e);
             }
         }
     }

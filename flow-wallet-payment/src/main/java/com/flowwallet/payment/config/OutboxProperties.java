@@ -16,11 +16,6 @@ public class OutboxProperties {
     private int batchSize = 50;
 
     /**
-     * Polling interval in milliseconds.
-     */
-    private long pollIntervalMs = 10000;
-
-    /**
      * Maximum number of retries before marking an event as FAILED.
      */
     private int maxRetries = 3;
