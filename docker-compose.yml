@@ -42,6 +42,12 @@ services:
       KAFKA_LOG_DIRS: /var/lib/kafka/data
     volumes:
       - kafka-data:/var/lib/kafka/data
+    tmpfs:
+      # apache/kafka declares VOLUME for these two paths, but we don't use them (no SASL/SSL secrets and
+      # no shared config in this single-node PLAINTEXT setup). Backing them with tmpfs gives Docker an
+      # explicit mount, so it no longer creates anonymous volumes for them.
+      - /etc/kafka/secrets
+      - /mnt/shared/config
     networks:
       - flow-network
     healthcheck:
