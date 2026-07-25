@@ -13,7 +13,11 @@ import java.util.Collection;
 import java.util.List;
 
 public interface OutboxEventRepository extends JpaRepository<OutboxEvent, Long> {
-    List<OutboxEvent> findByStatusOrderByCreatedAtAsc(OutboxStatus status, Pageable pageable);
+    @Query("SELECT e FROM OutboxEvent e WHERE e.status = :status "
+            + "AND (e.nextAttemptAt IS NULL OR e.nextAttemptAt <= :now) ORDER BY e.createdAt ASC")
+    List<OutboxEvent> findDispatchable(@Param("status") OutboxStatus status,
+                                       @Param("now") Instant now,
+                                       Pageable pageable);
 
     @Modifying
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -32,12 +36,13 @@ public interface OutboxEventRepository extends JpaRepository<OutboxEvent, Long> 
     @Modifying
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     @Query("UPDATE OutboxEvent e SET e.status = CASE WHEN e.retryCount + 1 >= :maxRetries THEN :failedStatus ELSE :pendingStatus END, " +
-           "e.retryCount = e.retryCount + 1, e.errorMessage = :errorMessage WHERE e.id = :id")
-    void incrementRetryOrFail(@Param("id") Long id, 
+           "e.retryCount = e.retryCount + 1, e.errorMessage = :errorMessage, e.nextAttemptAt = :nextAttemptAt WHERE e.id = :id")
+    void incrementRetryOrFail(@Param("id") Long id,
                               @Param("errorMessage") String errorMessage,
                               @Param("maxRetries") int maxRetries,
                               @Param("failedStatus") OutboxStatus failedStatus,
-                              @Param("pendingStatus") OutboxStatus pendingStatus);
+                              @Param("pendingStatus") OutboxStatus pendingStatus,
+                              @Param("nextAttemptAt") Instant nextAttemptAt);
 
     @Modifying
     @Transactional

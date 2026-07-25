@@ -21,6 +21,16 @@ public class OutboxProperties {
     private int maxRetries = 3;
 
     /**
+     * Base delay (ms) for the exponential retry backoff: attempt n waits base * 2^n, capped at the max.
+     */
+    private long retryBackoffBaseMs = 1000;
+
+    /**
+     * Upper bound (ms) for the exponential retry backoff delay.
+     */
+    private long retryBackoffMaxMs = 60000;
+
+    /**
      * Number of days to retain COMPLETED and FAILED outbox events before cleanup.
      */
     private int retentionDays = 7;

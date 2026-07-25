@@ -1,0 +1,12 @@
+databaseChangeLog:
+  - changeSet:
+      id: 003-add-next-attempt-at-to-outbox-events
+      author: flow-wallet
+      changes:
+        - addColumn:
+            tableName: outbox_events
+            columns:
+              - column:
+                  name: next_attempt_at
+                  type: TIMESTAMP
+                  remarks: "Earliest time a PENDING event may be re-dispatched by the poller (retry backoff); NULL = eligible immediately."

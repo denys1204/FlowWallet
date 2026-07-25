@@ -49,4 +49,8 @@ public class OutboxEvent {
 
     @Column(name = "processed_at")
     private Instant processedAt;
+
+    /** Earliest time this event may be re-dispatched by the poller (retry backoff); null = eligible now. */
+    @Column(name = "next_attempt_at")
+    private Instant nextAttemptAt;
 }

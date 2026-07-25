@@ -61,14 +61,36 @@ public class OutboxMessageSender {
     ) {
         log.error("Failed to process outbox event {}. Incrementing retry count.", event.getId(), cause);
 
+        Instant nextAttemptAt = Instant.now().plusMillis(backoffMillis(
+                event.getRetryCount(),
+                outboxProperties.getRetryBackoffBaseMs(),
+                outboxProperties.getRetryBackoffMaxMs()
+        ));
+
         outboxEventRepository.incrementRetryOrFail(
                 event.getId(),
                 errorMessage,
                 outboxProperties.getMaxRetries(),
                 OutboxStatus.FAILED,
-                OutboxStatus.PENDING
+                OutboxStatus.PENDING,
+                nextAttemptAt
         );
 
         return new OutboxMessageProcessingException("Failed to send outbox event to Kafka", cause);
+    }
+
+    /**
+     * Exponential backoff (ms) for the given retry attempt: {@code baseMs * 2^retryCount}, capped at
+     * {@code maxMs}. Overflow (very large {@code retryCount}) also clamps to {@code maxMs}.
+     */
+    static long backoffMillis(int retryCount, long baseMs, long maxMs) {
+        if (retryCount < 0) {
+            return baseMs;
+        }
+        if (retryCount >= Long.SIZE - 1) {
+            return maxMs;
+        }
+        long delay = baseMs << retryCount;
+        return (delay < 0 || delay > maxMs) ? maxMs : delay;
     }
 }
