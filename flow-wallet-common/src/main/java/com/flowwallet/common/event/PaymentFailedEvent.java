@@ -1,5 +1,6 @@
 package com.flowwallet.common.event;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 
 /**
@@ -8,6 +9,8 @@ import java.time.Instant;
  *
  * @param transactionReference  unique reference for idempotency
  * @param providerTransactionId provider transaction ID
+ * @param amount                payment amount in major currency units
+ * @param currency              ISO 4217 currency code
  * @param walletId              target wallet
  * @param userId                wallet owner's user ID
  * @param reason                reason for failure
@@ -16,6 +19,8 @@ import java.time.Instant;
 public record PaymentFailedEvent(
         String transactionReference,
         String providerTransactionId,
+        BigDecimal amount,
+        String currency,
         Long walletId,
         String userId,
         String reason,
