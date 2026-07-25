@@ -8,7 +8,11 @@ import org.springframework.http.HttpStatus;
  * different user. Maps to HTTP 409 Conflict.
  */
 public class DuplicateTransactionReferenceException extends ApiException {
-    public DuplicateTransactionReferenceException(String message) {
+    private DuplicateTransactionReferenceException(String message) {
         super(HttpStatus.CONFLICT, message);
+    }
+
+    public static DuplicateTransactionReferenceException forReference(String transactionReference) {
+        return new DuplicateTransactionReferenceException("Transaction reference already in use: " + transactionReference);
     }
 }

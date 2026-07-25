@@ -1,6 +1,5 @@
 package com.flowwallet.payment.transaction;
 
-import com.flowwallet.common.enums.TransactionStatus;
 import com.flowwallet.payment.outbox.PaymentOutboxService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,17 +23,11 @@ public class PaymentTransactionHandler {
         log.info("Processing payment success for provider tx: {}", providerTransactionId);
 
         processUnprocessedTransaction(providerTransactionId, providerEventId, tx -> {
-            // Idempotent no-op if already settled. A late success after a failed attempt
-            // (FAILED -> SUCCESS) is allowed: Stripe can retry the same PaymentIntent and succeed.
-            if (tx.getStatus() == TransactionStatus.SUCCESS) {
-                return;
+            if (tx.markAsSuccess(providerEventId)) {
+                transactionRepository.save(tx);
+                outboxService.publishPaymentCompleted(tx);
+                log.info("Successfully processed payment success for tx: {}", tx.getTransactionReference());
             }
-
-            tx.markAsSuccess(providerEventId);
-            transactionRepository.save(tx);
-            outboxService.publishPaymentCompleted(tx);
-
-            log.info("Successfully processed payment success for tx: {}", tx.getTransactionReference());
         });
     }
 
@@ -44,18 +37,13 @@ public class PaymentTransactionHandler {
         log.info("Processing payment failure for provider tx: {}", providerTransactionId);
 
         processUnprocessedTransaction(providerTransactionId, providerEventId, tx -> {
-            // SUCCESS is terminal: a late/duplicate failure must not overwrite it, and an
-            // already-FAILED transaction must not re-publish. Only PENDING may transition to FAILED.
-            if (tx.getStatus() != TransactionStatus.PENDING) {
+            if (tx.markAsFailed(providerEventId)) {
+                transactionRepository.save(tx);
+                outboxService.publishPaymentFailed(tx, "Payment failed via webhook");
+                log.info("Successfully processed payment failure for tx: {}", tx.getTransactionReference());
+            } else {
                 log.info("Ignoring payment failure for {} transaction: {}", tx.getStatus(), tx.getTransactionReference());
-                return;
             }
-
-            tx.markAsFailed(providerEventId);
-            transactionRepository.save(tx);
-            outboxService.publishPaymentFailed(tx, "Payment failed via webhook");
-
-            log.info("Successfully processed payment failure for tx: {}", tx.getTransactionReference());
         });
     }
 

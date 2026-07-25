@@ -59,8 +59,7 @@ public class PaymentService {
         return repository.findByTransactionReference(transactionReference)
                 .map(tx -> {
                     if (!tx.getUserId().equals(userId)) {
-                        throw new DuplicateTransactionReferenceException(
-                                "Transaction reference already in use: " + transactionReference);
+                        throw DuplicateTransactionReferenceException.forReference(transactionReference);
                     }
                     log.info("Returning existing payment transaction for reference: {}", transactionReference);
                     return new PaymentIntentResponse(
@@ -80,10 +79,7 @@ public class PaymentService {
             return repository.saveAndFlush(PaymentTransaction.create(request, userId));
         } catch (DataIntegrityViolationException e) {
             log.warn("Concurrent creation detected for transaction reference: {}", request.transactionReference());
-
-            throw new DuplicateTransactionReferenceException(
-                    "Transaction reference already in use: " + request.transactionReference()
-            );
+            throw DuplicateTransactionReferenceException.forReference(request.transactionReference());
         }
     }
 }

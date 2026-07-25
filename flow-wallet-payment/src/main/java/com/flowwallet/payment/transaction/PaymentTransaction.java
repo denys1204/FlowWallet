@@ -67,14 +67,35 @@ public class PaymentTransaction {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
-    public void markAsSuccess(String providerEventId) {
+    /**
+     * Settles the transaction as SUCCESS. Idempotent — an already-SUCCESS transaction is left unchanged.
+     * A previously FAILED attempt may still be promoted, since Stripe can retry the same PaymentIntent and
+     * eventually succeed.
+     *
+     * @return {@code true} only if this call actually changed the state (i.e. a PaymentCompleted event is due)
+     */
+    public boolean markAsSuccess(String providerEventId) {
+        if (this.status == TransactionStatus.SUCCESS) {
+            return false;
+        }
         this.status = TransactionStatus.SUCCESS;
         this.providerEventId = providerEventId;
+        return true;
     }
 
-    public void markAsFailed(String providerEventId) {
+    /**
+     * Marks the transaction as FAILED. Only a PENDING transaction may fail: SUCCESS is terminal, and an
+     * already-FAILED transaction is left unchanged so no duplicate event is emitted.
+     *
+     * @return {@code true} only if this call actually changed the state (i.e. a PaymentFailed event is due)
+     */
+    public boolean markAsFailed(String providerEventId) {
+        if (this.status != TransactionStatus.PENDING) {
+            return false;
+        }
         this.status = TransactionStatus.FAILED;
         this.providerEventId = providerEventId;
+        return true;
     }
 
     public void markAsInitiated(String providerTransactionId, java.util.Map<String, Object> providerMetadata) {
