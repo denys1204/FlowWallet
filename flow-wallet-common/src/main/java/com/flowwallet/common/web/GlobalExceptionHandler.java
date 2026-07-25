@@ -4,6 +4,7 @@ import com.flowwallet.common.exception.ApiException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
+import org.jspecify.annotations.NonNull;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -67,10 +68,12 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     /** Request-body validation (@Valid @RequestBody) — enrich the framework problem with field errors. */
     @Override
-    protected ResponseEntity<Object> handleMethodArgumentNotValid(MethodArgumentNotValidException ex,
-                                                                  HttpHeaders headers,
-                                                                  HttpStatusCode status,
-                                                                  WebRequest request) {
+    protected ResponseEntity<Object> handleMethodArgumentNotValid(
+            MethodArgumentNotValidException ex,
+            @NonNull HttpHeaders headers,
+            @NonNull HttpStatusCode status,
+            @NonNull WebRequest request
+    ) {
         ProblemDetail body = ex.getBody();
         body.setProperty("errors", ex.getBindingResult().getFieldErrors().stream()
                 .map(fe -> fe.getField() + " " + fe.getDefaultMessage())
@@ -80,11 +83,13 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     /** Enrich every problem+json body (ours and the framework's) with a timestamp and request path. */
     @Override
-    protected ResponseEntity<Object> handleExceptionInternal(Exception ex,
-                                                             Object body,
-                                                             HttpHeaders headers,
-                                                             HttpStatusCode statusCode,
-                                                             WebRequest request) {
+    protected ResponseEntity<Object> handleExceptionInternal(
+            Exception ex,
+            Object body,
+            HttpHeaders headers,
+            HttpStatusCode statusCode,
+            WebRequest request
+    ) {
         if (body instanceof ProblemDetail pd) {
             enrich(pd, path(request));
         }

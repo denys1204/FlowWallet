@@ -1,5 +1,6 @@
 package com.flowwallet.common.exception;
 
+import lombok.Getter;
 import org.springframework.http.HttpStatus;
 
 /**
@@ -10,8 +11,8 @@ import org.springframework.http.HttpStatus;
  * meaningful exception instead of hard-coding status codes in controllers. Messages of
  * {@code ApiException}s are considered safe to expose to clients as the problem {@code detail}.
  */
+@Getter
 public abstract class ApiException extends RuntimeException {
-
     private final HttpStatus status;
 
     protected ApiException(HttpStatus status, String message) {
@@ -22,9 +23,5 @@ public abstract class ApiException extends RuntimeException {
     protected ApiException(HttpStatus status, String message, Throwable cause) {
         super(message, cause);
         this.status = status;
-    }
-
-    public HttpStatus getStatus() {
-        return status;
     }
 }

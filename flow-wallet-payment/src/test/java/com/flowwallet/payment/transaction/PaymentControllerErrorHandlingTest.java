@@ -25,7 +25,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * so the test is fast and focused.
  */
 class PaymentControllerErrorHandlingTest {
-
     private final PaymentService paymentService = Mockito.mock(PaymentService.class);
     private MockMvc mockMvc;
 
@@ -60,7 +59,13 @@ class PaymentControllerErrorHandlingTest {
     @Test
     void invalidRequestBodyReturns400WithFieldErrors() throws Exception {
         String invalidBody = """
-                { "transactionReference": "", "amount": 0, "currency": "US", "walletId": null, "providerName": "" }
+                {
+                    "transactionReference": "",
+                    "amount": 0,
+                    "currency": "US",
+                    "walletId": null,
+                    "providerName": ""
+                }
                 """;
 
         mockMvc.perform(post("/api/payments/intent")
