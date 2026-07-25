@@ -24,6 +24,8 @@ public class PaymentTransactionHandler {
         log.info("Processing payment success for provider tx: {}", providerTransactionId);
 
         processUnprocessedTransaction(providerTransactionId, providerEventId, tx -> {
+            // Idempotent no-op if already settled. A late success after a failed attempt
+            // (FAILED -> SUCCESS) is allowed: Stripe can retry the same PaymentIntent and succeed.
             if (tx.getStatus() == TransactionStatus.SUCCESS) {
                 return;
             }
@@ -42,6 +44,13 @@ public class PaymentTransactionHandler {
         log.info("Processing payment failure for provider tx: {}", providerTransactionId);
 
         processUnprocessedTransaction(providerTransactionId, providerEventId, tx -> {
+            // SUCCESS is terminal: a late/duplicate failure must not overwrite it, and an
+            // already-FAILED transaction must not re-publish. Only PENDING may transition to FAILED.
+            if (tx.getStatus() != TransactionStatus.PENDING) {
+                log.info("Ignoring payment failure for {} transaction: {}", tx.getStatus(), tx.getTransactionReference());
+                return;
+            }
+
             tx.markAsFailed(providerEventId);
             transactionRepository.save(tx);
             outboxService.publishPaymentFailed(tx, "Payment failed via webhook");
