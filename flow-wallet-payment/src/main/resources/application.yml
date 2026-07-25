@@ -6,8 +6,9 @@ spring:
     name: flow-wallet-payment
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/payment_db
-    username: ${DB_USER:flowadmin}
-    password: ${DB_PASSWORD:flowsecret}
+    # Same credentials Docker Compose provisions Postgres with — single source of truth.
+    username: ${POSTGRES_USER:flowadmin}
+    password: ${POSTGRES_PASSWORD:flowsecret}
     driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: ${DB_POOL_MAX_SIZE:10}

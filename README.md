@@ -269,24 +269,21 @@ detail; internal specifics are logged, never returned).
 ### Prerequisites
 
 - **JDK 25** (e.g. Amazon Corretto 25)
-- **Maven 3.9+** (no Maven wrapper is committed yet)
+- **Maven** — optional; the repo ships the `./mvnw` wrapper, so no local Maven is required
 - **Docker + Docker Compose**
 - A **Stripe** account for real payments (test keys work out of the box for local dev)
 
 ### 1. Configure environment
 
-Create a `.env` file in the project root (it is git-ignored). Minimum keys:
+Copy the committed template and fill in your values (the real `.env` is git-ignored):
 
-```dotenv
-POSTGRES_USER=flowadmin
-POSTGRES_PASSWORD=flowsecret
-STRIPE_API_KEY=sk_test_xxx
-STRIPE_WEBHOOK_SECRET=whsec_xxx
+```bash
+cp .env.example .env
 ```
 
-> **Note:** Docker Compose provisions PostgreSQL using `POSTGRES_USER`/`POSTGRES_PASSWORD`, while the
-> services connect using `DB_USER`/`DB_PASSWORD` (defaulting to `flowadmin`/`flowsecret`). Keep these
-> consistent — see [Configuration](#configuration).
+At minimum set your Stripe test keys (`STRIPE_API_KEY`, `STRIPE_WEBHOOK_SECRET`); everything else has a
+working local default. Both Docker Compose and the services read the **same** `POSTGRES_USER` /
+`POSTGRES_PASSWORD`, so the database credentials have a single source of truth.
 
 ### 2. Start infrastructure
 
@@ -300,7 +297,7 @@ and Kafka-UI at `http://localhost:8090`.
 ### 3. Build
 
 ```bash
-mvn clean install
+./mvnw clean install
 ```
 
 ### 4. Run the services
@@ -308,11 +305,11 @@ mvn clean install
 Each service is a standalone Spring Boot app (there are no service Dockerfiles yet). In separate terminals:
 
 ```bash
-mvn -pl flow-wallet-gateway spring-boot:run
+./mvnw -pl flow-wallet-gateway spring-boot:run
 ```
 
 ```bash
-mvn -pl flow-wallet-payment spring-boot:run
+./mvnw -pl flow-wallet-payment spring-boot:run
 ```
 
 ### 5. Forward Stripe webhooks (local dev)
@@ -331,7 +328,7 @@ All settings are environment-overridable. Highlights:
 | `WALLET_SERVICE_PORT` | `8081` | Gateway (routing target only; the wallet service currently hardcodes `8081`) |
 | `PAYMENT_SERVICE_PORT` | `8082` | Gateway routing / Payment |
 | `DB_HOST` / `DB_PORT` | `localhost` / `5432` | Payment |
-| `DB_USER` / `DB_PASSWORD` | `flowadmin` / `flowsecret` | Payment |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` | `flowadmin` / `flowsecret` | Payment **and** Docker Compose (single source) |
 | `DB_POOL_MAX_SIZE` / `DB_POOL_MIN_IDLE` | `10` / `2` | Payment |
 | `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` | Payment |
 | `KAFKA_TOPIC_PAYMENT_EVENTS_PARTITIONS` | `3` | Payment |
