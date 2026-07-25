@@ -2,8 +2,11 @@ package com.flowwallet.payment.provider.stripe;
 
 import com.flowwallet.payment.provider.dto.PaymentInitiationResult;
 import com.flowwallet.payment.provider.dto.PaymentRequestContext;
+import com.flowwallet.payment.provider.exception.PaymentInitiationException;
 import com.flowwallet.payment.provider.stripe.client.StripeClient;
 import com.flowwallet.payment.provider.stripe.mapper.StripeRequestMapper;
+import com.stripe.exception.ApiConnectionException;
+import com.stripe.exception.StripeException;
 import com.stripe.model.PaymentIntent;
 import com.stripe.param.PaymentIntentCreateParams;
 import org.junit.jupiter.api.Test;
@@ -11,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import java.math.BigDecimal;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -40,5 +44,23 @@ class StripePaymentStrategyTest {
         assertThat(result.providerTransactionId()).isEqualTo("pi_123");
         assertThat(result.providerData()).containsEntry("clientSecret", "cs_test");
         verify(stripeClient).createPaymentIntent(params, "ref-1");
+    }
+
+    @Test
+    void wrapsStripeExceptionAsPaymentInitiationException() throws Exception {
+        PaymentRequestContext context =
+                new PaymentRequestContext("ref-1", new BigDecimal("50.00"), "USD", 1L, "user-1");
+        PaymentIntentCreateParams params = PaymentIntentCreateParams.builder()
+                .setAmount(5000L)
+                .setCurrency("usd")
+                .build();
+        when(requestMapper.toPaymentIntentParams(context)).thenReturn(params);
+
+        StripeException stripeException = new ApiConnectionException("stripe unreachable");
+        when(stripeClient.createPaymentIntent(params, "ref-1")).thenThrow(stripeException);
+
+        assertThatThrownBy(() -> strategy.initiatePayment(context))
+                .isInstanceOf(PaymentInitiationException.class)
+                .hasCause(stripeException);
     }
 }

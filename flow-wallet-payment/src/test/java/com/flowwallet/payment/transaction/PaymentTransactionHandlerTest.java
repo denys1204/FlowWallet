@@ -10,6 +10,7 @@ import java.math.BigDecimal;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -106,6 +107,41 @@ class PaymentTransactionHandlerTest {
 
         verify(repository, never()).findByProviderTransactionId(anyString());
         verify(outboxService, never()).publishPaymentCompleted(any());
+    }
+
+    @Test
+    void handleSuccessSettlesPendingTransactionAndPublishes() {
+        PaymentTransaction tx = transactionWith(TransactionStatus.PENDING);
+        when(repository.existsByProviderEventId("evt_ok")).thenReturn(false);
+        when(repository.findByProviderTransactionId("pi_123")).thenReturn(Optional.of(tx));
+
+        handler.handleSuccess("pi_123", "evt_ok");
+
+        assertThat(tx.getStatus()).isEqualTo(TransactionStatus.SUCCESS);
+        verify(repository).save(tx);
+        verify(outboxService).publishPaymentCompleted(tx);
+    }
+
+    @Test
+    void handleSuccessThrowsWhenTransactionNotFound() {
+        when(repository.existsByProviderEventId("evt_ok")).thenReturn(false);
+        when(repository.findByProviderTransactionId("pi_missing")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> handler.handleSuccess("pi_missing", "evt_ok"))
+                .isInstanceOf(TransactionNotFoundException.class);
+        verify(repository, never()).save(any());
+        verify(outboxService, never()).publishPaymentCompleted(any());
+    }
+
+    @Test
+    void handleFailureThrowsWhenTransactionNotFound() {
+        when(repository.existsByProviderEventId("evt_fail")).thenReturn(false);
+        when(repository.findByProviderTransactionId("pi_missing")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> handler.handleFailure("pi_missing", "evt_fail"))
+                .isInstanceOf(TransactionNotFoundException.class);
+        verify(repository, never()).save(any());
+        verify(outboxService, never()).publishPaymentFailed(any(), anyString());
     }
 
     private PaymentTransaction transactionWith(TransactionStatus status) {
