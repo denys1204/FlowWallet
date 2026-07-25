@@ -65,4 +65,13 @@ public interface OutboxEventRepository extends JpaRepository<OutboxEvent, Long> 
     @Query("DELETE FROM OutboxEvent e WHERE e.status IN :statuses AND e.createdAt < :before")
     int deleteOldEvents(@Param("statuses") Collection<OutboxStatus> statuses,
                         @Param("before") Instant before);
+
+    long countByStatus(OutboxStatus status);
+
+    @Modifying
+    @Transactional
+    @Query("UPDATE OutboxEvent e SET e.status = :pendingStatus, e.retryCount = 0, e.errorMessage = null, "
+            + "e.nextAttemptAt = null, e.processingStartedAt = null WHERE e.status = :failedStatus")
+    int requeueFailed(@Param("pendingStatus") OutboxStatus pendingStatus,
+                      @Param("failedStatus") OutboxStatus failedStatus);
 }
