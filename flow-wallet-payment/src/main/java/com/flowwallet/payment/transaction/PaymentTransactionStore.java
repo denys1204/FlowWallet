@@ -1,6 +1,6 @@
 package com.flowwallet.payment.transaction;
 
-import com.flowwallet.common.dto.CreatePaymentIntentRequest;
+import com.flowwallet.payment.dto.CreatePaymentIntentRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;

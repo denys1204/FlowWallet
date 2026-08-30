@@ -1,7 +1,7 @@
 package com.flowwallet.payment.transaction;
 
-import com.flowwallet.common.dto.CreatePaymentIntentRequest;
-import com.flowwallet.common.dto.PaymentIntentResponse;
+import com.flowwallet.payment.dto.CreatePaymentIntentRequest;
+import com.flowwallet.payment.dto.PaymentIntentResponse;
 import com.flowwallet.payment.provider.PaymentProviderFactory;
 import com.flowwallet.payment.provider.PaymentProviderStrategy;
 import com.flowwallet.payment.provider.dto.PaymentInitiationResult;

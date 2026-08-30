@@ -1,4 +1,4 @@
-package com.flowwallet.common.enums;
+package com.flowwallet.payment.transaction;
 
 /**
  * Status of a payment transaction throughout its lifecycle.

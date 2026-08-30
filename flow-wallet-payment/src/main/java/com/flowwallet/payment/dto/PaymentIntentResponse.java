@@ -1,4 +1,4 @@
-package com.flowwallet.common.dto;
+package com.flowwallet.payment.dto;
 
 import java.util.Map;
 

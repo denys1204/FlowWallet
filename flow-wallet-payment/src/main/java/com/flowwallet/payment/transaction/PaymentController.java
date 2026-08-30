@@ -1,7 +1,7 @@
 package com.flowwallet.payment.transaction;
 
-import com.flowwallet.common.dto.CreatePaymentIntentRequest;
-import com.flowwallet.common.dto.PaymentIntentResponse;
+import com.flowwallet.payment.dto.CreatePaymentIntentRequest;
+import com.flowwallet.payment.dto.PaymentIntentResponse;
 import com.flowwallet.common.security.CurrentUserId;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;

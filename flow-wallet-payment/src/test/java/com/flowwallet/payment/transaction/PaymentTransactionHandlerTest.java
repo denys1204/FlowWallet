@@ -1,7 +1,6 @@
 package com.flowwallet.payment.transaction;
 
-import com.flowwallet.common.dto.CreatePaymentIntentRequest;
-import com.flowwallet.common.enums.TransactionStatus;
+import com.flowwallet.payment.dto.CreatePaymentIntentRequest;
 import com.flowwallet.payment.outbox.PaymentOutboxService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

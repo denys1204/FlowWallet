@@ -1,7 +1,6 @@
 package com.flowwallet.payment.transaction;
 
-import com.flowwallet.common.dto.CreatePaymentIntentRequest;
-import com.flowwallet.common.enums.TransactionStatus;
+import com.flowwallet.payment.dto.CreatePaymentIntentRequest;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;

@@ -1,4 +1,4 @@
-package com.flowwallet.common.dto;
+package com.flowwallet.wallet.dto;
 
 import java.math.BigDecimal;
 import java.time.Instant;

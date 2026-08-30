@@ -1,4 +1,4 @@
-package com.flowwallet.common.dto;
+package com.flowwallet.wallet.dto;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;

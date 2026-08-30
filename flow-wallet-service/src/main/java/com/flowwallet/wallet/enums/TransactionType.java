@@ -1,4 +1,4 @@
-package com.flowwallet.common.enums;
+package com.flowwallet.wallet.enums;
 
 /**
  * Type of wallet balance operation.
