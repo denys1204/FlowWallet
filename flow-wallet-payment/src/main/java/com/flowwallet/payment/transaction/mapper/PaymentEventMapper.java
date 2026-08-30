@@ -1,9 +1,9 @@
 package com.flowwallet.payment.transaction.mapper;
 
-import com.flowwallet.common.constant.KafkaConstants;
+import com.flowwallet.contract.constant.KafkaConstants;
 import com.flowwallet.payment.dto.PaymentIntentResponse;
-import com.flowwallet.common.event.PaymentCompletedEvent;
-import com.flowwallet.common.event.PaymentFailedEvent;
+import com.flowwallet.contract.event.PaymentCompletedEvent;
+import com.flowwallet.contract.event.PaymentFailedEvent;
 import com.flowwallet.payment.outbox.OutboxEvent;
 import com.flowwallet.payment.transaction.PaymentTransaction;
 import com.flowwallet.payment.provider.dto.PaymentRequestContext;

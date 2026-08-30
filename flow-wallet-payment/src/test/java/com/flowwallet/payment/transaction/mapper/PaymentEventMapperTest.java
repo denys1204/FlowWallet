@@ -2,8 +2,8 @@ package com.flowwallet.payment.transaction.mapper;
 
 import com.flowwallet.payment.dto.CreatePaymentIntentRequest;
 import com.flowwallet.payment.dto.PaymentIntentResponse;
-import com.flowwallet.common.event.PaymentCompletedEvent;
-import com.flowwallet.common.event.PaymentFailedEvent;
+import com.flowwallet.contract.event.PaymentCompletedEvent;
+import com.flowwallet.contract.event.PaymentFailedEvent;
 import com.flowwallet.payment.transaction.PaymentTransaction;
 import org.junit.jupiter.api.Test;
 

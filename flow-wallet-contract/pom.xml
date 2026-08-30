@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.flowwallet</groupId>
+        <artifactId>flow-wallet</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>flow-wallet-contract</artifactId>
+    <packaging>jar</packaging>
+
+    <name>FlowWallet :: Contract</name>
+    <description>Kafka event payloads and topic names — the published contract between services</description>
+
+    <!--
+      No dependencies, deliberately. The events are plain records; a consumer brings its own
+      serializer. Keeping this module framework-free is what stops it from turning into a
+      second common: there is nowhere here to put anything that is not a contract.
+    -->
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>

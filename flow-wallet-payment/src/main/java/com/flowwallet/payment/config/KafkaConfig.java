@@ -1,6 +1,6 @@
 package com.flowwallet.payment.config;
 
-import com.flowwallet.common.constant.KafkaConstants;
+import com.flowwallet.contract.constant.KafkaConstants;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;

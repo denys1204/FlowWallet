@@ -20,7 +20,11 @@
         <!-- Shared DTOs, Events, @CurrentUserId -->
         <dependency>
             <groupId>com.flowwallet</groupId>
-            <artifactId>flow-wallet-common</artifactId>
+            <artifactId>flow-wallet-platform</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.flowwallet</groupId>
+            <artifactId>flow-wallet-contract</artifactId>
         </dependency>
 
         <!-- Web -->

@@ -1,7 +1,7 @@
 package com.flowwallet.payment.transaction;
 
-import com.flowwallet.common.security.CurrentUserIdResolver;
-import com.flowwallet.common.web.GlobalExceptionHandler;
+import com.flowwallet.platform.security.CurrentUserIdResolver;
+import com.flowwallet.platform.web.GlobalExceptionHandler;
 import com.flowwallet.payment.provider.exception.UnsupportedPaymentProviderException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

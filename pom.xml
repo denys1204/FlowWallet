@@ -29,7 +29,8 @@
     <!-- Modules                                                       -->
     <!-- ============================================================= -->
     <modules>
-        <module>flow-wallet-common</module>
+        <module>flow-wallet-platform</module>
+        <module>flow-wallet-contract</module>
         <module>flow-wallet-gateway</module>
         <module>flow-wallet-service</module>
         <module>flow-wallet-payment</module>
@@ -70,7 +71,12 @@
             <!-- Project modules -->
             <dependency>
                 <groupId>com.flowwallet</groupId>
-                <artifactId>flow-wallet-common</artifactId>
+                <artifactId>flow-wallet-platform</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.flowwallet</groupId>
+                <artifactId>flow-wallet-contract</artifactId>
                 <version>${project.version}</version>
             </dependency>
 

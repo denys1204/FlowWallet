@@ -1,0 +1,2 @@
+com.flowwallet.platform.security.CurrentUserIdAutoConfiguration
+com.flowwallet.platform.web.WebExceptionHandlerAutoConfiguration

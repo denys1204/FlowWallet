@@ -2,7 +2,7 @@ package com.flowwallet.payment.transaction;
 
 import com.flowwallet.payment.dto.CreatePaymentIntentRequest;
 import com.flowwallet.payment.dto.PaymentIntentResponse;
-import com.flowwallet.common.security.CurrentUserId;
+import com.flowwallet.platform.security.CurrentUserId;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.PostMapping;

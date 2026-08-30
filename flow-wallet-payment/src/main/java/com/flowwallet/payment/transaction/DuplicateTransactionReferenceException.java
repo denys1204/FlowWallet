@@ -1,6 +1,6 @@
 package com.flowwallet.payment.transaction;
 
-import com.flowwallet.common.exception.ApiException;
+import com.flowwallet.platform.exception.ApiException;
 import org.springframework.http.HttpStatus;
 
 /**

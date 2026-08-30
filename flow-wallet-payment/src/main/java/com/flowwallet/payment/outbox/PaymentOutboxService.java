@@ -2,8 +2,8 @@ package com.flowwallet.payment.outbox;
 
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
-import com.flowwallet.common.event.PaymentCompletedEvent;
-import com.flowwallet.common.event.PaymentFailedEvent;
+import com.flowwallet.contract.event.PaymentCompletedEvent;
+import com.flowwallet.contract.event.PaymentFailedEvent;
 import com.flowwallet.payment.transaction.PaymentTransaction;
 import com.flowwallet.payment.transaction.mapper.PaymentEventMapper;
 import lombok.RequiredArgsConstructor;

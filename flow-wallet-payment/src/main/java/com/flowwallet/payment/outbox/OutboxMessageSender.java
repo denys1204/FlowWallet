@@ -1,6 +1,6 @@
 package com.flowwallet.payment.outbox;
 
-import com.flowwallet.common.constant.KafkaConstants;
+import com.flowwallet.contract.constant.KafkaConstants;
 import com.flowwallet.payment.config.OutboxProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
