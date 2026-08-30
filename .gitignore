@@ -47,3 +47,8 @@ postman/
 
 # === Secrets ===
 .env
+
+# === Local working notes ===
+# Roadmap tracker kept on disk only: it changes on every increment and says
+# nothing a reader of the repository needs.
+implementation_plan.md
