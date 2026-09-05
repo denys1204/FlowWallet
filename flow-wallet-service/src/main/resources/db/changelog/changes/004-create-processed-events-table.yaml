@@ -1,0 +1,67 @@
+databaseChangeLog:
+  - changeSet:
+      id: 004-create-processed-events-seq
+      author: flow-wallet
+      changes:
+        - createSequence:
+            sequenceName: processed_events_seq
+            incrementBy: 50
+            startValue: 1
+  - changeSet:
+      id: 004-create-processed-events-table
+      author: flow-wallet
+      changes:
+        - createTable:
+            tableName: processed_events
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: event_id
+                  type: VARCHAR(128)
+                  constraints:
+                    nullable: false
+                    unique: true
+              - column:
+                  name: event_type
+                  type: VARCHAR(64)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: transaction_reference
+                  type: VARCHAR(64)
+                  remarks: "The payment this event belongs to; NULL only when a rejected event carried none."
+              - column:
+                  name: amount
+                  type: NUMERIC(19,4)
+                  remarks: "What the event claimed, so parked money can be totalled without parsing payloads."
+              - column:
+                  name: outcome
+                  type: VARCHAR(20)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: rejection_reason
+                  type: VARCHAR(20)
+                  remarks: "Why the event was REJECTED; NULL for any other outcome."
+              - column:
+                  name: payload
+                  type: TEXT
+                  remarks: "Raw record value, kept so a rejected or failed event can be replayed once the cause is fixed. NULL for a clean credit, whose effect already lives in balance_history."
+              - column:
+                  name: processed_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+        - createIndex:
+            tableName: processed_events
+            indexName: idx_processed_events_outcome_processed_at
+            columns:
+              - column:
+                  name: outcome
+              - column:
+                  name: processed_at

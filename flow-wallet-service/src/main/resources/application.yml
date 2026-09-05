@@ -31,6 +31,14 @@ spring:
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       enable-auto-commit: false
+    producer:
+      # Only the dead-letter topic is produced to, but a failed credit is exactly the record that must not
+      # be lost on the way to it, so the guarantees match the payment service's.
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      properties:
+        enable.idempotence: true
     listener:
       concurrency: ${KAFKA_LISTENER_CONCURRENCY:3}
       ack-mode: RECORD
@@ -38,6 +46,14 @@ spring:
       security.protocol: ${KAFKA_SECURITY_PROTOCOL:PLAINTEXT}
       sasl.mechanism: ${KAFKA_SASL_MECHANISM:PLAIN}
       sasl.jaas.config: ${KAFKA_SASL_JAAS_CONFIG:}
+
+wallet:
+  consumer:
+    retry:
+      max-attempts: ${WALLET_CONSUMER_RETRY_MAX_ATTEMPTS:3}
+      initial-interval-ms: ${WALLET_CONSUMER_RETRY_INITIAL_INTERVAL_MS:500}
+      max-interval-ms: ${WALLET_CONSUMER_RETRY_MAX_INTERVAL_MS:10000}
+      multiplier: ${WALLET_CONSUMER_RETRY_MULTIPLIER:2.0}
 
 management:
   endpoints:
