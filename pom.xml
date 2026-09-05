@@ -46,7 +46,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <!-- Spring Cloud BOM -->
-        <spring-cloud.version>2025.1.0</spring-cloud.version>
+        <spring-cloud.version>2025.1.3</spring-cloud.version>
 
         <!-- Library versions -->
         <mapstruct.version>1.6.3</mapstruct.version>
