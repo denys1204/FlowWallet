@@ -1,25 +1,23 @@
 package com.flowwallet.payment.outbox;
 
+import com.flowwallet.contract.constant.KafkaConstants;
 import com.flowwallet.payment.config.OutboxProperties;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.SendResult;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 @SuppressWarnings("unchecked")
 class OutboxMessageSenderTest {
@@ -47,9 +45,14 @@ class OutboxMessageSenderTest {
 
     @Test
     void failedSendSchedulesRetryWithFutureBackoff() {
-        when(repository.lockForProcessing(eq(1L), eq(OutboxStatus.PROCESSING), eq(OutboxStatus.PENDING), any())).thenReturn(1);
+        when(repository.lockForProcessing(
+                eq(1L),
+                eq(OutboxStatus.PROCESSING),
+                eq(OutboxStatus.PENDING),
+                any()
+        )).thenReturn(1);
         when(repository.findById(1L)).thenReturn(Optional.of(pendingEvent()));
-        when(kafkaTemplate.send(anyString(), any(), any())).thenReturn(
+        when(kafkaTemplate.send(any(ProducerRecord.class))).thenReturn(
                 CompletableFuture.failedFuture(new IllegalStateException("kafka down"))
         );
 
@@ -73,9 +76,14 @@ class OutboxMessageSenderTest {
 
     @Test
     void successfulSendMarksCompleted() {
-        when(repository.lockForProcessing(eq(1L), eq(OutboxStatus.PROCESSING), eq(OutboxStatus.PENDING), any())).thenReturn(1);
+        when(repository.lockForProcessing(
+                eq(1L),
+                eq(OutboxStatus.PROCESSING),
+                eq(OutboxStatus.PENDING),
+                any()
+        )).thenReturn(1);
         when(repository.findById(1L)).thenReturn(Optional.of(pendingEvent()));
-        when(kafkaTemplate.send(anyString(), any(), any())).thenReturn(
+        when(kafkaTemplate.send(any(ProducerRecord.class))).thenReturn(
                 CompletableFuture.completedFuture(mock(SendResult.class))
         );
 
@@ -85,8 +93,40 @@ class OutboxMessageSenderTest {
     }
 
     @Test
+    void publishedRecordCarriesEventTypeHeaderAndTransactionReferenceKey() {
+        when(repository.lockForProcessing(
+                eq(1L),
+                eq(OutboxStatus.PROCESSING),
+                eq(OutboxStatus.PENDING),
+                any()
+        )).thenReturn(1);
+        when(repository.findById(1L)).thenReturn(Optional.of(pendingEvent()));
+        when(kafkaTemplate.send(any(ProducerRecord.class))).thenReturn(
+                CompletableFuture.completedFuture(mock(SendResult.class))
+        );
+
+        sender.processEvent(1L);
+
+        ArgumentCaptor<ProducerRecord<String, Object>> sent = ArgumentCaptor.forClass(ProducerRecord.class);
+        verify(kafkaTemplate).send(sent.capture());
+        ProducerRecord<String, Object> record = sent.getValue();
+
+        assertThat(record.topic()).isEqualTo(KafkaConstants.PAYMENT_EVENTS_TOPIC);
+        assertThat(record.key()).isEqualTo("ref-1");
+        assertThat(record.headers().lastHeader(KafkaConstants.HEADER_EVENT_TYPE))
+                .isNotNull()
+                .extracting(h -> new String(h.value(), StandardCharsets.UTF_8))
+                .isEqualTo(KafkaConstants.EVENT_TYPE_PAYMENT_COMPLETED);
+    }
+
+    @Test
     void skipsWhenLockNotAcquired() {
-        when(repository.lockForProcessing(eq(1L), eq(OutboxStatus.PROCESSING), eq(OutboxStatus.PENDING), any())).thenReturn(0);
+        when(repository.lockForProcessing(
+                eq(1L),
+                eq(OutboxStatus.PROCESSING),
+                eq(OutboxStatus.PENDING),
+                any()
+        )).thenReturn(0);
 
         sender.processEvent(1L);
 

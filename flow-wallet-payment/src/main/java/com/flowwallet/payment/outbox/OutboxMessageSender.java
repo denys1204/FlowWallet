@@ -4,10 +4,12 @@ import com.flowwallet.contract.constant.KafkaConstants;
 import com.flowwallet.payment.config.OutboxProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.springframework.kafka.KafkaException;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.concurrent.ExecutionException;
 
@@ -38,11 +40,17 @@ public class OutboxMessageSender {
         });
 
         try {
-            kafkaTemplate.send(
+            ProducerRecord<String, Object> record = new ProducerRecord<>(
                     KafkaConstants.PAYMENT_EVENTS_TOPIC,
                     event.getAggregateId(),
                     event.getPayload()
-            ).get();
+            );
+            record.headers().add(
+                    KafkaConstants.HEADER_EVENT_TYPE,
+                    event.getEventType().getBytes(StandardCharsets.UTF_8)
+            );
+
+            kafkaTemplate.send(record).get();
 
             outboxEventRepository.markAsCompleted(event.getId(), OutboxStatus.COMPLETED, Instant.now());
             log.debug("Successfully sent outbox event {} to Kafka", event.getId());

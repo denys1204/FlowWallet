@@ -4,19 +4,26 @@ import java.math.BigDecimal;
 import java.time.Instant;
 
 /**
- * Kafka event published by Payment Service (via Transactional Outbox)
- * when a Stripe payment fails.
+ * Published by Payment Service through the Transactional Outbox when a payment fails.
+ * <p>
+ * Failure is not terminal: the same provider payment may be retried and later succeed, producing a
+ * {@link PaymentCompletedEvent} for the same {@code transactionReference}. Consumers must not treat
+ * this event as the end of the story.
  *
- * @param transactionReference  unique reference for idempotency
- * @param providerTransactionId provider transaction ID
- * @param amount                payment amount in major currency units
- * @param currency              ISO 4217 currency code
- * @param walletId              target wallet
- * @param userId                wallet owner's user ID
- * @param reason                reason for failure
- * @param failedAt              when the payment was confirmed as failed
+ * @param eventId               identifies this message; stable across redeliveries and topic replays
+ * @param schemaVersion         payload version, bumped only if a change cannot be made additively
+ * @param transactionReference  the payment this event belongs to
+ * @param providerTransactionId provider's own id, carried for support and tracing
+ * @param amount                amount in major currency units
+ * @param currency              ISO 4217 code
+ * @param walletId              wallet the payment was aimed at
+ * @param userId                who paid
+ * @param reason                free-form provider message; not a stable code, do not branch on it
+ * @param failedAt              when the failure was confirmed
  */
 public record PaymentFailedEvent(
+        String eventId,
+        int schemaVersion,
         String transactionReference,
         String providerTransactionId,
         BigDecimal amount,

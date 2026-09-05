@@ -11,12 +11,17 @@ import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 
 import java.time.Instant;
+import java.util.UUID;
 
-@Mapper(componentModel = "spring", imports = {Instant.class, KafkaConstants.class})
+@Mapper(componentModel = "spring", imports = {Instant.class, UUID.class, KafkaConstants.class})
 public interface PaymentEventMapper {
+    @Mapping(target = "eventId", expression = "java(UUID.randomUUID().toString())")
+    @Mapping(target = "schemaVersion", expression = "java(KafkaConstants.PAYMENT_EVENT_SCHEMA_VERSION)")
     @Mapping(target = "completedAt", expression = "java(Instant.now())")
     PaymentCompletedEvent toPaymentCompletedEvent(PaymentTransaction transaction);
 
+    @Mapping(target = "eventId", expression = "java(UUID.randomUUID().toString())")
+    @Mapping(target = "schemaVersion", expression = "java(KafkaConstants.PAYMENT_EVENT_SCHEMA_VERSION)")
     @Mapping(target = "failedAt", expression = "java(Instant.now())")
     PaymentFailedEvent toPaymentFailedEvent(PaymentTransaction transaction, String reason);
 
