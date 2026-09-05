@@ -14,20 +14,20 @@ import static org.assertj.core.api.Assertions.assertThat;
  * otherwise go unnoticed until someone booted the application by hand. These tests bind the real class
  * against real property values, which is the cheapest way to keep that from happening.
  */
-class PaymentTopUpPropertiesTest {
+class PaymentDepositPropertiesTest {
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(
                     ConfigurationPropertiesAutoConfiguration.class,
                     ValidationAutoConfiguration.class
             ))
-            .withUserConfiguration(PaymentTopUpProperties.class);
+            .withUserConfiguration(PaymentDepositProperties.class);
 
     @Test
     @DisplayName("falls back to the shipped bounds when nothing is configured")
     void defaultsMatchWhatShipped() {
         runner.run(context -> {
             assertThat(context).hasNotFailed();
-            PaymentTopUpProperties limits = context.getBean(PaymentTopUpProperties.class);
+            PaymentDepositProperties limits = context.getBean(PaymentDepositProperties.class);
             assertThat(limits.getMinAmount()).isEqualByComparingTo("1.00");
             assertThat(limits.getMaxAmount()).isEqualByComparingTo("10000.00");
         });
@@ -37,11 +37,11 @@ class PaymentTopUpPropertiesTest {
     @DisplayName("binds the documented property keys")
     void bindsConfiguredValues() {
         runner.withPropertyValues(
-                "payment.top-up.min-amount=0.50",
-                "payment.top-up.max-amount=250000.00"
+                "payment.deposit.min-amount=0.50",
+                "payment.deposit.max-amount=250000.00"
         ).run(context -> {
             assertThat(context).hasNotFailed();
-            PaymentTopUpProperties limits = context.getBean(PaymentTopUpProperties.class);
+            PaymentDepositProperties limits = context.getBean(PaymentDepositProperties.class);
             assertThat(limits.getMinAmount()).isEqualByComparingTo("0.50");
             assertThat(limits.getMaxAmount()).isEqualByComparingTo("250000.00");
         });
@@ -51,15 +51,15 @@ class PaymentTopUpPropertiesTest {
     @DisplayName("an inverted range fails startup instead of rejecting every payment in silence")
     void invertedRangeFailsStartup() {
         runner.withPropertyValues(
-                "payment.top-up.min-amount=100.00",
-                "payment.top-up.max-amount=10.00"
+                "payment.deposit.min-amount=100.00",
+                "payment.deposit.max-amount=10.00"
         ).run(context -> assertThat(context).hasFailed());
     }
 
     @Test
     @DisplayName("a non-positive bound fails startup")
     void nonPositiveMinimumFailsStartup() {
-        runner.withPropertyValues("payment.top-up.min-amount=0").run(
+        runner.withPropertyValues("payment.deposit.min-amount=0").run(
                 context -> assertThat(context).hasFailed()
         );
     }

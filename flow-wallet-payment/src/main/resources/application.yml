@@ -51,9 +51,9 @@ payment:
     optimistic-lock:
       max-attempts: ${PAYMENT_OPTIMISTIC_LOCK_MAX_ATTEMPTS:3}
       backoff-delay-ms: ${PAYMENT_OPTIMISTIC_LOCK_BACKOFF_MS:50}
-  top-up:
-    min-amount: ${PAYMENT_MIN_TOP_UP_AMOUNT:1.00}
-    max-amount: ${PAYMENT_MAX_TOP_UP_AMOUNT:10000.00}
+  deposit:
+    min-amount: ${PAYMENT_MIN_DEPOSIT_AMOUNT:1.00}
+    max-amount: ${PAYMENT_MAX_DEPOSIT_AMOUNT:10000.00}
 
 outbox:
   poll-interval-ms: ${OUTBOX_POLL_INTERVAL_MS:10000}

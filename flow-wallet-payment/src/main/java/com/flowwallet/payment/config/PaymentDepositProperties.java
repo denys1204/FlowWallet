@@ -12,7 +12,7 @@ import org.springframework.validation.annotation.Validated;
 import java.math.BigDecimal;
 
 /**
- * Bounds on a single top-up. Payment Service owns this rule and is the only place that enforces it,
+ * Bounds on a single deposit. Payment Service owns this rule and is the only place that enforces it,
  * so a caller forwarding a request here does not re-declare the range and the two cannot disagree.
  * <p>
  * These are commercial limits, not properties of the domain — a risk team tightens them, a regulator
@@ -23,8 +23,8 @@ import java.math.BigDecimal;
 @Setter
 @Validated
 @Configuration
-@ConfigurationProperties(prefix = "payment.top-up")
-public class PaymentTopUpProperties {
+@ConfigurationProperties(prefix = "payment.deposit")
+public class PaymentDepositProperties {
     /**
      * Smallest accepted amount, in major currency units, inclusive.
      * <p>
@@ -32,7 +32,7 @@ public class PaymentTopUpProperties {
      * the rejection message renders this value, and {@code 1.0} would read back as "1.0".
      */
     @NotNull
-    @DecimalMin(value = "0", inclusive = false, message = "payment.top-up.min-amount must be greater than zero")
+    @DecimalMin(value = "0", inclusive = false, message = "payment.deposit.min-amount must be greater than zero")
     private BigDecimal minAmount = new BigDecimal("1.00");
 
     /**
@@ -40,14 +40,14 @@ public class PaymentTopUpProperties {
      * {@code NUMERIC(19,4)}, orders of magnitude wider, so raising this cannot truncate stored data.
      */
     @NotNull
-    @DecimalMin(value = "0", inclusive = false, message = "payment.top-up.max-amount must be greater than zero")
+    @DecimalMin(value = "0", inclusive = false, message = "payment.deposit.max-amount must be greater than zero")
     private BigDecimal maxAmount = new BigDecimal("10000.00");
 
     /**
      * An inverted range would reject every payment while the service still reported itself healthy —
      * the worst kind of misconfiguration, because nothing points at the cause. Failing startup instead.
      */
-    @AssertTrue(message = "payment.top-up.min-amount must not exceed payment.top-up.max-amount")
+    @AssertTrue(message = "payment.deposit.min-amount must not exceed payment.deposit.max-amount")
     public boolean isRangeOrdered() {
         return minAmount == null || maxAmount == null || minAmount.compareTo(maxAmount) <= 0;
     }

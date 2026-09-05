@@ -10,7 +10,7 @@
 
 > **Event-driven microservices wallet system — an engineering showcase.**
 
-FlowWallet is a backend platform that lets a user **top up a digital wallet** through an external
+FlowWallet is a backend platform that lets a user **deposit into a digital wallet** through an external
 payment provider (Stripe) and have the balance credited **reliably and asynchronously** via events.
 It is deliberately built to demonstrate production-grade patterns on a modern stack: a **Transactional
 Outbox** for exactly-the-event-you-committed delivery, a **pluggable payment-provider abstraction**
@@ -19,7 +19,7 @@ Outbox** for exactly-the-event-you-committed delivery, a **pluggable payment-pro
 > ⚠️ **Project status:** This repository is a **work in progress**. The *payment* side of the system
 > (request → Stripe → webhook → outbox → Kafka) is implemented and reasonably hardened. The *wallet*
 > side (the Kafka consumer that actually credits balances, plus the wallet HTTP API) is **not yet
-> implemented** — `flow-wallet-service` is currently a skeleton, so a top-up reaches Stripe and lands in
+> implemented** — `flow-wallet-service` is currently a skeleton, so a deposit reaches Stripe and lands in
 > Kafka, but no balance changes. Closing that loop is the MVP, and it is what the roadmap is organised
 > around. See [`implementation_plan.md`](implementation_plan.md) (local file) for stages and progress.
 
@@ -157,7 +157,7 @@ land except that service.
 | Module | Port | State | Responsibility |
 |--------|------|-------|----------------|
 | `flow-wallet-gateway` | 8080 | Minimal | Route `/api/wallets/**` and `/api/payments/**`; CORS. |
-| `flow-wallet-service` | 8081 | **Skeleton** | (Planned) wallet CRUD, top-up initiation, balance history, Kafka consumer. |
+| `flow-wallet-service` | 8081 | **Skeleton** | (Planned) wallet CRUD, deposit initiation, balance history, Kafka consumer. |
 | `flow-wallet-payment` | 8082 | Implemented | Payment intents, Stripe webhooks, transactional outbox → Kafka. |
 | `flow-wallet-platform` | —   | Implemented | RFC 9457 error handling, `@CurrentUserId` auto-configuration. |
 | `flow-wallet-contract` | —   | Implemented | `PaymentCompletedEvent`, `PaymentFailedEvent`, topic names. |
@@ -235,7 +235,7 @@ Base URL through the gateway: `http://localhost:8080`
 
 ### Payment Service
 
-**Create a payment intent (top-up)**
+**Create a payment intent (deposit)**
 
 ```
 POST /api/payments/intent
@@ -389,7 +389,7 @@ grow* — and everything not needed for it is deferred:
 
 1. **Wallet comes alive** — enable its infrastructure, add the domain model and migrations, write the
    idempotent Kafka consumer and its dead-letter handling.
-2. **The client drives the wallet** — wallet endpoints and top-up initiation.
+2. **The client drives the wallet** — wallet endpoints and deposit initiation.
 3. **Proof that it works** — the integration tests that make "it works" a fact rather than an assumption.
 
 Then a 1.0 tag. Stages, definitions of done and open decisions live in `implementation_plan.md`, which is

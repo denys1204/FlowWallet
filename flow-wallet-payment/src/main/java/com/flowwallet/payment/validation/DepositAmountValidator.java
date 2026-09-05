@@ -1,6 +1,6 @@
 package com.flowwallet.payment.validation;
 
-import com.flowwallet.payment.config.PaymentTopUpProperties;
+import com.flowwallet.payment.config.PaymentDepositProperties;
 import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorContext;
 import lombok.RequiredArgsConstructor;
@@ -12,8 +12,8 @@ import java.math.BigDecimal;
  * take its bounds by constructor injection like any other bean.
  */
 @RequiredArgsConstructor
-public class TopUpAmountValidator implements ConstraintValidator<TopUpAmount, BigDecimal> {
-    private final PaymentTopUpProperties limits;
+public class DepositAmountValidator implements ConstraintValidator<DepositAmount, BigDecimal> {
+    private final PaymentDepositProperties limits;
 
     @Override
     public boolean isValid(BigDecimal value, ConstraintValidatorContext context) {
@@ -21,10 +21,10 @@ public class TopUpAmountValidator implements ConstraintValidator<TopUpAmount, Bi
             return true;
         }
         if (value.compareTo(limits.getMinAmount()) < 0) {
-            return reject(context, "Minimum top-up amount is " + limits.getMinAmount().toPlainString());
+            return reject(context, "Minimum deposit amount is " + limits.getMinAmount().toPlainString());
         }
         if (value.compareTo(limits.getMaxAmount()) > 0) {
-            return reject(context, "Maximum top-up amount is " + limits.getMaxAmount().toPlainString());
+            return reject(context, "Maximum deposit amount is " + limits.getMaxAmount().toPlainString());
         }
         return true;
     }

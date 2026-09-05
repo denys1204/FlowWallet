@@ -1,6 +1,6 @@
 package com.flowwallet.payment.dto;
 
-import com.flowwallet.payment.validation.TopUpAmount;
+import com.flowwallet.payment.validation.DepositAmount;
 import com.flowwallet.platform.validation.Iso4217Currency;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -17,7 +17,7 @@ import java.math.BigDecimal;
  * check that, and is expected to.
  *
  * @param transactionReference idempotency key; a repeat with the same reference returns the original transaction
- * @param amount               top-up amount in major currency units (e.g. 50.00)
+ * @param amount               deposit amount in major currency units (e.g. 50.00)
  * @param currency             ISO 4217 code
  * @param walletId             wallet to credit once the payment confirms
  * @param providerName         which payment provider to use, e.g. {@code STRIPE}
@@ -27,7 +27,7 @@ public record CreatePaymentIntentRequest(
         @Size(max = 64, message = "Transaction reference must not exceed 64 characters")
         String transactionReference,
 
-        @TopUpAmount
+        @DepositAmount
         @NotNull(message = "Amount is required")
         BigDecimal amount,
 

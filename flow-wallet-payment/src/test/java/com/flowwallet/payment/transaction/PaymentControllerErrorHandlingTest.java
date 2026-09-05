@@ -1,7 +1,7 @@
 package com.flowwallet.payment.transaction;
 
-import com.flowwallet.payment.config.PaymentTopUpProperties;
-import com.flowwallet.payment.validation.TopUpAmountValidator;
+import com.flowwallet.payment.config.PaymentDepositProperties;
+import com.flowwallet.payment.validation.DepositAmountValidator;
 import com.flowwallet.platform.security.CurrentUserIdResolver;
 import com.flowwallet.platform.web.GlobalExceptionHandler;
 import com.flowwallet.payment.provider.exception.UnsupportedPaymentProviderException;
@@ -46,18 +46,18 @@ class PaymentControllerErrorHandlingTest {
 
     /**
      * standaloneSetup builds its own validator and instantiates constraint validators reflectively, so
-     * TopUpAmountValidator — which takes its bounds by constructor injection — would not survive that.
+     * DepositAmountValidator — which takes its bounds by constructor injection — would not survive that.
      * Handing it a factory that knows how to build it keeps this a plain unit test instead of forcing a
      * Spring context on the whole class, and pins the defaults the assertions below rely on.
      */
     private static Validator validatorWithDefaultLimits() {
-        PaymentTopUpProperties limits = new PaymentTopUpProperties();
+        PaymentDepositProperties limits = new PaymentDepositProperties();
         LocalValidatorFactoryBean factory = new LocalValidatorFactoryBean();
         factory.setConstraintValidatorFactory(new ConstraintValidatorFactory() {
             @Override
             public <T extends ConstraintValidator<?, ?>> T getInstance(Class<T> key) {
-                return key == TopUpAmountValidator.class
-                        ? key.cast(new TopUpAmountValidator(limits))
+                return key == DepositAmountValidator.class
+                        ? key.cast(new DepositAmountValidator(limits))
                         : BeanUtils.instantiateClass(key);
             }
 

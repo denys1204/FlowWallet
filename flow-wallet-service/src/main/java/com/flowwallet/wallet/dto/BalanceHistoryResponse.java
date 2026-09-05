@@ -8,7 +8,7 @@ import java.time.Instant;
  *
  * @param id                   history record ID
  * @param transactionReference unique reference linking to the originating transaction
- * @param type                 operation type (TOP_UP, WITHDRAWAL)
+ * @param type                 operation type (DEPOSIT, WITHDRAWAL)
  * @param amount               operation amount
  * @param balanceBefore        balance before the operation
  * @param balanceAfter         balance after the operation

@@ -1,6 +1,6 @@
 package com.flowwallet.payment.validation;
 
-import com.flowwallet.payment.config.PaymentTopUpProperties;
+import com.flowwallet.payment.config.PaymentDepositProperties;
 import jakarta.validation.ConstraintValidatorContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -13,17 +13,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentCaptor.forClass;
 import static org.mockito.Mockito.*;
 
-class TopUpAmountValidatorTest {
+class DepositAmountValidatorTest {
     private ConstraintValidatorContext.ConstraintViolationBuilder builder;
     private ConstraintValidatorContext context;
-    private TopUpAmountValidator validator;
+    private DepositAmountValidator validator;
 
     @BeforeEach
     void setUp() {
-        PaymentTopUpProperties limits = new PaymentTopUpProperties();
+        PaymentDepositProperties limits = new PaymentDepositProperties();
         limits.setMinAmount(new BigDecimal("5.00"));
         limits.setMaxAmount(new BigDecimal("100.00"));
-        validator = new TopUpAmountValidator(limits);
+        validator = new DepositAmountValidator(limits);
 
         context = mock(ConstraintValidatorContext.class);
         builder = mock(ConstraintValidatorContext.ConstraintViolationBuilder.class);
@@ -50,7 +50,7 @@ class TopUpAmountValidatorTest {
 
         var message = forClass(String.class);
         verify(context).buildConstraintViolationWithTemplate(message.capture());
-        assertThat(message.getValue()).isEqualTo("Minimum top-up amount is 5.00");
+        assertThat(message.getValue()).isEqualTo("Minimum deposit amount is 5.00");
     }
 
     @Test
@@ -60,21 +60,21 @@ class TopUpAmountValidatorTest {
 
         var message = forClass(String.class);
         verify(context).buildConstraintViolationWithTemplate(message.capture());
-        assertThat(message.getValue()).isEqualTo("Maximum top-up amount is 100.00");
+        assertThat(message.getValue()).isEqualTo("Maximum deposit amount is 100.00");
     }
 
     @Test
     @DisplayName("the message reports the configured bound, not the shipped default")
     void messageFollowsConfiguration() {
-        PaymentTopUpProperties raised = new PaymentTopUpProperties();
+        PaymentDepositProperties raised = new PaymentDepositProperties();
         raised.setMaxAmount(new BigDecimal("250000.00"));
-        var withRaisedCeiling = new TopUpAmountValidator(raised);
+        var withRaisedCeiling = new DepositAmountValidator(raised);
 
         assertThat(withRaisedCeiling.isValid(new BigDecimal("250000.01"), context)).isFalse();
 
         var message = forClass(String.class);
         verify(context).buildConstraintViolationWithTemplate(message.capture());
-        assertThat(message.getValue()).isEqualTo("Maximum top-up amount is 250000.00");
+        assertThat(message.getValue()).isEqualTo("Maximum deposit amount is 250000.00");
     }
 
     @Test
