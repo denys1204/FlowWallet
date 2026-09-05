@@ -9,6 +9,9 @@ import org.hibernate.annotations.UpdateTimestamp;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
 
 @Entity
 @Getter
@@ -97,6 +100,35 @@ public class PaymentTransaction {
     public void markAsInitiated(String providerTransactionId, java.util.Map<String, Object> providerMetadata) {
         this.providerTransactionId = providerTransactionId;
         this.providerMetadata = providerMetadata;
+    }
+
+    /**
+     * Whether this transaction was created from terms equal to the given request.
+     * <p>
+     * An idempotency key that does not bind the payload is not idempotency. Without this, a client that
+     * posts a reference, notices a mistake and re-posts the same reference with a corrected amount receives
+     * the original payment's client secret and a 200, and charges the original amount believing it corrected
+     * it. Stripe's own idempotency would have refused that, but the local short-circuit means Stripe is
+     * never reached.
+     * <p>
+     * Compared on the canonical forms, which is why {@code providerName} is upper-cased here as it is in
+     * {@link #create} — otherwise a byte-identical retry sending {@code "stripe"} would be reported as a
+     * conflict. Amount is compared by value, not by {@code equals}, so 50.00 and a stored 50.0000 agree.
+     *
+     * @return the terms that differ, in a form fit to show the caller, or empty if none do
+     */
+    public Optional<String> differencesFrom(CreatePaymentIntentRequest request) {
+        List<String> differences = new ArrayList<>();
+        if (amount.compareTo(request.amount()) != 0) {
+            differences.add("amount");
+        }
+        if (!currency.equals(request.currency().toUpperCase())) {
+            differences.add("currency");
+        }
+        if (!providerName.equals(request.providerName().toUpperCase())) {
+            differences.add("provider");
+        }
+        return differences.isEmpty() ? Optional.empty() : Optional.of(String.join(", ", differences));
     }
 
     public static PaymentTransaction create(

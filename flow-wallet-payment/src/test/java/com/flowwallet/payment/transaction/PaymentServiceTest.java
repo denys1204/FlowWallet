@@ -132,6 +132,51 @@ class PaymentServiceTest {
         verify(store, never()).reserve(any(), any());
     }
 
+    @Test
+    void reusingAReferenceOnDifferentTermsIsRefused() {
+        // The retry that motivates this: a client posts EUR by mistake, notices, and re-posts the same
+        // reference as USD. Without the guard it receives 200 and the original EUR payment's client secret,
+        // then charges EUR believing it corrected the mistake.
+        PaymentTransaction existing = initiatedTransaction("pi_123", Map.of("clientSecret", "cs_1"));
+        when(store.findOwnedBy("ref-1", "user-1")).thenReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> service.initiatePayment(
+                new CreatePaymentIntentRequest("ref-1", new BigDecimal("50.00"), "EUR", "STRIPE"), "user-1"
+        ))
+                .isInstanceOf(DuplicateTransactionReferenceException.class)
+                .hasMessageContaining("currency");
+
+        verify(mapper, never()).toResponse(any());
+    }
+
+    @Test
+    void reusingAReferenceForADifferentAmountIsRefused() {
+        PaymentTransaction existing = initiatedTransaction("pi_123", Map.of("clientSecret", "cs_1"));
+        when(store.findOwnedBy("ref-1", "user-1")).thenReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> service.initiatePayment(
+                new CreatePaymentIntentRequest("ref-1", new BigDecimal("75.00"), "USD", "STRIPE"), "user-1"
+        ))
+                .isInstanceOf(DuplicateTransactionReferenceException.class)
+                .hasMessageContaining("amount");
+    }
+
+    @Test
+    void aGenuineRetryStillReturnsTheOriginalIntent() {
+        // Same payment, spelled differently: the amount at a wider scale, the provider in lower case. Both
+        // are how the request comes back from a client or a NUMERIC(19,4) column, and neither is a conflict.
+        PaymentTransaction existing = initiatedTransaction("pi_123", Map.of("clientSecret", "cs_1"));
+        PaymentIntentResponse mapped = new PaymentIntentResponse(Map.of("clientSecret", "cs_1"), "pi_123", "ref-1");
+        when(store.findOwnedBy("ref-1", "user-1")).thenReturn(Optional.of(existing));
+        when(mapper.toResponse(existing)).thenReturn(mapped);
+
+        PaymentIntentResponse response = service.initiatePayment(
+                new CreatePaymentIntentRequest("ref-1", new BigDecimal("50.0000"), "USD", "stripe"), "user-1"
+        );
+
+        assertThat(response).isSameAs(mapped);
+    }
+
     private CreatePaymentIntentRequest request(String reference, String provider) {
         return new CreatePaymentIntentRequest(
                 reference,

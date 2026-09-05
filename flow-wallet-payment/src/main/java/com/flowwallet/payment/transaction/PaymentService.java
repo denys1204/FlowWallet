@@ -31,8 +31,16 @@ public class PaymentService {
 
         Optional<PaymentTransaction> existing = store.findOwnedBy(request.transactionReference(), userId);
         if (existing.isPresent()) {
+            PaymentTransaction transaction = existing.get();
+            transaction.differencesFrom(request).ifPresent(differences -> {
+                log.warn("Reference {} reused with a different {}", request.transactionReference(), differences);
+                throw DuplicateTransactionReferenceException.forConflictingPayload(
+                        request.transactionReference(), differences
+                );
+            });
+
             log.info("Returning existing payment transaction for reference: {}", request.transactionReference());
-            return mapper.toResponse(existing.get());
+            return mapper.toResponse(transaction);
         }
 
         // Resolve the provider and let it vet the request first, so both fail fast before any row is
