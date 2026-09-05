@@ -177,6 +177,34 @@ class PaymentServiceTest {
         assertThat(response).isSameAs(mapped);
     }
 
+    @Test
+    void aReservedRowThatNeverReachedTheProviderIsRetriedRatherThanStranded() {
+        // The window: reserve() commits, the provider call succeeds, and recordInitiation fails. The row is
+        // left PENDING with no provider id, so the webhook cannot find it and the client's retry used to get
+        // 200 with a null client secret it could do nothing with -- for a reference now permanently taken.
+        PaymentTransaction stranded = PaymentTransaction.create(request("ref-1", "STRIPE"), "user-1");
+        PaymentTransaction initiated = initiatedTransaction("pi_123", Map.of("clientSecret", "cs_new"));
+        PaymentIntentResponse mapped = new PaymentIntentResponse(Map.of("clientSecret", "cs_new"), "pi_123", "ref-1");
+        when(store.findOwnedBy("ref-1", "user-1")).thenReturn(Optional.of(stranded));
+        when(factory.getStrategy("STRIPE")).thenReturn(strategy);
+        when(mapper.toRequestContext(stranded)).thenReturn(
+                new PaymentRequestContext("ref-1", new BigDecimal("50.00"), "USD", "user-1")
+        );
+        when(strategy.initiatePayment(any())).thenReturn(
+                new PaymentInitiationResult("pi_123", Map.of("clientSecret", "cs_new"))
+        );
+        when(store.recordInitiation(any(), eq("pi_123"), any())).thenReturn(initiated);
+        when(mapper.toResponse(initiated)).thenReturn(mapped);
+
+        PaymentIntentResponse response = service.initiatePayment(request("ref-1", "STRIPE"), "user-1");
+
+        assertThat(response).isSameAs(mapped);
+        // No second row: the reference is Stripe's idempotency key, so replaying is safe and reserving again
+        // would only violate the constraint that makes the reference unique.
+        verify(store, never()).reserve(any(), any());
+        verify(store).recordInitiation(any(), eq("pi_123"), any());
+    }
+
     private CreatePaymentIntentRequest request(String reference, String provider) {
         return new CreatePaymentIntentRequest(
                 reference,

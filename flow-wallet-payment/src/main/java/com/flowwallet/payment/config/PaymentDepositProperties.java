@@ -2,6 +2,7 @@ package com.flowwallet.payment.config;
 
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.Setter;
@@ -36,10 +37,15 @@ public class PaymentDepositProperties {
     private BigDecimal minAmount = new BigDecimal("1.00");
 
     /**
-     * Largest accepted amount, in major currency units, inclusive. The column behind it is
-     * {@code NUMERIC(19,4)}, orders of magnitude wider, so raising this cannot truncate stored data.
+     * Largest accepted amount, in major currency units, inclusive.
+     * <p>
+     * Bounded above as well as below because the column behind it is {@code NUMERIC(19,4)}: a limit raised
+     * past fifteen integer digits would let a request pass validation and then fail on insert as a numeric
+     * overflow, which reaches the caller as a 500 for a value the service said it would accept. Startup is
+     * the right place to refuse that.
      */
     @NotNull
+    @Digits(integer = 15, fraction = 4, message = "payment.deposit.max-amount must fit NUMERIC(19,4)")
     @DecimalMin(value = "0", inclusive = false, message = "payment.deposit.max-amount must be greater than zero")
     private BigDecimal maxAmount = new BigDecimal("10000.00");
 

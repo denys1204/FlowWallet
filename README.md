@@ -298,10 +298,11 @@ detail; internal specifics are logged, never returned).
 
 ## Testing
 
-**54 tests**, all green: 50 in the payment service, 4 in platform. They cover the parts most likely to
+**118 tests**, all green: 95 in the payment service, 23 in platform. They cover the parts most likely to
 be wrong rather than the parts easiest to reach — the asymmetric webhook state machine (a later failure
 must not undo an earlier success, but a later success *must* override an earlier failure), outbox
-claim/retry/backoff boundaries, Stripe signature parsing, and the RFC 9457 status mapping.
+claim/retry/backoff boundaries, Stripe signature parsing, the RFC 9457 status mapping, and the
+minor-unit conversion that decides how much money actually leaves a card.
 
 ```bash
 ./mvnw test

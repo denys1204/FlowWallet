@@ -97,6 +97,15 @@ public class PaymentTransaction {
         return true;
     }
 
+    /**
+     * Whether the provider ever acknowledged this payment. False means the row was reserved but the
+     * provider call either never ran or never came back, so nothing exists on the provider's side under
+     * this reference that a client could pay.
+     */
+    public boolean isInitiated() {
+        return providerTransactionId != null;
+    }
+
     public void markAsInitiated(String providerTransactionId, java.util.Map<String, Object> providerMetadata) {
         this.providerTransactionId = providerTransactionId;
         this.providerMetadata = providerMetadata;

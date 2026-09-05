@@ -41,6 +41,17 @@ public class PaymentTransactionStore {
     /**
      * Persists a new PENDING transaction. A unique-constraint violation means a concurrent request won the
      * race for this reference; surface it as 409 instead of a 500 (the client's retry then hits findOwnedBy).
+     * <p>
+     * Treating every integrity violation as that race is only honest because every other constraint on the
+     * row is already guaranteed by the time we get here: the reference and provider name are length-bounded
+     * by the request, the provider name is further narrowed by the factory before any row is written, the
+     * currency is three characters by validation, the amount's scale is checked by the provider, the user id
+     * is bounded by the resolver, and the two provider id columns are null at this point. Add a constraint
+     * that is not pre-checked and this catch will start reporting it as a duplicate reference.
+     * <p>
+     * The rethrow happens immediately and issues no further statement, which matters: in Postgres a
+     * constraint violation aborts the transaction, so anything attempted afterwards on this connection
+     * fails with a message about the aborted transaction rather than the real cause.
      */
     @Transactional
     public PaymentTransaction reserve(CreatePaymentIntentRequest request, String userId) {

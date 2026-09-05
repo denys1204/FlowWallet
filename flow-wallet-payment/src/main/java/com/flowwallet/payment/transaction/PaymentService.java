@@ -39,8 +39,13 @@ public class PaymentService {
                 );
             });
 
-            log.info("Returning existing payment transaction for reference: {}", request.transactionReference());
-            return mapper.toResponse(transaction);
+            if (transaction.isInitiated()) {
+                log.info("Returning existing payment transaction for reference: {}", request.transactionReference());
+                return mapper.toResponse(transaction);
+            }
+
+            log.warn("Reference {} was reserved but never reached the provider; retrying initiation",
+                    request.transactionReference());
         }
 
         // Resolve the provider and let it vet the request first, so both fail fast before any row is
@@ -53,7 +58,11 @@ public class PaymentService {
                 userId
         ));
 
-        PaymentTransaction reserved = store.reserve(request, userId);
+        // Reuse a row that was reserved but never initiated rather than writing a second one. The
+        // reference is Stripe's idempotency key, so replaying the call cannot create a duplicate intent —
+        // and without this the client is stuck: the reference is taken, and the response it gets back
+        // carries a null client secret it can do nothing with.
+        PaymentTransaction reserved = existing.orElseGet(() -> store.reserve(request, userId));
 
         // Provider (network) call runs OUTSIDE any transaction — no DB connection is held across it.
         PaymentInitiationResult result = strategy.initiatePayment(mapper.toRequestContext(reserved));
