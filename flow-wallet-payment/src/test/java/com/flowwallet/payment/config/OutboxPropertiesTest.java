@@ -15,7 +15,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * rather than a careful reading.
  */
 class OutboxPropertiesTest {
-
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(ConfigurationPropertiesAutoConfiguration.class))
             .withUserConfiguration(OutboxProperties.class);

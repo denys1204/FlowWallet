@@ -62,22 +62,6 @@
             <artifactId>spring-kafka</artifactId>
         </dependency>
 
-        <!-- OpenFeign -->
-        <dependency>
-            <groupId>org.springframework.cloud</groupId>
-            <artifactId>spring-cloud-starter-openfeign</artifactId>
-            <exclusions>
-                <exclusion>
-                    <groupId>commons-fileupload</groupId>
-                    <artifactId>commons-fileupload</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>io.github.openfeign.form</groupId>
-                    <artifactId>feign-form-spring</artifactId>
-                </exclusion>
-            </exclusions>
-        </dependency>
-
         <!-- MapStruct -->
         <dependency>
             <groupId>org.mapstruct</groupId>

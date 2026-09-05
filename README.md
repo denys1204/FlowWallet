@@ -208,7 +208,12 @@ Reliability details:
 | Topic | Partitions | Producer | Consumer |
 |-------|-----------|----------|----------|
 | `payment.events` | 3 | Payment Service (via outbox) | Wallet Service *(planned — not implemented)* |
-| `payment.events.DLT` | — | *declared as a constant, not yet wired* | — |
+
+There is no producer-side dead-letter topic. A send fails almost exclusively because the broker is
+unreachable, which is precisely when publishing to another topic on that broker would fail too, so the
+`FAILED` rows in `outbox_events` serve as the durable dead-letter store instead — visible through the
+`outbox.events.failed` gauge and requeueable through `/actuator/outbox`. The wallet consumer will get a
+dead-letter topic of its own, carrying a different payload and needing different handling.
 
 Events (published as JSON, keyed by `transactionReference`):
 
