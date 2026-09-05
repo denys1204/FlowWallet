@@ -4,10 +4,52 @@ server:
 spring:
   application:
     name: flow-wallet-service
-  # JPA & Datasource will be configured in Phase 0.3
-  autoconfigure:
-    exclude:
-      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
-      - org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration
-      - org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration
-      - org.springframework.boot.autoconfigure.liquibase.LiquibaseAutoConfiguration
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${WALLET_DB_NAME:wallet_db}
+    username: ${POSTGRES_USER:flowadmin}
+    password: ${POSTGRES_PASSWORD:flowsecret}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:10}
+      minimum-idle: ${DB_POOL_MIN_IDLE:2}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: ${JPA_SHOW_SQL:false}
+    properties:
+      hibernate:
+        format_sql: ${HIBERNATE_FORMAT_SQL:true}
+    open-in-view: false
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: ${KAFKA_CONSUMER_GROUP_ID:flow-wallet-service}
+      auto-offset-reset: ${KAFKA_CONSUMER_AUTO_OFFSET_RESET:earliest}
+      max-poll-records: ${KAFKA_CONSUMER_MAX_POLL_RECORDS:500}
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      enable-auto-commit: false
+    listener:
+      concurrency: ${KAFKA_LISTENER_CONCURRENCY:3}
+      ack-mode: RECORD
+    properties:
+      security.protocol: ${KAFKA_SECURITY_PROTOCOL:PLAINTEXT}
+      sasl.mechanism: ${KAFKA_SASL_MECHANISM:PLAIN}
+      sasl.jaas.config: ${KAFKA_SASL_JAAS_CONFIG:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: ${ACTUATOR_EXPOSED_ENDPOINTS:health,info,metrics}
+
+logging:
+  level:
+    root: ${LOG_LEVEL:INFO}
+    com.flowwallet: ${APP_LOG_LEVEL:DEBUG}
+    org.apache.kafka.clients.NetworkClient: ${KAFKA_CLIENT_LOG_LEVEL:ERROR}
+    org.apache.kafka.clients.Metadata: ${KAFKA_CLIENT_LOG_LEVEL:ERROR}
+    org.apache.kafka.clients.consumer.internals.ConsumerCoordinator: ${KAFKA_CLIENT_LOG_LEVEL:ERROR}
+    org.apache.kafka.common.config.AbstractConfig: ${KAFKA_CONFIG_LOG_LEVEL:WARN}
