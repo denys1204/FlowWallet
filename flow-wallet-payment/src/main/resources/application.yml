@@ -61,6 +61,12 @@ outbox:
   max-retries: ${OUTBOX_MAX_RETRIES:3}
   retention-days: ${OUTBOX_RETENTION_DAYS:7}
   cleanup-cron: ${OUTBOX_CLEANUP_CRON:0 0 3 * * *}
+  reaper-interval-ms: ${OUTBOX_REAPER_INTERVAL_MS:60000}
+  retry-backoff-base-ms: ${OUTBOX_RETRY_BACKOFF_BASE_MS:1000}
+  retry-backoff-max-ms: ${OUTBOX_RETRY_BACKOFF_MAX_MS:60000}
+  # Must stay comfortably above the longest possible single send, or the reaper could
+  # reset a row a live instance is still publishing and the event goes out twice.
+  stuck-processing-threshold-ms: ${OUTBOX_STUCK_PROCESSING_THRESHOLD_MS:300000}
 
 management:
   endpoints:
