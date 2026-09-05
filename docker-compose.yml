@@ -4,7 +4,7 @@ services:
     container_name: flow-postgres
     restart: unless-stopped
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-flowadmin}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-flowsecret}
@@ -14,7 +14,7 @@ services:
     networks:
       - flow-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-flowadmin}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-flowadmin}" ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -24,12 +24,12 @@ services:
     container_name: flow-kafka
     restart: unless-stopped
     ports:
-      - "127.0.0.1:9092:9092"
+      - "127.0.0.1:${KAFKA_EXTERNAL_PORT:-9092}:9092"
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_LISTENERS: INTERNAL://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
-      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:${KAFKA_EXTERNAL_PORT:-9092}
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
@@ -38,20 +38,16 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      # Persist broker data (topics, consumer offsets, KRaft metadata) on the kafka-data volume below.
       KAFKA_LOG_DIRS: /var/lib/kafka/data
     volumes:
       - kafka-data:/var/lib/kafka/data
     tmpfs:
-      # apache/kafka declares VOLUME for these two paths, but we don't use them (no SASL/SSL secrets and
-      # no shared config in this single-node PLAINTEXT setup). Backing them with tmpfs gives Docker an
-      # explicit mount, so it no longer creates anonymous volumes for them.
       - /etc/kafka/secrets
       - /mnt/shared/config
     networks:
       - flow-network
     healthcheck:
-      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1 || exit 1"]
+      test: [ "CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1 || exit 1" ]
       interval: 10s
       timeout: 10s
       retries: 10
@@ -62,7 +58,7 @@ services:
     container_name: flow-kafka-ui
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8090:8080"
+      - "127.0.0.1:${KAFKA_UI_PORT:-8090}:8080"
     environment:
       KAFKA_CLUSTERS_0_NAME: local
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092

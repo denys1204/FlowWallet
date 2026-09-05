@@ -12,24 +12,19 @@ spring:
           globalcors:
             cors-configurations:
               '[/**]':
-                allowedOrigins: "*"
-                allowedMethods:
-                  - GET
-                  - POST
-                  - PUT
-                  - DELETE
-                  - OPTIONS
-                allowedHeaders: "*"
+                allowedMethods: "${GATEWAY_CORS_ALLOWED_METHODS:GET,POST,PUT,DELETE,OPTIONS}"
+                allowedOrigins: "${GATEWAY_CORS_ALLOWED_ORIGINS:*}"
+                allowedHeaders: "${GATEWAY_CORS_ALLOWED_HEADERS:*}"
           routes:
             # Route for Wallet Service
             - id: wallet-service
-              uri: http://localhost:${WALLET_SERVICE_PORT:8081}
+              uri: ${WALLET_SERVICE_URI:http://localhost:${WALLET_SERVICE_PORT:8081}}
               predicates:
                 - Path=/api/wallets/**
 
             # Route for Payment Service
             - id: payment-service
-              uri: http://localhost:${PAYMENT_SERVICE_PORT:8082}
+              uri: ${PAYMENT_SERVICE_URI:http://localhost:${PAYMENT_SERVICE_PORT:8082}}
               predicates:
                 - Path=/api/payments/**
 
@@ -37,4 +32,4 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: ${ACTUATOR_EXPOSED_ENDPOINTS:health,info}

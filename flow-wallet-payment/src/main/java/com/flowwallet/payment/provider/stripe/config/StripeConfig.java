@@ -2,27 +2,19 @@ package com.flowwallet.payment.provider.stripe.config;
 
 import com.stripe.Stripe;
 import jakarta.annotation.PostConstruct;
-import org.springframework.beans.factory.annotation.Value;
+import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Configuration;
 
-import lombok.Getter;
-
+/**
+ * Pushes the API key into Stripe's static holder, which is the only way its SDK accepts one.
+ */
 @Configuration
+@RequiredArgsConstructor
 public class StripeConfig {
-    @Getter
-    private final String webhookSecret;
-    private final String apiKey;
-
-    public StripeConfig(
-            @Value("${stripe.api.key}") String apiKey,
-            @Value("${stripe.webhook.secret}") String webhookSecret
-    ) {
-        this.apiKey = apiKey;
-        this.webhookSecret = webhookSecret;
-    }
+    private final StripeProperties properties;
 
     @PostConstruct
     public void initStripe() {
-        Stripe.apiKey = this.apiKey;
+        Stripe.apiKey = properties.getApi().getKey();
     }
 }

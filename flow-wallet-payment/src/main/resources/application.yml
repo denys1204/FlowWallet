@@ -5,8 +5,7 @@ spring:
   application:
     name: flow-wallet-payment
   datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/payment_db
-    # Same credentials Docker Compose provisions Postgres with — single source of truth.
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${PAYMENT_DB_NAME:payment_db}
     username: ${POSTGRES_USER:flowadmin}
     password: ${POSTGRES_PASSWORD:flowsecret}
     driver-class-name: org.postgresql.Driver
@@ -16,10 +15,10 @@ spring:
   jpa:
     hibernate:
       ddl-auto: validate
-    show-sql: false
+    show-sql: ${JPA_SHOW_SQL:false}
     properties:
       hibernate:
-        format_sql: true
+        format_sql: ${HIBERNATE_FORMAT_SQL:true}
     open-in-view: false
   liquibase:
     change-log: classpath:db/changelog/db.changelog-master.yaml
@@ -45,6 +44,16 @@ stripe:
     key: ${STRIPE_API_KEY:sk_test_dummy}
   webhook:
     secret: ${STRIPE_WEBHOOK_SECRET:whsec_dummy}
+    tolerance-seconds: ${STRIPE_WEBHOOK_TOLERANCE_SECONDS:300}
+
+payment:
+  retry:
+    optimistic-lock:
+      max-attempts: ${PAYMENT_OPTIMISTIC_LOCK_MAX_ATTEMPTS:3}
+      backoff-delay-ms: ${PAYMENT_OPTIMISTIC_LOCK_BACKOFF_MS:50}
+  top-up:
+    min-amount: ${PAYMENT_MIN_TOP_UP_AMOUNT:1.00}
+    max-amount: ${PAYMENT_MAX_TOP_UP_AMOUNT:10000.00}
 
 outbox:
   poll-interval-ms: ${OUTBOX_POLL_INTERVAL_MS:10000}
@@ -57,15 +66,13 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,outbox
+        include: ${ACTUATOR_EXPOSED_ENDPOINTS:health,info,metrics,outbox}
 
 logging:
   level:
     root: ${LOG_LEVEL:INFO}
     com.flowwallet: ${APP_LOG_LEVEL:DEBUG}
-    # Reduce noise from Kafka when it's down
-    org.apache.kafka.clients.NetworkClient: ERROR
-    org.apache.kafka.clients.Metadata: ERROR
-    org.apache.kafka.clients.producer.internals.Sender: ERROR
-    # Suppress the verbose client config dump + "supplied but not used" notices at startup
-    org.apache.kafka.common.config.AbstractConfig: WARN
+    org.apache.kafka.clients.NetworkClient: ${KAFKA_CLIENT_LOG_LEVEL:ERROR}
+    org.apache.kafka.clients.Metadata: ${KAFKA_CLIENT_LOG_LEVEL:ERROR}
+    org.apache.kafka.clients.producer.internals.Sender: ${KAFKA_CLIENT_LOG_LEVEL:ERROR}
+    org.apache.kafka.common.config.AbstractConfig: ${KAFKA_CONFIG_LOG_LEVEL:WARN}

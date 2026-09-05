@@ -7,11 +7,10 @@ import com.stripe.model.PaymentIntent;
 import com.stripe.net.RequestOptions;
 import com.stripe.net.Webhook;
 import com.stripe.param.PaymentIntentCreateParams;
-import com.flowwallet.payment.provider.stripe.config.StripeConfig;
+import com.flowwallet.payment.provider.stripe.config.StripeProperties;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
-import static com.flowwallet.payment.provider.stripe.StripeConstants.WEBHOOK_TOLERANCE_SECONDS;
 
 /**
  * Wrapper for Stripe static methods to allow for easy unit testing via mocking.
@@ -19,7 +18,7 @@ import static com.flowwallet.payment.provider.stripe.StripeConstants.WEBHOOK_TOL
 @Component
 @RequiredArgsConstructor
 public class StripeClient {
-    private final StripeConfig config;
+    private final StripeProperties stripe;
 
     public PaymentIntent createPaymentIntent(PaymentIntentCreateParams params, String idempotencyKey) throws StripeException {
         RequestOptions options = RequestOptions.builder()
@@ -29,6 +28,11 @@ public class StripeClient {
     }
     
     public Event constructEvent(String payload, String signature) throws SignatureVerificationException {
-        return Webhook.constructEvent(payload, signature, config.getWebhookSecret(), WEBHOOK_TOLERANCE_SECONDS);
+        return Webhook.constructEvent(
+                payload,
+                signature,
+                stripe.getWebhook().getSecret(),
+                stripe.getWebhook().getToleranceSeconds()
+        );
     }
 }
