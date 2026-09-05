@@ -6,6 +6,5 @@ public record PaymentRequestContext(
         String transactionReference,
         BigDecimal amount,
         String currency,
-        Long walletId,
         String userId
 ) {}

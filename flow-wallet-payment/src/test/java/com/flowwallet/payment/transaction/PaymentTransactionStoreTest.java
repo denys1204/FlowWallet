@@ -89,7 +89,7 @@ class PaymentTransactionStoreTest {
     }
 
     private CreatePaymentIntentRequest request() {
-        return new CreatePaymentIntentRequest("ref-1", new BigDecimal("50.00"), "USD", 1L, "STRIPE");
+        return new CreatePaymentIntentRequest("ref-1", new BigDecimal("50.00"), "USD", "STRIPE");
     }
 
     private PaymentTransaction transaction(String userId) {

@@ -3,7 +3,6 @@ package com.flowwallet.payment.provider.stripe.mapper;
 import static com.flowwallet.payment.provider.stripe.StripeConstants.CENTS_MULTIPLIER;
 import static com.flowwallet.payment.provider.stripe.StripeConstants.META_TRANSACTION_REF;
 import static com.flowwallet.payment.provider.stripe.StripeConstants.META_USER_ID;
-import static com.flowwallet.payment.provider.stripe.StripeConstants.META_WALLET_ID;
 import static com.flowwallet.payment.provider.stripe.StripeConstants.ZERO_DECIMAL_CURRENCIES;
 
 import com.flowwallet.payment.provider.dto.PaymentRequestContext;
@@ -30,7 +29,6 @@ public class StripeRequestMapper {
                 .setCurrency(currencyLower)
                 .setAutomaticPaymentMethods(paymentMethods)
                 .putMetadata(META_TRANSACTION_REF, context.transactionReference())
-                .putMetadata(META_WALLET_ID, String.valueOf(context.walletId()))
                 .putMetadata(META_USER_ID, context.userId())
                 .build();
     }

@@ -18,8 +18,7 @@ import java.time.Instant;
  * @param providerTransactionId provider's own id (Stripe {@code pi_xxx}), carried for support and tracing
  * @param amount                amount in major currency units
  * @param currency              ISO 4217 code
- * @param walletId              wallet to credit
- * @param userId                who paid — lets the consumer verify the wallet is theirs
+ * @param userId                who paid; with {@code currency} this identifies the wallet to credit
  * @param completedAt           when the provider confirmed the payment
  */
 public record PaymentCompletedEvent(
@@ -29,7 +28,6 @@ public record PaymentCompletedEvent(
         String providerTransactionId,
         BigDecimal amount,
         String currency,
-        Long walletId,
         String userId,
         Instant completedAt
 ) {}

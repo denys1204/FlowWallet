@@ -34,7 +34,7 @@ class StripePaymentStrategyTest {
     @Test
     void usesTransactionReferenceAsStripeIdempotencyKey() throws Exception {
         PaymentRequestContext context =
-                new PaymentRequestContext("ref-1", new BigDecimal("50.00"), "USD", 1L, "user-1");
+                new PaymentRequestContext("ref-1", new BigDecimal("50.00"), "USD", "user-1");
         PaymentIntentCreateParams params = PaymentIntentCreateParams.builder()
                 .setAmount(5000L)
                 .setCurrency("usd")
@@ -56,7 +56,7 @@ class StripePaymentStrategyTest {
     @Test
     void wrapsStripeExceptionAsPaymentInitiationException() throws Exception {
         PaymentRequestContext context =
-                new PaymentRequestContext("ref-1", new BigDecimal("50.00"), "USD", 1L, "user-1");
+                new PaymentRequestContext("ref-1", new BigDecimal("50.00"), "USD", "user-1");
         PaymentIntentCreateParams params = PaymentIntentCreateParams.builder()
                 .setAmount(5000L)
                 .setCurrency("usd")

@@ -194,7 +194,7 @@ Reliability details:
 **`payment_db`** (managed by Liquibase):
 
 - **`payment_transactions`** — `id`, `transaction_reference` (unique idempotency key), `provider_name`,
-  `provider_transaction_id` (unique), `wallet_id`, `user_id`, `amount NUMERIC(19,4)`, `currency`,
+  `provider_transaction_id` (unique), `user_id`, `amount NUMERIC(19,4)`, `currency`,
   `status` (`PENDING`/`SUCCESS`/`FAILED`), `provider_event_id` (unique), `version` (optimistic lock),
   `provider_metadata JSONB`, timestamps.
 - **`outbox_events`** — `id`, `aggregate_type`, `aggregate_id`, `event_type`, `payload TEXT`,
@@ -217,8 +217,12 @@ dead-letter topic of its own, carrying a different payload and needing different
 
 Events (published as JSON, keyed by `transactionReference`):
 
-- **`PaymentCompletedEvent`** — `transactionReference`, `providerTransactionId`, `amount`, `currency`, `walletId`, `userId`, `completedAt`.
-- **`PaymentFailedEvent`** — `transactionReference`, `providerTransactionId`, `walletId`, `userId`, `reason`, `failedAt`.
+- **`PaymentCompletedEvent`** — `eventId`, `schemaVersion`, `transactionReference`, `providerTransactionId`, `amount`, `currency`, `userId`, `completedAt`.
+- **`PaymentFailedEvent`** — `eventId`, `schemaVersion`, `transactionReference`, `providerTransactionId`, `amount`, `currency`, `userId`, `reason`, `failedAt`.
+
+Neither event names a wallet. A wallet is identified by its owner and its currency, both of which the
+events already carry, so a wallet id would be a second name for the same thing that nothing could check
+against the first.
 
 ## Identity & security model
 
@@ -251,7 +255,6 @@ Content-Type: application/json
   "transactionReference": "unique-ref-123",
   "amount": 50.00,
   "currency": "USD",
-  "walletId": 1,
   "providerName": "STRIPE"
 }
 ```

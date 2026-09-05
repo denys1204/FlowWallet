@@ -148,7 +148,6 @@ class PaymentTransactionHandlerTest {
                 "ref-1",
                 new BigDecimal("50.00"),
                 "USD",
-                1L,
                 "STRIPE"
         );
 

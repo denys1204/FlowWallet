@@ -75,7 +75,6 @@ class PaymentControllerErrorHandlingTest {
               "transactionReference": "ref-123",
               "amount": 50.00,
               "currency": "USD",
-              "walletId": 1,
               "providerName": "STRIPE"
             }
             """;
@@ -97,7 +96,6 @@ class PaymentControllerErrorHandlingTest {
                     "transactionReference": "",
                     "amount": 0,
                     "currency": "US",
-                    "walletId": null,
                     "providerName": ""
                 }
                 """;

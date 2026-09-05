@@ -16,7 +16,6 @@ import java.time.Instant;
  * @param providerTransactionId provider's own id, carried for support and tracing
  * @param amount                amount in major currency units
  * @param currency              ISO 4217 code
- * @param walletId              wallet the payment was aimed at
  * @param userId                who paid
  * @param reason                free-form provider message; not a stable code, do not branch on it
  * @param failedAt              when the failure was confirmed
@@ -28,7 +27,6 @@ public record PaymentFailedEvent(
         String providerTransactionId,
         BigDecimal amount,
         String currency,
-        Long walletId,
         String userId,
         String reason,
         Instant failedAt

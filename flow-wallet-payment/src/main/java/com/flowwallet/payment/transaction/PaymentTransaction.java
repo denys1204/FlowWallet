@@ -31,9 +31,6 @@ public class PaymentTransaction {
     @Column(name = "provider_transaction_id", unique = true, length = 128)
     private String providerTransactionId;
 
-    @Column(name = "wallet_id", nullable = false)
-    private Long walletId;
-
     @Column(name = "user_id", nullable = false, length = 64)
     private String userId;
 
@@ -109,7 +106,6 @@ public class PaymentTransaction {
         return PaymentTransaction.builder()
                 .transactionReference(request.transactionReference())
                 .providerName(request.providerName().toUpperCase())
-                .walletId(request.walletId())
                 .userId(userId)
                 .amount(request.amount())
                 .currency(request.currency().toUpperCase())

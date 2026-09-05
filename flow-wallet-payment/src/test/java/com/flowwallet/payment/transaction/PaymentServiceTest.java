@@ -85,7 +85,7 @@ class PaymentServiceTest {
         when(factory.getStrategy("STRIPE")).thenReturn(strategy);
         when(store.reserve(any(), eq("user-1"))).thenReturn(reserved);
         when(mapper.toRequestContext(reserved)).thenReturn(
-                new PaymentRequestContext("ref-1", new BigDecimal("50.00"), "USD", 1L, "user-1")
+                new PaymentRequestContext("ref-1", new BigDecimal("50.00"), "USD", "user-1")
         );
         when(strategy.initiatePayment(any())).thenReturn(
                 new PaymentInitiationResult("pi_123", Map.of("clientSecret", "cs_new"))
@@ -119,7 +119,6 @@ class PaymentServiceTest {
                 reference,
                 new BigDecimal("50.00"),
                 "USD",
-                1L,
                 provider
         );
     }

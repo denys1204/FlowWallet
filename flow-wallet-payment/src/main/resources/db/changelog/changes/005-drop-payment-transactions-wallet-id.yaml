@@ -1,0 +1,8 @@
+databaseChangeLog:
+  - changeSet:
+      id: 005-drop-payment-transactions-wallet-id
+      author: flow-wallet
+      changes:
+        - dropColumn:
+            tableName: payment_transactions
+            columnName: wallet_id

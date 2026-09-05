@@ -21,11 +21,6 @@ public final class StripeConstants {
     public static final String META_TRANSACTION_REF = "transactionReference";
 
     /**
-     * Metadata key for the wallet ID.
-     */
-    public static final String META_WALLET_ID = "walletId";
-
-    /**
      * Metadata key for the user ID.
      */
     public static final String META_USER_ID = "userId";

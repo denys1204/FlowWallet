@@ -22,7 +22,6 @@ class PaymentEventMapperTest {
         assertThat(event.transactionReference()).isEqualTo("ref-1");
         assertThat(event.amount()).isEqualByComparingTo("50.00");
         assertThat(event.currency()).isEqualTo("USD");
-        assertThat(event.walletId()).isEqualTo(1L);
         assertThat(event.userId()).isEqualTo("user-1");
         assertThat(event.completedAt()).isNotNull();
     }
@@ -34,7 +33,6 @@ class PaymentEventMapperTest {
         assertThat(event.transactionReference()).isEqualTo("ref-1");
         assertThat(event.amount()).isEqualByComparingTo("50.00");
         assertThat(event.currency()).isEqualTo("USD");
-        assertThat(event.walletId()).isEqualTo(1L);
         assertThat(event.userId()).isEqualTo("user-1");
         assertThat(event.reason()).isEqualTo("card declined");
         assertThat(event.failedAt()).isNotNull();
@@ -57,7 +55,6 @@ class PaymentEventMapperTest {
                 "ref-1",
                 new BigDecimal("50.00"),
                 "USD",
-                1L,
                 "STRIPE"
         );
         return PaymentTransaction.create(request, "user-1");

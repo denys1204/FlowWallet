@@ -31,12 +31,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 class PaymentEventWireFormatTest {
     private static final Set<String> COMPLETED_FIELDS = Set.of(
             "eventId", "schemaVersion", "transactionReference", "providerTransactionId",
-            "amount", "currency", "walletId", "userId", "completedAt"
+            "amount", "currency", "userId", "completedAt"
     );
 
     private static final Set<String> FAILED_FIELDS = Set.of(
             "eventId", "schemaVersion", "transactionReference", "providerTransactionId",
-            "amount", "currency", "walletId", "userId", "reason", "failedAt"
+            "amount", "currency", "userId", "reason", "failedAt"
     );
 
     private final ObjectMapper mapper = new ObjectMapper();
@@ -46,7 +46,7 @@ class PaymentEventWireFormatTest {
                 "2f8a1c34-0000-4000-8000-000000000001", 1,
                 "ref-1", "pi_test_1",
                 new BigDecimal("50.00"), "USD",
-                42L, "user-1",
+                "user-1",
                 Instant.parse("2026-01-15T10:30:00Z")
         );
     }
@@ -56,7 +56,7 @@ class PaymentEventWireFormatTest {
                 "2f8a1c34-0000-4000-8000-000000000002", 1,
                 "ref-2", "pi_test_2",
                 new BigDecimal("50.00"), "USD",
-                42L, "user-1",
+                "user-1",
                 "card_declined",
                 Instant.parse("2026-01-15T10:31:00Z")
         );
