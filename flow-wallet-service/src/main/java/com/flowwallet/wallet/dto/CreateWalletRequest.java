@@ -1,17 +1,19 @@
 package com.flowwallet.wallet.dto;
 
+import com.flowwallet.platform.validation.Iso4217Currency;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
 
 /**
- * Client request to create a new wallet.
+ * Client request to create a wallet. A user may hold several wallets, but only one per currency.
  * <p>
- * {@code userId} is resolved from the {@code @CurrentUserId} header.
+ * The owner is not part of the body — it is resolved from the request through {@code @CurrentUserId},
+ * so a caller cannot create a wallet for somebody else.
  *
- * @param currency ISO 4217 currency code (e.g. "PLN", "EUR", "USD")
+ * @param currency ISO 4217 code the wallet is denominated in; fixed for the wallet's lifetime
  */
 public record CreateWalletRequest(
+        @Iso4217Currency
         @NotBlank(message = "Currency is required")
-        @Size(min = 3, max = 3, message = "Currency must be a 3-letter ISO 4217 code")
         String currency
-) {}
+) {
+}

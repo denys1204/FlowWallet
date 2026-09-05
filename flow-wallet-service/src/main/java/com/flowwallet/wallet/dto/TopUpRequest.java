@@ -1,22 +1,22 @@
 package com.flowwallet.wallet.dto;
 
-import jakarta.validation.constraints.DecimalMax;
-import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 
 import java.math.BigDecimal;
 
 /**
- * Client request to top up a wallet.
+ * Client request to top up a wallet. The currency is not carried here — a wallet is denominated in a
+ * single currency, and taking one from the caller would only create a way for the two to disagree.
  * <p>
- * {@code walletId} comes from the path variable, {@code userId} from the {@code @CurrentUserId} header.
- * Currency is validated against the wallet's currency on the server side.
+ * The accepted amount range belongs to Payment Service, which enforces it. This request checks only
+ * what the wallet itself can know; a copy of the bounds here would be a second source of truth that
+ * eventually drifts from the first.
  *
- * @param amount the top-up amount (min 1.00, max 10,000.00)
+ * @param amount amount in major currency units
  */
 public record TopUpRequest(
         @NotNull(message = "Amount is required")
-        @DecimalMin(value = "1.00", message = "Minimum top-up amount is 1.00")
-        @DecimalMax(value = "10000.00", message = "Maximum top-up amount is 10,000.00")
+        @Positive(message = "Amount must be greater than zero")
         BigDecimal amount
 ) {}
