@@ -10,6 +10,7 @@ import java.time.Instant;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -26,18 +27,30 @@ class PaymentEventHandlerTest {
     }
 
     @Test
-    void opensAWalletWhenTheUserHasNoneInThatCurrency() {
-        // The ordinary case for a first deposit: nothing else creates wallets before one is needed.
+    void refusesWhenTheUserHasNoWalletInThatCurrency() {
+        // A wallet is never a side effect of a payment. Deposits go through the wallet, which refuses with
+        // 404 before any money moves, so reaching here means a payment got in by some other route.
         when(wallets.lockByUserIdAndCurrency("alice", "USD")).thenReturn(Optional.empty());
-        when(wallets.save(any())).thenAnswer(call -> call.getArgument(0));
 
-        handler.credit(completed("50.00"));
+        assertThatThrownBy(() -> handler.credit(completed("50.00")))
+                .isInstanceOf(UnknownWalletException.class);
 
-        ArgumentCaptor<Wallet> opened = ArgumentCaptor.forClass(Wallet.class);
-        verify(wallets).save(opened.capture());
-        assertThat(opened.getValue().getUserId()).isEqualTo("alice");
-        assertThat(opened.getValue().getCurrency()).isEqualTo("USD");
-        assertThat(opened.getValue().getBalance()).isEqualByComparingTo("50.00");
+        verify(wallets, never()).save(any());
+        verifyNoInteractions(balanceHistory);
+    }
+
+    @Test
+    void theRefusalIsThrownInsideTheTransactionSoTheBarrierRowRollsBackWithIt() {
+        // If the barrier row survived a refused credit, recording the refusal afterwards would violate the
+        // unique event id and dead-letter an event the wallet understood perfectly well.
+        when(wallets.lockByUserIdAndCurrency(any(), any())).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> handler.credit(completed("50.00")))
+                .isInstanceOf(UnknownWalletException.class);
+
+        // The row was written before the lookup, so only the rollback can undo it -- which requires the
+        // throw to happen inside the same transactional method.
+        verify(processedEvents).saveAndFlush(any());
     }
 
     @Test

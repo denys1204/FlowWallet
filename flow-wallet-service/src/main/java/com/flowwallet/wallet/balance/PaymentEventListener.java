@@ -68,6 +68,11 @@ public class PaymentEventListener {
 
         try {
             handler.credit(event);
+        } catch (UnknownWalletException e) {
+            // Recorded, not dead-lettered: the payload is kept so the event can be replayed once the wallet
+            // exists, without depending on how long Kafka happens to retain it.
+            reject(event.eventId(), KafkaConstants.EVENT_TYPE_PAYMENT_COMPLETED, event.transactionReference(),
+                    event.amount(), RejectionReason.WALLET_NOT_FOUND, record.value());
         } catch (DataIntegrityViolationException e) {
             // The transaction is already rolled back. Ask the database which barrier refused it, from a
             // fresh transaction, rather than reading anything off the exception.

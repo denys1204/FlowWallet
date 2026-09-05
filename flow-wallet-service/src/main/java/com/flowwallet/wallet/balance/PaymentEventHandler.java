@@ -31,22 +31,25 @@ public class PaymentEventHandler {
     /**
      * Credits a confirmed payment exactly once.
      * <p>
-     * The wallet is resolved by the owner and currency the event carries, and opened if the user has none
-     * in that currency yet — which is the ordinary case for a first deposit, since nothing else creates
-     * wallets before one is needed. Two events racing to open the same wallet is not handled here: the
-     * unique constraint on (user_id, currency) decides it, and the loser is redelivered into a fresh
-     * transaction that finds the winner's row.
+     * The wallet is resolved by the owner and currency the event carries, and is never created here. A
+     * wallet appearing as a side effect of a payment would make the API unpredictable — the caller could not
+     * tell, before paying, whether a wallet would exist afterwards. Deposits are initiated through the wallet
+     * instead, which refuses with 404 before any money moves.
      * <p>
-     * Once the wallet exists the race stops being one, because the lookup takes a row lock and holds it for
-     * the rest of the transaction. Letting the version decide instead would fail the loser, and a losing
-     * credit costs a rolled-back transaction and a redelivery for something the lock settles in microseconds.
+     * The throw stays inside the transaction on purpose. The barrier row flushed on the line above must roll
+     * back with it, or recording the refusal afterwards would violate the unique event id and dead-letter an
+     * event the wallet understood perfectly well.
+     * <p>
+     * The lookup takes a row lock and holds it for the rest of the transaction. Letting the version decide
+     * instead would fail the loser of any concurrent credit, and that costs a rolled-back transaction and a
+     * redelivery for something the lock settles in microseconds.
      */
     @Transactional
     public void credit(PaymentCompletedEvent event) {
         processedEvents.saveAndFlush(ProcessedEvent.credited(event));
 
         Wallet wallet = wallets.lockByUserIdAndCurrency(event.userId(), event.currency())
-                .orElseGet(() -> wallets.save(Wallet.open(event.userId(), event.currency())));
+                .orElseThrow(() -> new UnknownWalletException(event.userId(), event.currency()));
 
         BigDecimal balanceBefore = wallet.credit(event.amount());
         balanceHistory.saveAndFlush(BalanceHistory.deposit(
