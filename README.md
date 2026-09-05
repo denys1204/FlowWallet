@@ -3,7 +3,7 @@
 ![Java](https://img.shields.io/badge/Java-25-f89820)
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.1.0-6db33f)
 ![Spring Cloud](https://img.shields.io/badge/Spring%20Cloud-2025.1.0-6db33f)
-![Kafka](https://img.shields.io/badge/Apache%20Kafka-3.8%20(KRaft)-231f20)
+![Kafka](https://img.shields.io/badge/Apache%20Kafka-4.2%20(KRaft)-231f20)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-336791)
 ![Stripe](https://img.shields.io/badge/Stripe-payments-635bff)
 ![Status](https://img.shields.io/badge/status-work%20in%20progress-yellow)
@@ -19,8 +19,9 @@ Outbox** for exactly-the-event-you-committed delivery, a **pluggable payment-pro
 > ⚠️ **Project status:** This repository is a **work in progress**. The *payment* side of the system
 > (request → Stripe → webhook → outbox → Kafka) is implemented and reasonably hardened. The *wallet*
 > side (the Kafka consumer that actually credits balances, plus the wallet HTTP API) is **not yet
-> implemented** — `flow-wallet-service` is currently a skeleton. See
-> [`implementation_plan.md`](implementation_plan.md) for the roadmap and live progress.
+> implemented** — `flow-wallet-service` is currently a skeleton, so a top-up reaches Stripe and lands in
+> Kafka, but no balance changes. Closing that loop is the MVP, and it is what the roadmap is organised
+> around. See [`implementation_plan.md`](implementation_plan.md) (local file) for stages and progress.
 
 ---
 
@@ -36,6 +37,7 @@ Outbox** for exactly-the-event-you-committed delivery, a **pluggable payment-pro
 - [Identity & security model](#identity--security-model)
 - [API reference](#api-reference)
 - [Error responses](#error-responses)
+- [Testing](#testing)
 - [Getting started](#getting-started)
 - [Configuration](#configuration)
 - [Project status & roadmap](#project-status--roadmap)
@@ -44,8 +46,9 @@ Outbox** for exactly-the-event-you-committed delivery, a **pluggable payment-pro
 
 ## Architecture
 
-FlowWallet is a **4-module Maven reactor**. A reactive API Gateway fronts two servlet-based domain
-services, which communicate asynchronously over Kafka and share a small contract library.
+FlowWallet is a **5-module Maven reactor**. A reactive API Gateway fronts two servlet-based domain
+services, which communicate asynchronously over Kafka. Two dependency-free library modules sit under
+them: one for cross-cutting infrastructure, one for the published contract.
 
 ```mermaid
 flowchart LR
@@ -78,7 +81,10 @@ Key characteristics:
 - **API Gateway** — reactive Spring Cloud Gateway; pure path-based routing (no `StripPrefix`), global CORS.
 - **Payment Service** — the core: Stripe integration, transaction persistence, webhook handling, and the outbox.
 - **Wallet Service** — intended owner of balances & history and the consumer of payment events (skeleton today).
-- **Common** — shared DTOs, Kafka event records, enums, constants, and the `@CurrentUserId` infrastructure.
+- **Platform** — cross-cutting infrastructure every service needs: RFC 9457 error handling and the
+  `@CurrentUserId` resolver, both auto-configured.
+- **Contract** — the Kafka event payloads and topic names, and nothing else. It declares **no
+  dependencies at all**: the events are plain records and a consumer brings its own serializer.
 - **Database-per-service** — `payment_db` and `wallet_db` are separate schemas; no cross-service DB access.
 
 ## End-to-end payment flow
@@ -122,7 +128,7 @@ sequenceDiagram
 | Gateway | Spring Cloud Gateway (reactive / WebFlux) |
 | Web / persistence | Spring MVC, Spring Data JPA, Hibernate |
 | Database | PostgreSQL 17, HikariCP, Liquibase migrations |
-| Messaging | Apache Kafka 3.8 (KRaft mode, no ZooKeeper) |
+| Messaging | Apache Kafka 4.2.1 (KRaft mode, no ZooKeeper) |
 | Payments | Stripe (`stripe-java` 33.1.0) |
 | JSON | Jackson 3 (`tools.jackson`) |
 | Mapping | MapStruct 1.6.3 + Lombok |
@@ -133,18 +139,28 @@ sequenceDiagram
 
 ```
 flow-wallet (parent POM)
-├── flow-wallet-common     shared contracts: DTOs, events, enums, constants, @CurrentUserId
+├── flow-wallet-platform   error handling, @CurrentUserId, transport constants
+├── flow-wallet-contract   Kafka events + topic names — no dependencies
 ├── flow-wallet-gateway    API Gateway (reactive) — routing + CORS
 ├── flow-wallet-service    Wallet Service — balances, history, event consumer  [SKELETON]
 └── flow-wallet-payment    Payment Service — Stripe, transactions, webhooks, outbox  [CORE]
 ```
+
+**Why two library modules instead of one.** They serve different purposes and need different rules.
+Platform is ordinary shared code, changed as freely as anything else. Contract is the boundary between
+services: producer and consumer are deployed separately, so a topic always holds messages written by
+more than one version of the code, and changes there follow evolution rules — add optional fields only,
+never rename or retype, keep enums off the wire. One module could not express both sets of rules, so it
+ended up with the loosest ones that fit either. A DTO belonging to a single service now has nowhere to
+land except that service.
 
 | Module | Port | State | Responsibility |
 |--------|------|-------|----------------|
 | `flow-wallet-gateway` | 8080 | Minimal | Route `/api/wallets/**` and `/api/payments/**`; CORS. |
 | `flow-wallet-service` | 8081 | **Skeleton** | (Planned) wallet CRUD, top-up initiation, balance history, Kafka consumer. |
 | `flow-wallet-payment` | 8082 | Implemented | Payment intents, Stripe webhooks, transactional outbox → Kafka. |
-| `flow-wallet-common`  | —    | Implemented | Cross-service contracts and `@CurrentUserId` auto-configuration. |
+| `flow-wallet-platform` | —   | Implemented | RFC 9457 error handling, `@CurrentUserId` auto-configuration. |
+| `flow-wallet-contract` | —   | Implemented | `PaymentCompletedEvent`, `PaymentFailedEvent`, topic names. |
 
 ## The Transactional Outbox
 
@@ -159,8 +175,15 @@ Delivery to Kafka uses a **dual dispatch** strategy:
 
 Reliability details:
 - Ownership is claimed with an atomic compare-and-swap `UPDATE ... SET PROCESSING WHERE id=? AND status=PENDING` (no row locks).
-- Failed sends increment a retry counter and flip to `FAILED` after `max-retries`.
-- On startup, rows stuck in `PROCESSING` are reset to `PENDING` (crash recovery).
+- Failed sends increment a retry counter and back off exponentially through `next_attempt_at`, flipping to `FAILED` after `max-retries`.
+- Rows stuck in `PROCESSING` are recovered **at runtime**, not only at startup: a scheduled reaper returns
+  anything older than a threshold to `PENDING`. The threshold is deliberately well above the longest
+  plausible send — a shorter one could reset a row a live instance is still publishing.
+- A failing row is skipped rather than blocking the batch. Kafka messages are keyed by
+  `transactionReference`, so ordering only has to hold per key, not globally.
+- `FAILED` rows are a durable dead-letter store in their own right: they are visible through the
+  `outbox.events.failed` gauge and can be requeued via `/actuator/outbox`. The usual cause of a failed
+  send is an unreachable broker — exactly when publishing to a Kafka DLT would fail too.
 - A nightly cron purges old `COMPLETED`/`FAILED` rows after a retention window.
 
 > **Delivery semantics: at-least-once.** A crash after a successful Kafka send but before the row is
@@ -175,7 +198,8 @@ Reliability details:
   `status` (`PENDING`/`SUCCESS`/`FAILED`), `provider_event_id` (unique), `version` (optimistic lock),
   `provider_metadata JSONB`, timestamps.
 - **`outbox_events`** — `id`, `aggregate_type`, `aggregate_id`, `event_type`, `payload TEXT`,
-  `status`, `retry_count`, `error_message`, `created_at`, `processed_at`.
+  `status`, `retry_count`, `error_message`, `next_attempt_at` (backoff), `processing_started_at`
+  (stuck-row detection), `created_at`, `processed_at`.
 
 **`wallet_db`** — created by the Docker init script, currently **empty** (no wallet schema yet).
 
@@ -195,7 +219,7 @@ Events (published as JSON, keyed by `transactionReference`):
 
 - User identity is carried between services in the **`X-User-Id`** HTTP header and injected into
   controllers via the `@CurrentUserId` argument resolver (auto-registered for servlet services through
-  `flow-wallet-common`).
+  `flow-wallet-platform`).
 - **Authentication is intentionally out of scope for this repository.** In the target deployment an
   **external, trusted `auth-service`** authenticates the caller and asserts `X-User-Id`. FlowWallet
   services **trust** that header. There is deliberately **no JWT validation** here.
@@ -246,7 +270,7 @@ transaction, and emits the corresponding event through the outbox. Returns `200 
 ## Error responses
 
 Every service returns errors as **RFC 9457** `application/problem+json`, produced by a shared handler
-in `flow-wallet-common` so the contract is identical across services:
+in `flow-wallet-platform` so the contract is identical across services:
 
 ```json
 {
@@ -263,6 +287,21 @@ Request-body validation failures additionally carry an `errors` array of field m
 is centralized: missing `X-User-Id` → `401`, invalid request / unknown provider → `400`, transaction not
 found → `404`, upstream payment-provider failure → `502`, anything unexpected → `500` (with a generic
 detail; internal specifics are logged, never returned).
+
+## Testing
+
+**54 tests**, all green: 50 in the payment service, 4 in platform. They cover the parts most likely to
+be wrong rather than the parts easiest to reach — the asymmetric webhook state machine (a later failure
+must not undo an earlier success, but a later success *must* override an earlier failure), outbox
+claim/retry/backoff boundaries, Stripe signature parsing, and the RFC 9457 status mapping.
+
+```bash
+./mvnw test
+```
+
+The wallet consumer is untested for the honest reason that it does not exist yet. Its idempotency is the
+riskiest logic in the system, so it lands together with an integration test that proves a redelivered
+event does not credit twice.
 
 ## Getting started
 
@@ -342,6 +381,16 @@ All settings are environment-overridable. Highlights:
 
 ## Project status & roadmap
 
-This is an actively evolving showcase. The delivery roadmap — including the critical fixes to the
-payment path and the work to complete the wallet side and close the end-to-end flow — is tracked in
-[`implementation_plan.md`](implementation_plan.md), with checkboxes updated as work lands.
+This is an actively evolving showcase. The payment side is done and hardened; what remains before the
+system does its actual job is the wallet side.
+
+The roadmap is organised around one sentence — *a user creates a wallet, tops it up, and sees the balance
+grow* — and everything not needed for it is deferred:
+
+1. **Wallet comes alive** — enable its infrastructure, add the domain model and migrations, write the
+   idempotent Kafka consumer and its dead-letter handling.
+2. **The client drives the wallet** — wallet endpoints and top-up initiation.
+3. **Proof that it works** — the integration tests that make "it works" a fact rather than an assumption.
+
+Then a 1.0 tag. Stages, definitions of done and open decisions live in `implementation_plan.md`, which is
+a local working file and deliberately not committed.
