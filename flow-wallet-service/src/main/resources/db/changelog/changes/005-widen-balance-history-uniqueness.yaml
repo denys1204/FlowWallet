@@ -1,0 +1,17 @@
+databaseChangeLog:
+  - changeSet:
+      id: 005-widen-balance-history-uniqueness
+      author: flow-wallet
+      changes:
+        - dropUniqueConstraint:
+            tableName: balance_history
+            constraintName: balance_history_transaction_reference_key
+        - addUniqueConstraint:
+            tableName: balance_history
+            columnNames: transaction_reference, type
+            constraintName: balance_history_reference_type_key
+            remarks: >-
+              A transfer between two wallets is one operation with two movements, so its legs must be able
+              to share a reference. Widening the key lets them, while keeping every barrier it already held:
+              at most one movement of any given type per reference, so a payment can still be credited only
+              once. Done while the table is empty -- afterwards it is a migration on a money ledger.
