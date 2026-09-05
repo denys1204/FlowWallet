@@ -33,6 +33,11 @@ public class StripePaymentStrategy implements PaymentProviderStrategy {
     }
 
     @Override
+    public void validateRequest(PaymentRequestContext context) {
+        requestMapper.validate(context);
+    }
+
+    @Override
     public PaymentInitiationResult initiatePayment(PaymentRequestContext context) {
         try {
             var params = requestMapper.toPaymentIntentParams(context);

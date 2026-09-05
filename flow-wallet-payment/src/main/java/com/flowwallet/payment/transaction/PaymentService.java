@@ -5,6 +5,7 @@ import com.flowwallet.payment.dto.PaymentIntentResponse;
 import com.flowwallet.payment.provider.PaymentProviderFactory;
 import com.flowwallet.payment.provider.PaymentProviderStrategy;
 import com.flowwallet.payment.provider.dto.PaymentInitiationResult;
+import com.flowwallet.payment.provider.dto.PaymentRequestContext;
 import com.flowwallet.payment.transaction.mapper.PaymentEventMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,8 +35,15 @@ public class PaymentService {
             return mapper.toResponse(existing.get());
         }
 
-        // Resolve the provider first so an unknown provider fails fast, before any row is written.
+        // Resolve the provider and let it vet the request first, so both fail fast before any row is
+        // written. A rejection afterwards would leave the reference taken with nothing the client can do.
         PaymentProviderStrategy strategy = factory.getStrategy(request.providerName());
+        strategy.validateRequest(new PaymentRequestContext(
+                request.transactionReference(),
+                request.amount(),
+                request.currency(),
+                userId
+        ));
 
         PaymentTransaction reserved = store.reserve(request, userId);
 

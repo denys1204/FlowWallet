@@ -6,6 +6,7 @@ import com.flowwallet.payment.provider.PaymentProviderFactory;
 import com.flowwallet.payment.provider.PaymentProviderStrategy;
 import com.flowwallet.payment.provider.dto.PaymentInitiationResult;
 import com.flowwallet.payment.provider.dto.PaymentRequestContext;
+import com.flowwallet.payment.provider.exception.InvalidPaymentRequestException;
 import com.flowwallet.payment.provider.exception.UnsupportedPaymentProviderException;
 import com.flowwallet.payment.transaction.mapper.PaymentEventMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -49,6 +50,23 @@ class PaymentServiceTest {
         assertThat(response).isSameAs(mapped);
         verify(factory, never()).getStrategy(any());
         verify(store, never()).reserve(any(), any());
+    }
+
+    @Test
+    void providerRejectionLeavesNoReservedRow() {
+        // The reference must stay free after a rejected request. If a row were written first, the client
+        // could not retry with a corrected amount -- the reference would already be taken by a payment that
+        // never happened.
+        when(store.findOwnedBy("ref-1", "user-1")).thenReturn(Optional.empty());
+        when(factory.getStrategy("STRIPE")).thenReturn(strategy);
+        doThrow(new InvalidPaymentRequestException("amount carries more decimal places than USD accepts"))
+                .when(strategy).validateRequest(any());
+
+        assertThatThrownBy(() -> service.initiatePayment(request("ref-1", "STRIPE"), "user-1"))
+                .isInstanceOf(InvalidPaymentRequestException.class);
+
+        verify(store, never()).reserve(any(), any());
+        verify(strategy, never()).initiatePayment(any());
     }
 
     @Test

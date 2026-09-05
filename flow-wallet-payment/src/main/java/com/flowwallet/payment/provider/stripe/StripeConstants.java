@@ -1,7 +1,5 @@
 package com.flowwallet.payment.provider.stripe;
 
-import java.math.BigDecimal;
-import java.util.Set;
 
 /**
  * Internal constants for the Stripe payment provider integration.
@@ -9,11 +7,6 @@ import java.util.Set;
 public final class StripeConstants {
     private StripeConstants() {
     }
-
-    /**
-     * Multiplier used to convert major currency units to their smallest subunit (e.g. USD → cents).
-     */
-    public static final BigDecimal CENTS_MULTIPLIER = BigDecimal.valueOf(100);
 
     /**
      * Metadata key for the internal transaction reference.
@@ -24,17 +17,6 @@ public final class StripeConstants {
      * Metadata key for the user ID.
      */
     public static final String META_USER_ID = "userId";
-
-    /**
-     * Currencies where the base unit has no fractional subunit,
-     * so the amount is passed to Stripe as-is without multiplication.
-     *
-     * @see <a href="https://docs.stripe.com/currencies#zero-decimal">Stripe: Zero-decimal currencies</a>
-     */
-    public static final Set<String> ZERO_DECIMAL_CURRENCIES = Set.of(
-            "BIF", "CLP", "DJF", "GNF", "JPY", "KMF", "KRW", "MGA",
-            "PYG", "RWF", "UGX", "VND", "VUV", "XAF", "XOF", "XPF"
-    );
 
     /**
      * Stripe event fired when a PaymentIntent is successfully completed.
