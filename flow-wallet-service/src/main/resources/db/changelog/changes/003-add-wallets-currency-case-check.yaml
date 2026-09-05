@@ -1,0 +1,12 @@
+databaseChangeLog:
+  - changeSet:
+      id: 003-add-wallets-currency-case-check
+      author: flow-wallet
+      changes:
+        - sql:
+            comment: >-
+              The unique constraint on (user_id, currency) does not collide 'usd' with 'USD', so without
+              this a single real currency could occupy two wallet rows and split one user's money between
+              them. Wallet.open() upper-cases, but that is one factory guarding an invariant the schema
+              should hold. Written as raw SQL because addCheckConstraint is a Liquibase Pro change type.
+            sql: ALTER TABLE wallets ADD CONSTRAINT wallets_currency_is_upper CHECK (currency = upper(currency))
