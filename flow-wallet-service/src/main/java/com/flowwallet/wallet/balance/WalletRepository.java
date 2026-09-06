@@ -6,9 +6,24 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface WalletRepository extends JpaRepository<Wallet, Long> {
+
+    /**
+     * Reads a wallet without locking it. Separate from {@link #lockByUserIdAndCurrency} on purpose: reusing
+     * the locking finder for reads would take a row lock on every balance check and queue them behind
+     * whatever credit is in flight, for no benefit — a read has nothing to lose a race about.
+     */
+    Optional<Wallet> findByUserIdAndCurrency(String userId, String currency);
+
+    /**
+     * Every wallet the caller holds. Currency-addressed URLs leave a client no way to discover which
+     * currencies it holds after a fresh session, so this is part of the addressing scheme rather than an
+     * extra endpoint bolted on.
+     */
+    List<Wallet> findByUserIdOrderByCurrency(String userId);
 
     /**
      * Resolves the wallet a payment belongs to and holds it for the rest of the transaction. The pair is the

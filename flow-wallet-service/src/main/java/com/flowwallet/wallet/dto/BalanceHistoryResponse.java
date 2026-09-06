@@ -4,16 +4,15 @@ import java.math.BigDecimal;
 import java.time.Instant;
 
 /**
- * Response representing a single entry in the wallet's balance history.
+ * One movement on a wallet.
  *
- * @param id                   history record ID
- * @param transactionReference unique reference linking to the originating transaction
- * @param type                 operation type (DEPOSIT, WITHDRAWAL)
- * @param amount               operation amount
- * @param balanceBefore        balance before the operation
- * @param balanceAfter         balance after the operation
- * @param description          optional human-readable description
- * @param createdAt            when the operation was recorded
+ * @param id                   the movement's id, and the cursor for paging further back
+ * @param transactionReference links the movement to the payment that caused it
+ * @param type                 what kind of movement this was
+ * @param amount               how much moved
+ * @param balanceBefore        balance before the movement
+ * @param balanceAfter         balance after it
+ * @param createdAt            when it was recorded
  */
 public record BalanceHistoryResponse(
         Long id,
@@ -22,6 +21,5 @@ public record BalanceHistoryResponse(
         BigDecimal amount,
         BigDecimal balanceBefore,
         BigDecimal balanceAfter,
-        String description,
         Instant createdAt
 ) {}
