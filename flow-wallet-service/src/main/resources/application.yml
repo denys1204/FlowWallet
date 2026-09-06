@@ -48,6 +48,13 @@ spring:
       sasl.jaas.config: ${KAFKA_SASL_JAAS_CONFIG:}
 
 wallet:
+  payment:
+    # Payment Service directly, not through the gateway: service-to-service traffic has no reason to leave
+    # by the front door, and routing it there would make an internal call depend on the edge being up.
+    base-url: ${WALLET_PAYMENT_BASE_URL:http://localhost:8082}
+    connect-timeout: ${WALLET_PAYMENT_CONNECT_TIMEOUT:2s}
+    read-timeout: ${WALLET_PAYMENT_READ_TIMEOUT:10s}
+    provider-name: ${WALLET_PAYMENT_PROVIDER:STRIPE}
   consumer:
     retry:
       max-attempts: ${WALLET_CONSUMER_RETRY_MAX_ATTEMPTS:3}

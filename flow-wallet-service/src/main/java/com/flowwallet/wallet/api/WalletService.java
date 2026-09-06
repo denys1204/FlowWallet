@@ -13,9 +13,7 @@ import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Currency;
 import java.util.List;
-import java.util.Locale;
 
 /**
  * Everything a client can do to a wallet that does not move money.
@@ -46,7 +44,7 @@ public class WalletService {
      */
     @Transactional
     public WalletResponse open(String userId, String currency) {
-        String code = normalise(currency);
+        String code = Currencies.normalise(currency);
         try {
             return mapper.toResponse(wallets.saveAndFlush(Wallet.open(userId, code)));
         } catch (DataIntegrityViolationException e) {
@@ -60,7 +58,7 @@ public class WalletService {
 
     @Transactional(readOnly = true)
     public WalletResponse read(String userId, String currency) {
-        return mapper.toResponse(require(userId, normalise(currency)));
+        return mapper.toResponse(require(userId, Currencies.normalise(currency)));
     }
 
     /**
@@ -69,7 +67,7 @@ public class WalletService {
      */
     @Transactional(readOnly = true)
     public HistoryPage history(String userId, String currency, Long before, int limit) {
-        Wallet wallet = require(userId, normalise(currency));
+        Wallet wallet = require(userId, Currencies.normalise(currency));
 
         List<BalanceHistory> fetched = movements.findPageBefore(wallet.getId(), before, Limit.of(limit + 1));
         boolean hasOlder = fetched.size() > limit;
@@ -86,23 +84,4 @@ public class WalletService {
                 .orElseThrow(() -> new WalletNotFoundException(currency));
     }
 
-    /**
-     * Upper-cases before validating, in that order and deliberately. {@code Currency.getInstance} is
-     * case-sensitive, so validating first would answer a casing mistake with "not a valid currency code",
-     * which is both wrong and unhelpful. Upper-casing also matches how the value is stored — the schema
-     * carries a CHECK that the column equals its own upper-case — so {@code /api/wallets/usd} finds the
-     * wallet rather than silently missing it.
-     */
-    private String normalise(String currency) {
-        if (currency == null || currency.isBlank()) {
-            throw new InvalidCurrencyException(currency);
-        }
-        String code = currency.toUpperCase(Locale.ROOT);
-        try {
-            Currency.getInstance(code);
-        } catch (IllegalArgumentException e) {
-            throw new InvalidCurrencyException(currency);
-        }
-        return code;
-    }
 }
