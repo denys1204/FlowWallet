@@ -235,6 +235,16 @@ against the first.
 - Practical consequence: the trust boundary lives at the edge in front of the gateway. When the
   auth-service is introduced, the network topology must ensure `X-User-Id` can only originate from it
   (e.g. the gateway is not publicly reachable except via the auth-service).
+- **`X-User-Id` must be a random-based UUID — version 4 or 7 — and the resolver enforces it.** This is a
+  contract with the auth-service, not a formatting preference. Money is transferred by naming the
+  recipient's id, and there is deliberately no way to search for anyone: you know an id because it was
+  shared with you. That only holds while ids cannot be guessed, so an identity space of e-mail addresses
+  would quietly make every user enumerable while everything kept working. Versions 1, 3 and 5 are refused
+  for the same reason — 3 and 5 are deterministic hashes of a name, so anyone who knows the namespace and
+  a person's e-mail can compute their id exactly, and 1 embeds a MAC address and a timestamp. All three are
+  UUIDs by any naive check and none is unguessable.
+- Case is accepted either way and folded to lower case, so one identity cannot become two users with two
+  balances.
 - Stripe webhooks **are** cryptographically verified (HMAC signature with a replay window) — this is
   independent of user identity and remains enforced.
 
