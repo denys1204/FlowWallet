@@ -18,21 +18,26 @@ import java.util.regex.Pattern;
  * Throws {@link MissingUserIdException} if the header is absent, blank, longer than a service can store,
  * or not a random-based UUID.
  * <p>
- * The UUID rule is a security property, not tidiness. Money is sent to a person by naming their id, and
- * there is deliberately no way to search for anyone — you know an id because it was shared with you. That
- * only holds while ids cannot be guessed, and nothing else in the system enforces it: the header is trusted
- * from an external service we do not control, so an identity space of e-mail addresses would quietly make
- * every user enumerable while everything kept working.
+ * The rule is short to state: <strong>an identity must be opaque and must not be derived from anything
+ * knowable.</strong> That is data hygiene rather than a defence against an attacker with a word list — a
+ * version-4 UUID carries 122 random bits, so its space cannot be searched, and a hit would reveal only that
+ * some number is registered. There is no name, e-mail or profile behind it to leak.
  * <p>
- * Only versions 4 and 7 pass, and that exclusion is the point rather than pedantry. Versions 3 and 5 are
- * deterministic hashes of a name in a namespace, so anyone who knows the namespace and someone's e-mail can
- * compute their id exactly; version 1 embeds a MAC address and a timestamp. All three are UUIDs by any naive
- * check and none of them is unguessable.
+ * What the excluded versions actually cost is narrower and real. Versions 3 and 5 are deterministic hashes
+ * of a name in a namespace, so they let someone <em>confirm a specific guess</em>: suspecting an id is
+ * {@code uuid5(ns, "someone@example.com")}, you compute it and compare. That is not searching a space, it is
+ * checking one hypothesis, and no amount of entropy prevents it. Version 1 embeds a MAC address and a
+ * creation time, which is a small leak with nothing to show for it. All three are UUIDs by any naive check.
  * <p>
- * The rule is spelled out here rather than delegated to Hibernate Validator's {@code @UUID}, which is used
- * for the same job on request parameters. An argument resolver runs before bean validation and is
- * constructed by hand, so no annotation reaches it; the test suite pins this expression against the same
- * cases the annotation is configured for.
+ * Today the rule carries more weight than hygiene, because {@code X-User-Id} is not authenticated: whoever
+ * writes the header is that user. Once the gateway validates a token and services are unreachable except
+ * through it, knowing an id stops being worth anything and this drops back to hygiene. It stays either way —
+ * it costs one expression, and the day the identity scheme changes is a day worth hearing about.
+ * <p>
+ * The rule is spelled out here rather than delegated to Hibernate Validator's {@code @UUID}, which does the
+ * same job on request parameters. An argument resolver runs before bean validation and is constructed by
+ * hand, so no annotation reaches it; the tests pin this expression against the cases the annotation is
+ * configured for.
  */
 public class CurrentUserIdResolver implements HandlerMethodArgumentResolver {
     /**
