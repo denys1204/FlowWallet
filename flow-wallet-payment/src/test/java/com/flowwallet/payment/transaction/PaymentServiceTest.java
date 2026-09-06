@@ -178,6 +178,35 @@ class PaymentServiceTest {
     }
 
     @Test
+    void aReferenceThatWasAlreadyPaidIsRefused() {
+        // Handing the original intent back would return a client secret that has been spent, with a 200
+        // saying all is well. The client would then fail at Stripe, learning from a third party what this
+        // service already knew.
+        PaymentTransaction settled = initiatedTransaction("pi_123", Map.of("clientSecret", "cs_1"));
+        settled.markAsSuccess("evt_1");
+        when(store.findOwnedBy("ref-1", "user-1")).thenReturn(Optional.of(settled));
+
+        assertThatThrownBy(() -> service.initiatePayment(request("ref-1", "STRIPE"), "user-1"))
+                .isInstanceOf(DuplicateTransactionReferenceException.class)
+                .hasMessageContaining("already paid");
+
+        verify(mapper, never()).toResponse(any());
+    }
+
+    @Test
+    void aDeclinedPaymentCanStillBeRetriedUnderTheSameReference() {
+        // A declined card leaves the provider's intent usable, so this is a retry rather than a finished
+        // payment. Only SUCCESS is terminal.
+        PaymentTransaction declined = initiatedTransaction("pi_123", Map.of("clientSecret", "cs_1"));
+        declined.markAsFailed("evt_2");
+        PaymentIntentResponse mapped = new PaymentIntentResponse(Map.of("clientSecret", "cs_1"), "pi_123", "ref-1");
+        when(store.findOwnedBy("ref-1", "user-1")).thenReturn(Optional.of(declined));
+        when(mapper.toResponse(declined)).thenReturn(mapped);
+
+        assertThat(service.initiatePayment(request("ref-1", "STRIPE"), "user-1")).isSameAs(mapped);
+    }
+
+    @Test
     void aReservedRowThatNeverReachedTheProviderIsRetriedRatherThanStranded() {
         // The window: reserve() commits, the provider call succeeds, and recordInitiation fails. The row is
         // left PENDING with no provider id, so the webhook cannot find it and the client's retry used to get

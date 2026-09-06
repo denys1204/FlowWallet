@@ -39,6 +39,12 @@ public class PaymentService {
                 );
             });
 
+            if (transaction.isSettled()) {
+                log.warn("Reference {} was already paid; refusing to hand back a spent intent",
+                        request.transactionReference());
+                throw DuplicateTransactionReferenceException.forSettledReference(request.transactionReference());
+            }
+
             if (transaction.isInitiated()) {
                 log.info("Returning existing payment transaction for reference: {}", request.transactionReference());
                 return mapper.toResponse(transaction);

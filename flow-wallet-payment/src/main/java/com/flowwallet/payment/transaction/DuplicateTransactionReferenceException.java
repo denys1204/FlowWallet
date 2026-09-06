@@ -21,6 +21,17 @@ public class DuplicateTransactionReferenceException extends ApiException {
     }
 
     /**
+     * The reference names a payment that already completed. Returning its intent again would hand back a
+     * credential that has been spent, with a 200 that says everything is fine — the client would then fail
+     * at the provider, learning from a third party what this service already knew.
+     */
+    public static DuplicateTransactionReferenceException forSettledReference(String transactionReference) {
+        return new DuplicateTransactionReferenceException(
+                "Transaction reference %s was already paid".formatted(transactionReference)
+        );
+    }
+
+    /**
      * The reference exists and names a payment on different terms. 409 rather than 422 because the request
      * is not itself invalid — the same body under an unused reference would be accepted.
      *

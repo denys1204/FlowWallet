@@ -98,6 +98,17 @@ public class PaymentTransaction {
     }
 
     /**
+     * Whether this payment is finished and its provider credential spent.
+     * <p>
+     * Only SUCCESS counts. A FAILED transaction is deliberately not settled: a declined card leaves the
+     * provider's intent usable, so a client retrying under the same reference should get it back and try
+     * again rather than be told the reference is finished.
+     */
+    public boolean isSettled() {
+        return status == TransactionStatus.SUCCESS;
+    }
+
+    /**
      * Whether the provider ever acknowledged this payment. False means the row was reserved but the
      * provider call either never ran or never came back, so nothing exists on the provider's side under
      * this reference that a client could pay.
