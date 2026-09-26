@@ -1,19 +1,19 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
 FlowWallet is an event-driven wallet on Java 25, Spring Boot 4.1, Kafka (KRaft), PostgreSQL and Stripe. It
 is an engineering showcase that runs against Stripe test mode only and never goes to production.
-Documentation is split by kind, and each file is kept accurate against the code: when behaviour changes,
-update whichever file describes that behaviour, in the same piece of work. `README.md` is the front page:
-what the project is, status, the topology diagram, tech stack and a quickstart. `ARCHITECTURE.md` explains
-how the system works: the modules, the deposit flow, the outbox, the wallet consumer, transfers and the
-identity model. `docs/api.md` is the API reference and error responses, `docs/data-model.md` is the database
-schema, `docs/events.md` is the Kafka topics and event contracts, and `docs/development.md` covers running,
-configuring and testing the project. The topology diagram is duplicated in `README.md` and
-`ARCHITECTURE.md`; a change to it goes in both. Decisions that span files, with their context and rejected
-alternatives, are ADRs in `docs/adr/` (index: `docs/adr/README.md`). The rules below are stated once and link
-the ADR that holds their reasoning.
+
+Documentation is split by kind, and each file is kept accurate against the code: when behaviour changes, update
+the file that describes it in the same piece of work. `README.md` is the front page (status, topology diagram,
+tech stack, quickstart); `ARCHITECTURE.md` explains the modules, the deposit flow, the outbox, the wallet
+consumer, transfers and the identity model; `docs/api.md` holds the API and error responses, `docs/data-model.md`
+the schema, `docs/events.md` the topics and event contracts, and `docs/development.md` running, configuring and
+testing. The topology diagram is in both `README.md` and `ARCHITECTURE.md`; a change goes in both. Decisions
+that span files, with their context and rejected alternatives, are ADRs in `docs/adr/` (index:
+`docs/adr/README.md`). The rules below are stated once and link the ADR that holds their reasoning. Rules for one
+kind of file live in `.claude/rules/` and load when a matching file is read: `web.md` (controllers and request
+DTOs), `persistence.md` (Liquibase and configuration), `integrations.md` (the Maven build, Kafka, MapStruct,
+Stripe).
 
 ## Commands
 
@@ -45,79 +45,35 @@ Compose ports bind to `127.0.0.1`; if `5432` is taken by another project, set `D
 
 ## Architecture
 
-Five Maven modules ([ADR 0002](docs/adr/0002-module-boundaries.md)):
+Five Maven modules. Services depend only on platform and contract, never on each other, and payment knows
+nothing about wallets ([ADR 0002](docs/adr/0002-module-boundaries.md)).
 
-- `flow-wallet-contract`: the Kafka events (`PaymentCompletedEvent`, `PaymentFailedEvent`), the topic name, the
-  `eventType` header and its values, and the schema version. No dependencies of its own. Its `package-info`
-  holds the evolution rules: add optional fields only, never rename, remove or retype, keep enums off the
-  wire ([ADR 0009](docs/adr/0009-payment-event-contract.md)). Only things that actually cross the wire belong
-  here.
+- `flow-wallet-contract`: only what crosses the wire: the Kafka events (`PaymentCompletedEvent`,
+  `PaymentFailedEvent`), the topic name, the `eventType` header and its values, and the schema version. No
+  dependencies of its own. Its `package-info` holds the evolution rules: add optional fields only, never rename,
+  remove or retype, keep enums off the wire ([ADR 0009](docs/adr/0009-payment-event-contract.md)).
 - `flow-wallet-platform`: shared servlet-side infrastructure, auto-configured: the RFC 9457
   `GlobalExceptionHandler`, `ApiException` (each subclass carries its HTTP status), the `@CurrentUserId`
-  resolver, `@Iso4217Currency`. Nothing domain-shaped. A DTO that belongs to one service lives in that service.
+  resolver, `@Iso4217Currency`. Nothing domain-shaped: a DTO that belongs to one service lives in that service.
 - `flow-wallet-gateway`: reactive Spring Cloud Gateway, path routing only. It routes `/api/wallets/**` to the
   wallet and **only** `/api/payments/webhooks/**` to payment, so a payment can only be started through a wallet.
 - `flow-wallet-payment`: Stripe, `payment_transactions`, webhooks, and the Transactional Outbox → Kafka.
 - `flow-wallet-service`: the Wallet Service. REST API, deposit initiation, transfers, and the Kafka consumer.
 
-Services depend only on platform and contract, never on each other. Payment knows nothing about wallets.
+In brief (the full flows are in `ARCHITECTURE.md`):
 
-### The money path
+- A deposit: `deposit/DepositService` checks the caller's wallet before anything is charged and calls payment
+  directly on `:8082` through `PaymentIntentClient` ([ADR 0013](docs/adr/0013-deposit-initiation.md)); the
+  signed Stripe webhook settles the payment and writes an `outbox_events` row in the same transaction
+  ([ADR 0008](docs/adr/0008-transactional-outbox.md)); `balance/PaymentEventListener` consumes `payment.events`
+  and credits the wallet ([ADR 0010](docs/adr/0010-idempotent-payment-event-consumer.md)).
+- A transfer (`transfer/`) never leaves the wallet: one local transaction in `wallet_db`, with no payment
+  service and no Kafka. `TransferService` is deliberately not `@Transactional`: it checks the request before
+  and classifies an integrity violation after; `TransferHandler.execute` is the one transactional method
+  ([ADR 0014](docs/adr/0014-transfers-in-one-local-transaction.md)).
 
-1. `POST /api/wallets/{currency}/deposits` (`deposit/DepositService`) looks up the caller's wallet **before
-   anything is charged**, then calls payment directly on `:8082` (not through the gateway) through a Spring
-   declarative HTTP interface over `RestClient` (`PaymentIntentClient`). There is no Feign.
-2. Payment reserves a `PENDING` row, calls Stripe outside any DB transaction, records the intent, and returns
-   the client secret, which the wallet passes through untouched ([ADR 0013](docs/adr/0013-deposit-initiation.md)).
-3. The signed Stripe webhook marks the transaction `SUCCESS`/`FAILED` and writes an `outbox_events` row in the
-   same transaction. The outbox publishes via an `AFTER_COMMIT` fast path plus a polling fallback
-   ([ADR 0008](docs/adr/0008-transactional-outbox.md)).
-4. `balance/PaymentEventListener` consumes `payment.events` and credits the wallet
-   ([ADR 0010](docs/adr/0010-idempotent-payment-event-consumer.md)).
-
-Transfers (`POST /api/wallets/{currency}/transfers`, package `transfer/`) never leave the wallet: Payment
-Service and Kafka take no part, and the money moves in one local transaction in `wallet_db`.
-`TransferService` is deliberately not `@Transactional`. Before the transaction it normalises the input and
-refuses what the request alone rules out (currency, `AmountPrecision`, self-transfer) with no connection
-taken; after it, it classifies an integrity violation. `TransferHandler.execute` is the one
-`@Transactional(isolation = READ_COMMITTED)` method and catches nothing. In order, it locks both wallets
-in ascending user id, refuses a missing sender wallet (404), judges the key (replay or 409), calls
-`Wallet.debit` (422), refuses a missing recipient wallet (422), credits, and writes `TRANSFER_OUT` then
-`TRANSFER_IN` with a single flush. No network call runs while the locks are held
-([ADR 0014](docs/adr/0014-transfers-in-one-local-transaction.md),
-[ADR 0006](docs/adr/0006-short-transactions-across-bean-boundaries.md)).
-
-### Idempotency, end to end
-
-- The client sends `Idempotency-Key` (a UUID); it is lower-cased and used verbatim as `transactionReference`,
-  which is also Stripe's idempotency key. The server never generates it
-  ([ADR 0005](docs/adr/0005-client-supplied-idempotency-keys.md)).
-- Payment binds a reference to its terms (`PaymentTransaction.differencesFrom`): same terms → original intent;
-  different terms, another owner, or an already-paid reference → 409.
-- The wallet consumer has two barriers in one transaction: a unique `processed_events.event_id` (redelivery)
-  and a unique `balance_history (transaction_reference, type)` (a second event for a credited payment). After a
-  constraint violation it classifies by reading back from a **fresh** transaction (`PaymentEventOutcomeStore`),
-  and rethrows if neither barrier fired ([ADR 0010](docs/adr/0010-idempotent-payment-event-consumer.md)).
-- Transfers store the key as the `transactionReference` of both legs. `TransferHandler` judges it after both
-  locks and before `Wallet.debit`, with `findByTransactionReferenceAndType(key, TRANSFER_OUT)` and
-  `BalanceHistory.isRepeatOf` (same sender wallet, same recipient, amount by `compareTo`). A repeat is a 200
-  replay built by `TransferResponse.of` from the stored row, byte-identical and timestamp-free; anything else
-  is 409. Same-key transfers that share any wallet serialize on its lock; between transfers that share none,
-  the unique index decides, and `TransferService` classifies the violation with new reads after the rollback:
-  a `TRANSFER_OUT` under the key is a 409 (or a replay if it is the caller's own), none means a CHECK fired or
-  a value overflowed, and it is rethrown as a 500. Lock and version failures (`ConcurrencyFailureException`)
-  become 503 "retry with the same key" ([ADR 0014](docs/adr/0014-transfers-in-one-local-transaction.md)).
-- Refusals write nothing, so they consume no key. A key binds one kind of operation: the consumer reads
-  only `DEPOSIT` rows (`PaymentEventOutcomeStore.classify`) and a transfer only `TRANSFER_OUT`, and each
-  `(reference, type)` barrier holds on its own. One reference can own several rows, so every lookup by
-  reference must name its type ([ADR 0012](docs/adr/0012-balances-and-append-only-ledger.md)).
-- Every balance write takes a `PESSIMISTIC_WRITE` lock on the wallet row
-  (`WalletRepository.lockByUserIdAndCurrency`): the credit, and both wallets of a transfer. `@Version` stays as
-  a backstop. Read-only endpoints use the non-locking finders ([ADR 0011](docs/adr/0011-wallet-row-locking.md)).
-- Consumer error handling is split deliberately: refusals the wallet understands (invalid amount/envelope, unknown
-  wallet, duplicate reference) are stored as `REJECTED` rows with the payload and acknowledged; unreadable
-  records and exhausted retries go to `payment.events.wallet.DLT`. The container's `DefaultErrorHandler` is the
-  **only** retry mechanism in the wallet; do not add Spring Retry there.
+Before changing either flow, read its sections of `ARCHITECTURE.md` and the ADRs they link: the step order, the
+lock order and the idempotency checks are specified there, not here.
 
 ## Invariants
 
@@ -126,19 +82,28 @@ in ascending user id, refuses a missing sender wallet (404), judges the key (rep
   the schema holds the rule for any writer that skips it (`wallets_balance_not_negative`). Ledger amounts are
   always positive and `type` carries the direction (`balance_history_amount_positive`)
   ([ADR 0012](docs/adr/0012-balances-and-append-only-ledger.md)).
-- Code that locks more than one wallet in a transaction locks them in ascending `(user_id, currency)`, which for
-  one currency means ascending user id, taken from the request without a read. `TransferHandler` pins READ
-  COMMITTED, because under REPEATABLE READ a lock that waited fails with a serialization error
+- Every balance write takes a `PESSIMISTIC_WRITE` lock on the wallet row
+  (`WalletRepository.lockByUserIdAndCurrency`); `@Version` stays as a backstop, and read-only endpoints use the
+  non-locking finders. Code that locks more than one wallet in a transaction locks them in ascending
+  `(user_id, currency)`, taken from the request without a read. `TransferHandler` pins READ COMMITTED, because
+  under REPEATABLE READ a lock that waited fails with a serialization error
   ([ADR 0011](docs/adr/0011-wallet-row-locking.md)).
-- No unlocked read of a wallet before the locks in the same transaction. The locking query would return the
+- No unlocked read of a wallet before its lock in the same transaction: the locking query would return the
   managed instance, and Hibernate throws `StaleObjectStateException` (a 503 on a transfer) whenever another
-  writer committed in between, so a pre-read turns ordinary lock waits into failed requests.
+  writer committed in between.
 - A wallet is addressed by `(userId, currency)`, never by a client-supplied id, and is **never created as a side
   effect of a payment event or a transfer**. The wallet id is deliberately absent from the events, the payment
   request and every API response ([ADR 0004](docs/adr/0004-wallet-addressed-by-owner-and-currency.md)).
-- `X-User-Id` must be a UUID version 4 or 7 (enforced in `CurrentUserIdResolver`) and is case-folded. A
-  transfer's `to` is checked with the resolver's own expression (`CurrentUserIdResolver.RANDOM_UUID_REGEX` in
-  `TransferRequest`). `Idempotency-Key` accepts any UUID version
+- `Idempotency-Key` is a client-supplied UUID of any version, lower-cased and used verbatim as
+  `transactionReference`, which is also Stripe's idempotency key; the server never generates it
+  ([ADR 0005](docs/adr/0005-client-supplied-idempotency-keys.md)). Refusals write nothing, so they consume no
+  key. One reference can own several rows, so every lookup by reference names its type
+  ([ADR 0012](docs/adr/0012-balances-and-append-only-ledger.md)).
+- `X-User-Id` must be a UUID version 4 or 7 (enforced in `CurrentUserIdResolver`) and is case-folded; a
+  transfer's `to` is checked with the same expression (`CurrentUserIdResolver.RANDOM_UUID_REGEX` in
+  `TransferRequest`). Services take it on trust and it is unauthenticated: the gateway has no filters and
+  forwards the client's header unchanged, so knowing a user's id is enough to spend their balance. Every
+  `TRANSFER_IN` shows the recipient the sender's id and key, and there is no user search endpoint by design
   ([ADR 0003](docs/adr/0003-caller-identity-and-trust-boundary.md)).
 - Amounts moved inside the wallet sit on `AmountPrecision`'s grid, a copy of `StripeCurrencyRules`'
   zero-decimal list and two-decimal cap, and at most 15 integer digits. They are refused, never rounded. The
@@ -148,18 +113,16 @@ in ascending user id, refuses a missing sender wallet (404), judges the key (rep
   400 fix the request, 404 open your wallet (only ever the caller's), 409 use a new key (only key reuse), 422
   lower the amount or top up (insufficient funds) or pick another recipient (no recipient wallet), with the
   detail saying which, 503 retry with the same key ([ADR 0016](docs/adr/0016-error-model-and-status-codes.md)).
+- The consumer's `DefaultErrorHandler` is the only retry mechanism in the wallet; do not add Spring Retry there.
+  Refusals the wallet understands (invalid amount or envelope, unknown wallet, duplicate reference) are stored
+  as acknowledged `REJECTED` rows with the payload; unreadable records and exhausted retries go to
+  `payment.events.wallet.DLT` ([ADR 0010](docs/adr/0010-idempotent-payment-event-consumer.md)).
 - A webhook's status reports delivery, not the business outcome: an event for an intent this service never
   created gets 200, not 404.
 - `FAILED` outbox rows are never deleted automatically; they are the dead-letter store
   ([ADR 0008](docs/adr/0008-transactional-outbox.md)).
 - A `PaymentFailedEvent` moves no money, which is why the consumer does not depend on event order
   ([ADR 0009](docs/adr/0009-payment-event-contract.md)).
-- Services take `X-User-Id` on trust, and it is unauthenticated: the gateway has no filters and forwards the
-  client's header unchanged, so whoever sets it is that user, and knowing a user's id is enough to spend that
-  user's balance through a transfer. The intended model (the gateway validates a token; services are reachable
-  only through it, plus wallet → payment directly on `:8082`) is not enforced yet. Every `TRANSFER_IN` shows the
-  recipient the sender's id and key. There is no user search endpoint by design
-  ([ADR 0003](docs/adr/0003-caller-identity-and-trust-boundary.md)).
 
 ## Conventions
 
@@ -168,17 +131,8 @@ in ascending user id, refuses a missing sender wallet (404), judges the key (rep
   @NoArgsConstructor(access = PROTECTED)`, `SEQUENCE` ids with a named generator and an explicit
   `allocationSize = 50` matching the Liquibase `incrementBy: 50`, an explicit `@Column(name = ...)` on every
   non-id field, `@Enumerated(STRING)`, and static factories plus intent-named mutators instead of setters
-  (`OutboxEvent`'s `@Setter` is an older exception).
-- Liquibase: `db.changelog-master.yaml` uses `includeAll`; files are `NNN-description.yaml`, author
-  `flow-wallet`, sequences `incrementBy: 50`. Hibernate runs `ddl-auto: validate`, so an entity change and its
-  migration land in the same commit. `addCheckConstraint` is Liquibase Pro; use a raw `sql:` change.
-- Tunable values are `${ENV_VAR:working-local-default}` in `application.yml`; fixed wiring (serializers,
-  `acks: all`, `ack-mode: RECORD`, `ddl-auto: validate`) stays literal. New settings go in a
-  `@ConfigurationProperties` class with `@Validated` checks that fail startup on nonsense, like
-  `PaymentDepositProperties` or `WalletPaymentProperties`. Older ones are not there yet: `OutboxProperties` and
-  `StripeProperties` are unvalidated, and outbox schedules, the optimistic-lock retry and topic
-  partitions/replicas are read through `@Scheduled`/`@Retryable`/`@Value` placeholders. New variables go in
-  `.env.example` too. Topic names are compile-time constants, not config.
+  (`OutboxEvent`'s `@Setter` is an older exception). Hibernate runs `ddl-auto: validate`, so an entity change
+  and its migration land in the same commit.
 - A comment gives the local why in a few lines: what a reader at that spot cannot get from the code and needs in
   order to change it safely (a local invariant, a trap, a non-obvious ordering). Delete comments that restate the
   code. A decision that spans files, with its rejected alternatives, lives in an ADR under `docs/adr/`, and the
@@ -193,9 +147,6 @@ in ascending user id, refuses a missing sender wallet (404), judges the key (rep
 
 ## Traps already hit
 
-- Boot 4 moved auto-configuration into starters. Plain `liquibase-core` or `spring-kafka` compiles and then
-  silently does nothing; use `spring-boot-starter-liquibase` / `spring-boot-starter-kafka`. Class names written
-  as strings in YAML can also rot unnoticed after an upgrade.
 - In Postgres a constraint violation aborts the transaction. Catch `DataIntegrityViolationException` only to
   rethrow at once (see `PaymentTransactionStore.reserve`), or outside the rolled-back transaction and then read
   from a fresh one (`PaymentEventListener` with `PaymentEventOutcomeStore`, `TransferService`); never keep
@@ -203,33 +154,10 @@ in ascending user id, refuses a missing sender wallet (404), judges the key (rep
   transaction joins it and the reads run on the aborted one ([ADR 0007](docs/adr/0007-unique-constraints-decide.md)).
 - `@Transactional` on a method called from the same class does nothing: there is no proxy
   ([ADR 0006](docs/adr/0006-short-transactions-across-bean-boundaries.md)).
-- Class-level `@Validated` routes parameter validation through an AOP proxy. Standalone `MockMvc` creates none,
-  so parameter constraints silently don't run in tests unless the controller is wrapped with a
-  `MethodValidationInterceptor` proxy (see `DepositControllerTest`).
-- `UUID.fromString` is not a validator (it accepts `1-1-1-1-1`), and Hibernate Validator 9.1's `@UUID` is an
-  unreliable one. Its validator throws on a 36-character value with a fifth dash, which the platform's
-  last-resort handler answers with a 500, and it accepts non-ASCII digits. The transfer endpoint checks its ids
-  with an ASCII `@Pattern` instead (`TransferController`, `TransferRequest`). `DepositController` uses `@UUID`
-  for its key and so answers such a key with a 500. Where `@UUID` stays, it defaults to versions 1 to 5, so set
-  `version` explicitly.
-- Without `produces` on the mapping, Spring MVC negotiates the response only after the handler has returned,
-  so a request whose `Accept` rules out JSON gets a 406 after the work is done. A mapping that moves money
-  declares `produces = MediaType.APPLICATION_JSON_VALUE` (see `TransferController`).
-- Hibernate Validator's `@Digits` measures a `BigDecimal` as it is, trailing zeros included (it strips them
-  only from other `Number` types), so `@Digits(fraction = 2)` refuses `25.100`. Precision is checked in code
-  (`AmountPrecision`).
-- Postgres rounds a value finer than a `NUMERIC` column's scale instead of refusing it: `0.00001` is stored as
-  `0.0000`. Refuse off-grid amounts before they reach the column.
-- The build passes `-Amapstruct.unmappedTargetPolicy=IGNORE` (root `pom.xml`), so a field renamed on either
-  side of a mapper silently drops out of the response. Pin a mapped field with a test that uses the real
-  mapper (see `WalletServiceTest`).
 - `ObjectOptimisticLockingFailureException` is not a `DataIntegrityViolationException`; a catch for one never
   sees the other.
-- Jackson 3 is `tools.jackson.*`. Messages on the topic are JSON strings, so consumers use
-  `StringDeserializer` and parse themselves.
-- Stripe minor units come from the explicit table in `StripeCurrencyRules`; never derive them from
-  `java.util.Currency` (ISO is wrong for Stripe on MGA and ISK). A server-side PaymentIntent confirm needs
-  `return_url`.
+- Postgres rounds a value finer than a `NUMERIC` column's scale instead of refusing it: `0.00001` is stored as
+  `0.0000`. Refuse off-grid amounts before they reach the column.
 
 ## Local working files
 
