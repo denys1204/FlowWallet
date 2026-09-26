@@ -15,6 +15,12 @@ import java.util.UUID;
 
 @Mapper(componentModel = "spring", imports = {Instant.class, UUID.class, KafkaConstants.class})
 public interface PaymentEventMapper {
+    /**
+     * The outbox row's aggregate type. It lives here rather than in flow-wallet-contract because it never
+     * reaches the wire — it labels a row in this service's own table, and a consumer has no use for it.
+     */
+    String AGGREGATE_TYPE_PAYMENT_TRANSACTION = "PaymentTransaction";
+
     @Mapping(target = "eventId", expression = "java(UUID.randomUUID().toString())")
     @Mapping(target = "schemaVersion", expression = "java(KafkaConstants.PAYMENT_EVENT_SCHEMA_VERSION)")
     @Mapping(target = "completedAt", expression = "java(Instant.now())")
@@ -29,7 +35,7 @@ public interface PaymentEventMapper {
     @Mapping(target = "paymentIntentId", source = "providerTransactionId")
     PaymentIntentResponse toResponse(PaymentTransaction transaction);
 
-    @Mapping(target = "aggregateType", constant = KafkaConstants.AGGREGATE_TYPE_PAYMENT_TRANSACTION)
+    @Mapping(target = "aggregateType", constant = AGGREGATE_TYPE_PAYMENT_TRANSACTION)
     @Mapping(target = "aggregateId", source = "transaction.transactionReference")
     @Mapping(target = "eventType", constant = KafkaConstants.EVENT_TYPE_PAYMENT_COMPLETED)
     @Mapping(target = "payload", source = "payload")
@@ -41,7 +47,7 @@ public interface PaymentEventMapper {
     @Mapping(target = "errorMessage", ignore = true)
     OutboxEvent toOutboxEvent(PaymentTransaction transaction, String payload);
 
-    @Mapping(target = "aggregateType", constant = KafkaConstants.AGGREGATE_TYPE_PAYMENT_TRANSACTION)
+    @Mapping(target = "aggregateType", constant = AGGREGATE_TYPE_PAYMENT_TRANSACTION)
     @Mapping(target = "aggregateId", source = "transaction.transactionReference")
     @Mapping(target = "eventType", constant = KafkaConstants.EVENT_TYPE_PAYMENT_FAILED)
     @Mapping(target = "payload", source = "payload")

@@ -7,7 +7,7 @@ public final class KafkaConstants {
     private KafkaConstants() {
     }
 
-    /** Topic for payment lifecycle events (e.g. PaymentCompletedEvent). */
+    // Topic for payment lifecycle events (e.g. PaymentCompletedEvent).
     /**
      * Version stamped into every payment event. Bump it only when a change cannot be made
      * additively — renaming, removing or retyping a field. Adding an optional field does not
@@ -29,11 +29,6 @@ public final class KafkaConstants {
      * Event type for payment completion
      */
     public static final String EVENT_TYPE_PAYMENT_COMPLETED = "PaymentCompletedEvent";
-
-    /**
-     * Aggregate type for payment transaction
-     */
-    public static final String AGGREGATE_TYPE_PAYMENT_TRANSACTION = "PaymentTransaction";
 
     /**
      * Event type for payment failure
