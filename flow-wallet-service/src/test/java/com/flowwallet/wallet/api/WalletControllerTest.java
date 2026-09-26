@@ -34,8 +34,9 @@ class WalletControllerTest {
     void aLowerCaseCurrencyInTheBodyReachesTheServiceLikeOneInThePath() throws Exception {
         // /api/wallets/usd already worked; "usd" in the body was refused by a case-sensitive constraint
         // before the service could normalise it. Both now go through the same normalisation.
-        when(wallets.open(CALLER, "usd"))
-                .thenReturn(new WalletResponse(BigDecimal.ZERO, "USD", null, null));
+        when(wallets.open(CALLER, "usd")).thenReturn(
+                new WalletResponse(BigDecimal.ZERO, "USD", null, null)
+        );
 
         mockMvc().perform(post("/api/wallets")
                         .header("X-User-Id", CALLER)

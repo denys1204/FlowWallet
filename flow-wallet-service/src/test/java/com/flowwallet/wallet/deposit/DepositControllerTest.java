@@ -2,6 +2,7 @@ package com.flowwallet.wallet.deposit;
 
 import com.flowwallet.platform.security.CurrentUserIdResolver;
 import com.flowwallet.platform.web.GlobalExceptionHandler;
+import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -47,8 +48,10 @@ class DepositControllerTest {
                 .setCustomArgumentResolvers(new CurrentUserIdResolver())
                 .setValidator(validator)
                 .build();
-        when(deposits.start(anyString(), anyString(), anyString(), any()))
-                .thenReturn(new DepositResponse("ref", "STRIPE", Map.of("clientSecret", "cs")));
+
+        when(deposits.start(anyString(), anyString(), anyString(), any())).thenReturn(
+                new DepositResponse("ref", "STRIPE", Map.of("clientSecret", "cs"))
+        );
     }
 
     private int deposit(String key) throws Exception {
@@ -70,7 +73,7 @@ class DepositControllerTest {
     void acceptsAnyUuidVersion(String key, String description) throws Exception {
         // The annotation's default is versions 1 to 5, so without the explicit list a version-7 key was
         // refused while the Javadoc promised any version. The key only has to be unique, not unguessable.
-        org.assertj.core.api.Assertions.assertThat(deposit(key)).isEqualTo(200);
+        Assertions.assertThat(deposit(key)).isEqualTo(200);
     }
 
     @ParameterizedTest(name = "\"{0}\" is refused")
@@ -80,7 +83,7 @@ class DepositControllerTest {
             "not-a-uuid",
     })
     void refusesAnythingThatIsNotAUsableUuid(String key) throws Exception {
-        org.assertj.core.api.Assertions.assertThat(deposit(key)).isEqualTo(400);
+        Assertions.assertThat(deposit(key)).isEqualTo(400);
         verify(deposits, never()).start(anyString(), anyString(), anyString(), any());
     }
 }

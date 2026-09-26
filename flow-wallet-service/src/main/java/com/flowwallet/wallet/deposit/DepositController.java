@@ -3,8 +3,8 @@ package com.flowwallet.wallet.deposit;
 import com.flowwallet.platform.security.CurrentUserId;
 import com.flowwallet.wallet.dto.DepositRequest;
 import jakarta.validation.Valid;
-import org.hibernate.validator.constraints.UUID;
 import lombok.RequiredArgsConstructor;
+import org.hibernate.validator.constraints.UUID;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
@@ -18,10 +18,9 @@ import org.springframework.web.bind.annotation.*;
  */
 @Validated
 @RestController
-@RequestMapping("/api/wallets/{currency}/deposits")
 @RequiredArgsConstructor
+@RequestMapping("/api/wallets/{currency}/deposits")
 public class DepositController {
-
     private final DepositService deposits;
 
     /**
@@ -40,7 +39,7 @@ public class DepositController {
     public DepositResponse start(
             @PathVariable String currency,
             @RequestHeader("Idempotency-Key")
-            @UUID(allowNil = false, allowEmpty = false, letterCase = UUID.LetterCase.INSENSITIVE,
+            @UUID(allowNil = false, letterCase = UUID.LetterCase.INSENSITIVE,
                     version = {1, 2, 3, 4, 5, 6, 7, 8}, message = "Idempotency-Key must be a UUID") String idempotencyKey,
             @Valid @RequestBody DepositRequest request,
             @CurrentUserId String userId
