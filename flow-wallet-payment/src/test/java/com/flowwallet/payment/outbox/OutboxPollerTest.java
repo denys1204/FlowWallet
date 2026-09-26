@@ -30,6 +30,15 @@ class OutboxPollerTest {
     }
 
     @Test
+    void cleanupNeverDeletesFailedEvents() {
+        // A FAILED row is an event that never reached Kafka -- for a completed payment, a credit that never
+        // happened -- and it is the only record of it. Sweeping it by age would lose the money without a trace.
+        poller.cleanupOldEvents();
+
+        verify(repository).deleteOldEvents(eq(List.of(OutboxStatus.COMPLETED)), any(Instant.class));
+    }
+
+    @Test
     void reapStuckProcessingResetsEventsOlderThanThreshold() {
         poller.reapStuckProcessing();
 

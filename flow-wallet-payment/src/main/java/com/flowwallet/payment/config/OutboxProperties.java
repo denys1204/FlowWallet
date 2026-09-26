@@ -31,7 +31,8 @@ public class OutboxProperties {
     private long retryBackoffMaxMs = 60000;
 
     /**
-     * Number of days to retain COMPLETED and FAILED outbox events before cleanup.
+     * Number of days to retain COMPLETED outbox events before cleanup. FAILED events are never deleted by
+     * age: they are undelivered events, and deleting one would lose it without a trace.
      */
     private int retentionDays = 7;
 

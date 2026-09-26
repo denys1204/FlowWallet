@@ -72,8 +72,11 @@ public class OutboxPoller {
                 outboxMessageSender.processEvent(event.getId());
             } catch (OutboxMessageProcessingException e) {
                 // Skip this event and keep going: one failing event must not block delivery of unrelated
-                // transactions' events. Per-key ordering is preserved by Kafka's partition key (aggregateId),
-                // not by processing the batch strictly in order.
+                // transactions' events. The price is that send order within one transaction is NOT
+                // guaranteed -- a failure waiting out its backoff can be overtaken by a later success for
+                // the same reference. The partition key keeps messages that ARE sent in order; it cannot
+                // order messages that have not been sent yet. The wallet does not depend on order: a failure
+                // moves no money.
                 log.error(
                         "Fallback Poller: Failed to process outbox event {}. Skipping; it will be retried next poll.",
                         event.getId(),
@@ -87,14 +90,17 @@ public class OutboxPoller {
     public void cleanupOldEvents() {
         Instant cutoff = Instant.now().minus(outboxProperties.getRetentionDays(), ChronoUnit.DAYS);
 
+        // COMPLETED only. A FAILED row is an event that never reached Kafka -- for a completed payment, a
+        // credit that never happened -- and it is the only record of it. Deleting it on a timer would make
+        // the money disappear without a trace, so it stays until someone requeues it.
         int deleted = outboxEventRepository.deleteOldEvents(
-                List.of(OutboxStatus.COMPLETED, OutboxStatus.FAILED),
+                List.of(OutboxStatus.COMPLETED),
                 cutoff
         );
 
         if (deleted > 0) {
             log.info(
-                    "Cleaned up {} old outbox events (older than {} days)",
+                    "Cleaned up {} completed outbox events (older than {} days)",
                     deleted,
                     outboxProperties.getRetentionDays()
             );
