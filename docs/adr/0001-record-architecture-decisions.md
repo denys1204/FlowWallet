@@ -40,7 +40,8 @@ Each kind of text has one home:
   `See docs/adr/NNNN-slug.md.` when the wider reasoning lives in an ADR. Rejected alternatives go in the ADR.
   Comments that restate the code are deleted. Public Javadoc keeps `@param`, `@return` and `@throws` only where they
   tell the caller something the signature does not.
-- README.md describes behaviour for users and operators, and links the relevant ADR instead of arguing the decision.
+- ARCHITECTURE.md and the reference docs under `docs/` describe behaviour for users and operators, and link the
+  relevant ADR instead of arguing the decision. README.md is the front page and points to them.
 - CLAUDE.md holds commands, conventions, framework traps, and each invariant as a one-line rule with an ADR pointer.
 
 Javadoc always uses the multi-line form, never a one-line `/** ... */`. Lines stay within 120 columns. Comments and
@@ -56,7 +57,8 @@ alternative. The rule on test names and test comments is unchanged.
   copies drift, as the `flow-wallet-common` name and the "two concurrent first payments" example show.
 - One `architecture.md` holding every decision. The file keeps growing, has no status per decision and no way to
   supersede a single decision, and gives a code pointer no stable target.
-- The reasoning in README.md. The document users read would mix current behaviour with history and rejected options.
+- The reasoning in ARCHITECTURE.md. The document users read for how the system works would mix current behaviour
+  with history and rejected options.
 - The reasoning in `implementation_plan.md`. It is local-only and git-ignored, so no other reader has it.
 - A wiki or another external tool. It sits outside code review and drifts from the code.
 

@@ -4,10 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 FlowWallet is an event-driven wallet on Java 25, Spring Boot 4.1, Kafka (KRaft), PostgreSQL and Stripe. It
 is an engineering showcase that runs against Stripe test mode only and never goes to production.
-`README.md` documents the system for humans and is kept accurate against the code: when behaviour changes,
-update it in the same piece of work. Decisions that span files, with their context and rejected alternatives,
-are ADRs in `docs/adr/` (index: `docs/adr/README.md`). The rules below are stated once and link the ADR that
-holds their reasoning.
+Documentation is split by kind, and each file is kept accurate against the code: when behaviour changes,
+update whichever file describes that behaviour, in the same piece of work. `README.md` is the front page:
+what the project is, status, the topology diagram, tech stack and a quickstart. `ARCHITECTURE.md` explains
+how the system works: the modules, the deposit flow, the outbox, the wallet consumer, transfers and the
+identity model. `docs/api.md` is the API reference and error responses, `docs/data-model.md` is the database
+schema, `docs/events.md` is the Kafka topics and event contracts, and `docs/development.md` covers running,
+configuring and testing the project. The topology diagram is duplicated in `README.md` and
+`ARCHITECTURE.md`; a change to it goes in both. Decisions that span files, with their context and rejected
+alternatives, are ADRs in `docs/adr/` (index: `docs/adr/README.md`). The rules below are stated once and link
+the ADR that holds their reasoning.
 
 ## Commands
 

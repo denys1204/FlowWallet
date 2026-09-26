@@ -1,0 +1,201 @@
+# Developing FlowWallet
+
+This file explains how to set up FlowWallet locally, configure it, and run its tests. For what the
+project is and its current status, see [README.md](../README.md). For how the system works, see
+[ARCHITECTURE.md](../ARCHITECTURE.md). The other reference docs cover the [API](api.md), the
+[data model](data-model.md) and [Kafka topics and events](events.md).
+
+## Getting started
+
+### Prerequisites
+
+- JDK 25 (for example Amazon Corretto 25).
+- Maven is optional: `./mvnw` downloads Maven 3.9.9 on first run.
+- Docker and Docker Compose.
+- A Stripe account in test mode, plus the [Stripe CLI](https://docs.stripe.com/cli/install) to forward
+  webhooks locally.
+
+### 1. Configure environment
+
+Copy the committed template. The real `.env` is git-ignored.
+
+```bash
+cp .env.example .env
+```
+
+Set `STRIPE_API_KEY`, `STRIPE_WEBHOOK_SECRET` (see step 5) and `POSTGRES_PASSWORD`. Everything else has a
+working local default.
+
+Docker Compose and all three services read this one file (the services import it through
+`spring.config.import`), so each value lives in one place. Exported environment variables override it. Keep
+the values unquoted, because the services read the file as `.properties`, where quotes become part of the
+value. Postgres only takes the password when its volume is first created, so to change it later run
+`docker compose down -v` first.
+
+### 2. Start infrastructure
+
+```bash
+docker compose up -d
+```
+
+This starts PostgreSQL 17 (creating `wallet_db` and `payment_db`), a single-node Kafka broker (KRaft) and
+Kafka-UI at `http://localhost:8090`. The services themselves aren't part of Compose, since there are no
+service images yet.
+
+All three ports are bound to `127.0.0.1` only. If one is already taken, say by another project's Postgres on
+`5432`, set `DB_PORT`, `KAFKA_EXTERNAL_PORT` or `KAFKA_UI_PORT` in `.env`. The services pick up `DB_PORT`
+from the same file. If you change `KAFKA_EXTERNAL_PORT`, set `KAFKA_BOOTSTRAP_SERVERS=localhost:<port>` too.
+
+### 3. Build
+
+```bash
+./mvnw clean install
+```
+
+### 4. Run the services
+
+All three need to run. In separate terminals:
+
+```bash
+./mvnw -pl flow-wallet-gateway spring-boot:run
+```
+
+```bash
+./mvnw -pl flow-wallet-payment spring-boot:run
+```
+
+```bash
+./mvnw -pl flow-wallet-service spring-boot:run
+```
+
+### 5. Forward Stripe webhooks
+
+```bash
+stripe listen --forward-to localhost:8080/api/payments/webhooks/stripe
+```
+
+When it starts, `stripe listen` prints a webhook signing secret (`whsec_...`) and signs every event it
+forwards with it. Put that value in `STRIPE_WEBHOOK_SECRET` and restart Payment Service. If you skip this,
+every webhook is refused with `400` and nothing gets credited.
+
+### 6. Try a deposit
+
+Go through the gateway, using any version 4 UUID as the user:
+
+```bash
+USER=$(uuidgen | tr 'A-Z' 'a-z')
+
+curl -X POST localhost:8080/api/wallets \
+  -H "X-User-Id: $USER" -H 'Content-Type: application/json' -d '{"currency":"USD"}'
+
+curl -X POST localhost:8080/api/wallets/USD/deposits \
+  -H "X-User-Id: $USER" -H "Idempotency-Key: $(uuidgen)" \
+  -H 'Content-Type: application/json' -d '{"amount":50.00}'
+```
+
+The deposit returns `providerData.clientSecret`. A real client would confirm the payment with Stripe.js. From
+a terminal you can confirm it with a test card instead. The PaymentIntent id is the part of the client
+secret before `_secret_`, and `return_url` is required because the intent accepts every payment method
+enabled in your dashboard, and some of those redirect:
+
+```bash
+curl https://api.stripe.com/v1/payment_intents/<pi_...>/confirm \
+  -u "<your sk_test_ key>:" -d payment_method=pm_card_visa -d return_url=https://example.com
+```
+
+Stripe sends the webhook, the outbox publishes, and the wallet credits the balance:
+
+```bash
+curl localhost:8080/api/wallets/USD -H "X-User-Id: $USER"
+curl localhost:8080/api/wallets/USD/history -H "X-User-Id: $USER"
+```
+
+## Configuration
+
+Every setting has a local default and can be overridden in `.env` or with an environment variable. The
+Stripe defaults (`sk_test_dummy`, `whsec_dummy`) only let the services start: no payment works until you set
+real test keys. `.env.example` has the full list with comments. The main ones:
+
+| Variable | Default | Used by |
+|----------|---------|---------|
+| `GATEWAY_PORT` | `8080` | Gateway |
+| `WALLET_SERVICE_PORT` | `8081` | Wallet (listen port), Gateway (routing, unless `WALLET_SERVICE_URI` is set) |
+| `PAYMENT_SERVICE_PORT` | `8082` | Payment (listen port), Gateway (routing, unless `PAYMENT_SERVICE_URI` is set), Wallet (calls it, unless `WALLET_PAYMENT_BASE_URL` is set) |
+| `DB_HOST` / `DB_PORT` | `localhost` / `5432` | Payment, Wallet; `DB_PORT` is also the host port Compose publishes Postgres on |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` | `flowadmin` / `flowsecret` | Payment, Wallet and Docker Compose |
+| `PAYMENT_DB_NAME` / `WALLET_DB_NAME` | `payment_db` / `wallet_db` | Payment / Wallet (the init script always creates these two names) |
+| `DB_POOL_MAX_SIZE` / `DB_POOL_MIN_IDLE` | `10` / `2` | Payment, Wallet |
+| `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` | Payment, Wallet |
+| `KAFKA_TOPIC_PAYMENT_EVENTS_PARTITIONS` / `_REPLICAS` | `3` / `1` | Payment |
+| `KAFKA_TOPIC_PAYMENT_EVENTS_DLT_PARTITIONS` / `_REPLICAS` | `3` / `1` | Wallet |
+| `KAFKA_CONSUMER_GROUP_ID` | `flow-wallet-service` | Wallet |
+| `KAFKA_LISTENER_CONCURRENCY` | `3` | Wallet |
+| `WALLET_CONSUMER_RETRY_MAX_ATTEMPTS` | `3` | Wallet: retries before dead-lettering, with backoff from `WALLET_CONSUMER_RETRY_INITIAL_INTERVAL_MS` (`500`) up to `_MAX_INTERVAL_MS` (`10000`) by `_MULTIPLIER` (`2.0`) |
+| `WALLET_PAYMENT_BASE_URL` | `http://localhost:${PAYMENT_SERVICE_PORT}` | Wallet (Payment Service's own address, not the gateway's) |
+| `WALLET_PAYMENT_CONNECT_TIMEOUT` / `_READ_TIMEOUT` | `2s` / `10s` | Wallet |
+| `WALLET_PAYMENT_PROVIDER` | `STRIPE` | Wallet |
+| `STRIPE_API_KEY` / `STRIPE_WEBHOOK_SECRET` | `sk_test_dummy` / `whsec_dummy` | Payment |
+| `PAYMENT_MIN_DEPOSIT_AMOUNT` / `PAYMENT_MAX_DEPOSIT_AMOUNT` | `1.00` / `10000.00` | Payment |
+| `OUTBOX_POLL_INTERVAL_MS` / `OUTBOX_BATCH_SIZE` | `10000` / `50` | Payment |
+| `OUTBOX_MAX_RETRIES` | `3` | Payment (backoff from `OUTBOX_RETRY_BACKOFF_BASE_MS`, `1000`, up to `_MAX_MS`, `60000`) |
+| `OUTBOX_REAPER_INTERVAL_MS` / `OUTBOX_STUCK_PROCESSING_THRESHOLD_MS` | `60000` / `300000` | Payment |
+| `OUTBOX_RETENTION_DAYS` / `OUTBOX_CLEANUP_CRON` | `7` / `0 0 3 * * *` | Payment (`COMPLETED` rows only) |
+| `ACTUATOR_EXPOSED_ENDPOINTS` | Payment `health,info,metrics,outbox`; Wallet `health,info,metrics`; Gateway `health,info` | All three. It is one shared name, so a value set in `.env` replaces all three defaults at once; the template leaves it commented for that reason |
+| `LOG_LEVEL` / `APP_LOG_LEVEL` | `INFO` / `DEBUG` | Payment, Wallet |
+| `KAFKA_EXTERNAL_PORT` / `KAFKA_UI_PORT` | `9092` / `8090` | Docker Compose |
+
+The wallet service won't start with values that make no sense, such as a retry multiplier below 1.0, an
+initial interval above the maximum, or a blank Payment Service URL. The payment service does the same for a
+deposit range that is inverted, not positive, or too wide for `NUMERIC(19,4)`.
+
+## Testing
+
+There are 263 tests, all green: 98 in the payment service, 132 in the wallet service and 33 in platform. They
+go after the parts most likely to be wrong rather than the ones easiest to reach. That means the asymmetric
+webhook state machine (a later failure must not undo an earlier success, but a later success must override
+an earlier failure), the outbox's claim, retry and backoff boundaries, Stripe signature parsing, the RFC
+9457 status mapping, the minor-unit conversion that decides how much money actually leaves a card, and the
+identity and idempotency-key rules. For the wallet consumer they cover dispatch on the `eventType` header,
+dead-lettering of unreadable records, refusals, duplicate classification (by the `DEPOSIT` entry alone, since
+one reference can own one movement of each type), the barrier row being written before the wallet is loaded,
+and failed payments never touching a wallet.
+
+For transfers they cover the lock order in both directions, the key judged only after both locks, and no
+other wallet read in the transaction. With the sender sorting first and last, they cover a retry that still
+gets its receipt after the balance was spent, funds checked before the recipient, a recipient without a
+wallet, and both ledger legs with their counterparties and balances. They also cover every cause of a `409`,
+the status of each refusal, the receipt rendering to the same bytes on a replay, the amount grid (trailing
+zeros, zero-decimal currencies, the size bound), the recipient id and key rules (including a fifth dash and
+non-ASCII digits), a `406` before the service runs, `401` coming before the header and body checks,
+violations and lock failures leaving the handler unchanged, the explanation of a violation after the
+rollback, the `503` mapping, and the READ COMMITTED pin.
+
+```bash
+./mvnw test
+```
+
+All of these are unit tests with mocked collaborators, so they can't prove the real database barrier: the
+unique constraints on `processed_events.event_id` and `balance_history (transaction_reference, type)`, the
+classification by read-back, and the row lock. Those have been exercised by hand against real Postgres and
+Kafka (redelivery, duplicate references, forty concurrent credits to one wallet), but no automated test runs
+them yet. The hand check ran while the classification read any entry under the reference, and the lookup of
+the `DEPOSIT` entry alone has run only against mocks.
+
+For transfers the mocks pin the order of the calls and the decision after each one. What they can't show was
+checked by hand against real Postgres, through the running wallet service on a scratch database:
+
+- 400 transfers between two wallets in both directions and 300 around a ring of three, over 16 threads: no
+  deadlock, every reference with exactly one `TRANSFER_OUT` and one `TRANSFER_IN`, and each balance equal to
+  its seed plus what came in minus what went out.
+- Twenty parallel requests with one key: all `200` with identical bodies, and one pair of legs, so the money
+  moved once.
+- One key raced from two senders, with and without a wallet in common: one sender gets `200`, the other
+  `409`. Without a shared wallet, the unique index settles the race.
+- Two concurrent `25.00` transfers from a `30.00` wallet: one `200`, one `422`, and the balance ends at
+  `5.00`.
+- A replay after the balance was spent still gets the original receipt, byte for byte.
+- The three CHECKs refuse a direct SQL write of a negative balance, a zero amount or a transfer leg without
+  a counterparty.
+
+No automated test runs these checks yet. Integration tests with Testcontainers are the roadmap's "Proof
+that it works" stage.
