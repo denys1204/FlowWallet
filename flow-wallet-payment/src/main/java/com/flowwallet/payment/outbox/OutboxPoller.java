@@ -21,6 +21,16 @@ public class OutboxPoller {
     private final OutboxMessageSender outboxMessageSender;
     private final OutboxProperties outboxProperties;
 
+    /**
+     * Puts every PROCESSING row back to PENDING when the service starts, with no age threshold.
+     * <p>
+     * Right for one instance: nothing can be mid-send at startup, and rows a crashed sender left behind go
+     * out immediately instead of waiting for the reaper's threshold. With several instances -- a rolling
+     * deploy overlaps old and new -- a starting instance can reset a row another instance is still sending,
+     * and that event goes to Kafka twice. That is accepted deliberately: the payload is stored verbatim, so
+     * both copies carry the same eventId and the wallet's barrier discards the second. The cost is one extra
+     * message; the alternative, reaping with the threshold, would delay every post-crash recovery by it.
+     */
     @EventListener(ApplicationReadyEvent.class)
     public void resetStuckEvents() {
         int resetCount = outboxEventRepository.resetStuckEvents(OutboxStatus.PENDING, OutboxStatus.PROCESSING);
