@@ -20,7 +20,13 @@ import java.time.Instant;
  * <p>
  * {@code @Version} is load-bearing: two payments for one user can be credited concurrently, and the partition
  * key on {@code payment.events} is the transaction reference rather than the wallet id, so concurrent writers
- * on one row are ordinary rather than exotic.
+ * on one row are ordinary rather than exotic. Transfers add writers from HTTP requests, each debiting one
+ * wallet and crediting another while credits from the consumer land on the same rows. Every writer takes the
+ * row lock first ({@link WalletRepository#lockByUserIdAndCurrency}), and the version is what stops a path
+ * that does not.
+ * <p>
+ * A balance is never negative. {@link #debit(BigDecimal)} refuses an overdraft, and the schema's
+ * {@code wallets_balance_not_negative} holds the same rule for any writer that skips it.
  */
 @Entity
 @Getter
@@ -77,6 +83,40 @@ public class Wallet {
     public BigDecimal credit(BigDecimal amount) {
         BigDecimal balanceBefore = balance;
         balance = balance.add(amount);
+        return balanceBefore;
+    }
+
+    /**
+     * Debits the wallet and returns the balance as it stood beforehand, mirroring {@link #credit(BigDecimal)}.
+     * <p>
+     * The caller must hold the row lock, so that the balance judged here is the one written back. Concurrent
+     * debits of one wallet then serialize: of two transfers that each fit the balance alone but not together,
+     * one commits and the other is refused here.
+     * <p>
+     * The rule is checked here although {@code wallets_balance_not_negative} also holds it. The constraint
+     * fires only at the flush, as an integrity violation in a transaction Postgres has already aborted, and
+     * from there nothing can tell the caller why. This answers 422 with a reason before anything is written.
+     * Because it lives on the entity, every later debit, such as a withdrawal, inherits it without having to
+     * remember it.
+     * <p>
+     * Both checks run before the balance is touched, so a refusal leaves the entity as it was. Draining the
+     * wallet to exactly zero is allowed.
+     *
+     * @param amount strictly positive amount in major units; the caller validates this before a transaction opens
+     * @return the balance before the debit
+     * @throws IllegalArgumentException   if the amount is zero or negative, which would turn the debit into a
+     *                                    credit
+     * @throws InsufficientFundsException if the balance is below the amount
+     */
+    public BigDecimal debit(BigDecimal amount) {
+        if (amount.signum() <= 0) {
+            throw new IllegalArgumentException("A debit must be a positive amount, got " + amount);
+        }
+        if (balance.compareTo(amount) < 0) {
+            throw new InsufficientFundsException(currency);
+        }
+        BigDecimal balanceBefore = balance;
+        balance = balance.subtract(amount);
         return balanceBefore;
     }
 }

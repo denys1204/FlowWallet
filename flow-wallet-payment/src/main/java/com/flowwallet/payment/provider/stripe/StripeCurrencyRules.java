@@ -25,6 +25,11 @@ public final class StripeCurrencyRules {
 
     /**
      * Charged as whole units — Stripe expects the major-unit figure unchanged.
+     * <p>
+     * The wallet keeps a copy of this list, and of the two-decimal cap in {@link #MAX_ACCEPTED_SCALE}, in
+     * {@code com.flowwallet.wallet.api.AmountPrecision}. Transfers never pass through this service, yet must
+     * move amounts on the grid deposits arrive on, and services never depend on each other. A change here must
+     * be made there too.
      */
     private static final Set<String> ZERO_DECIMAL = Set.of(
             "BIF", "CLP", "DJF", "GNF", "JPY", "KMF", "KRW", "MGA",

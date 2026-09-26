@@ -53,10 +53,15 @@ public class CurrentUserIdResolver implements HandlerMethodArgumentResolver {
      * A random-based UUID: version nibble 4 or 7, RFC 4122 variant, either letter case. Case is accepted
      * either way and normalised below, because rejecting a valid identity over capitalisation would be a
      * needless outage.
+     * <p>
+     * Public because a user id also arrives in request bodies. The wallet's
+     * {@code com.flowwallet.wallet.dto.TransferRequest} checks a transfer's recipient with this expression
+     * through {@code @Pattern}, so a change here changes that rule too, and the two cannot drift apart.
      */
-    private static final Pattern RANDOM_UUID = Pattern.compile(
-            "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[47][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
-    );
+    public static final String RANDOM_UUID_REGEX =
+            "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[47][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$";
+
+    private static final Pattern RANDOM_UUID = Pattern.compile(RANDOM_UUID_REGEX);
 
     @Override
     public boolean supportsParameter(MethodParameter parameter) {

@@ -1,0 +1,30 @@
+databaseChangeLog:
+  - changeSet:
+      id: 007-add-balance-history-counterparty
+      author: flow-wallet
+      changes:
+        - addColumn:
+            tableName: balance_history
+            columns:
+              - column:
+                  name: counterparty_user_id
+                  type: VARCHAR(64)
+                  remarks: >-
+                    The user on the other side of a transfer: the recipient on TRANSFER_OUT, the sender on
+                    TRANSFER_IN. NULL for a movement with no user on the other side.
+  - changeSet:
+      id: 007-add-balance-history-counterparty-check
+      author: flow-wallet
+      changes:
+        - sql:
+            comment: >-
+              A transfer leg without a counterparty would hide from the recipient who paid, and would turn every
+              replay of its transfer into a conflict that sends the client to a new key. The check makes such a
+              leg unrepresentable and also refuses a counterparty on any other type. type is NOT NULL, so
+              neither side of the equality can be NULL and the check cannot pass vacuously. It names only the
+              types that own the column, so a new type without a counterparty needs no change here. Existing
+              DEPOSIT rows satisfy it. No index: the unique (transaction_reference, type) key already serves
+              every lookup. Written as raw SQL because addCheckConstraint is a Liquibase Pro change type.
+            sql: >-
+              ALTER TABLE balance_history ADD CONSTRAINT balance_history_counterparty_on_transfers
+              CHECK ((type IN ('TRANSFER_IN', 'TRANSFER_OUT')) = (counterparty_user_id IS NOT NULL))

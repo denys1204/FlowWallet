@@ -13,8 +13,15 @@ public interface BalanceHistoryRepository extends JpaRepository<BalanceHistory, 
 
     /**
      * The movement of one type under a reference. Used to tell one kind of barrier violation from another
-     * after the fact, never as a check before inserting: a read-then-write here would be a race, and the unique
-     * constraint is what actually decides.
+     * after the fact, and never in place of the unique constraint as a check before inserting: a
+     * read-then-write would be a race, and the constraint is what actually decides.
+     * <p>
+     * The one read before an insert is a transfer judging its Idempotency-Key: it asks for the
+     * {@code TRANSFER_OUT} under the key while it holds the sender wallet's row lock. That answer is exact for
+     * requests from the same wallet, because every transfer out of a wallet holds that lock, so they serialize
+     * and each sees what the last one committed. Requests from different sender wallets serialize only when
+     * their transfers share some other wallet, such as the recipient. When they share none, the lookup
+     * settles nothing between them, and a race ends at the unique index.
      * <p>
      * The type is part of the lookup because a reference alone does not name one row. The ledger is unique on
      * {@code (transaction_reference, type)} (migration 005), so a reference may own one movement of each type,
@@ -32,9 +39,9 @@ public interface BalanceHistoryRepository extends JpaRepository<BalanceHistory, 
      * arriving between two page requests shifts every offset by one, so an offset-paged client sees a
      * movement twice or misses one entirely. No page size makes that go away.
      */
-    @Query("select h from BalanceHistory h where h.walletId = :walletId "
-            + "and (:before is null or h.id < :before) order by h.id desc")
-    List<BalanceHistory> findPageBefore(@Param("walletId") Long walletId,
-                                        @Param("before") Long before,
-                                        Limit limit);
+    @Query(
+            "select h from BalanceHistory h where h.walletId = :walletId "
+                    + "and (:before is null or h.id < :before) order by h.id desc"
+    )
+    List<BalanceHistory> findPageBefore(@Param("walletId") Long walletId, @Param("before") Long before, Limit limit);
 }

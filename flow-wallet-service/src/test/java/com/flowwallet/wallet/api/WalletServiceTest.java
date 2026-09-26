@@ -4,6 +4,7 @@ import com.flowwallet.wallet.balance.BalanceHistory;
 import com.flowwallet.wallet.balance.BalanceHistoryRepository;
 import com.flowwallet.wallet.balance.Wallet;
 import com.flowwallet.wallet.balance.WalletRepository;
+import com.flowwallet.wallet.dto.BalanceHistoryResponse;
 import com.flowwallet.wallet.dto.HistoryPage;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -19,6 +20,7 @@ import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -93,6 +95,35 @@ class WalletServiceTest {
 
         assertThat(page.items()).hasSize(3);
         assertThat(page.nextBefore()).isNull();
+    }
+
+    @Test
+    void historyShowsWhoIsOnTheOtherSideOfATransfer() {
+        // The build sets MapStruct's unmappedTargetPolicy to IGNORE, so a rename on either side would silently
+        // drop the counterparty from every history item instead of failing the build. This uses the real
+        // mapper, as the rest of the class does. A deposit has no user on the other side and must show null.
+        Wallet erin = Wallet.builder()
+                .id(1L)
+                .userId("erin")
+                .currency("USD")
+                .balance(new BigDecimal("85"))
+                .build();
+        when(wallets.findByUserIdAndCurrency("erin", "USD")).thenReturn(Optional.of(erin));
+        when(movements.findPageBefore(any(), any(), any())).thenReturn(List.of(
+                BalanceHistory.transferIn(erin, "ref-3", "gina", new BigDecimal("10"), new BigDecimal("75")),
+                BalanceHistory.transferOut(erin, "ref-2", "frank", new BigDecimal("25"), new BigDecimal("100")),
+                BalanceHistory.deposit(erin, "ref-1", "evt-1", new BigDecimal("100"), BigDecimal.ZERO)
+        ));
+
+        HistoryPage page = service.history("erin", "USD", null, 20);
+
+        assertThat(page.items())
+                .extracting(BalanceHistoryResponse::type, BalanceHistoryResponse::counterpartyUserId)
+                .containsExactly(
+                        tuple("TRANSFER_IN", "gina"),
+                        tuple("TRANSFER_OUT", "frank"),
+                        tuple("DEPOSIT", null)
+                );
     }
 
     private List<BalanceHistory> movements(int count) {

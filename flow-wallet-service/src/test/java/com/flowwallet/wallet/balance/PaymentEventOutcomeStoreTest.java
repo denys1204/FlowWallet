@@ -34,13 +34,18 @@ class PaymentEventOutcomeStoreTest {
         // for the reference would throw once there are two, dead-lettering an event that should have been
         // classified; a check for any row would read a transfer leg as a credit and acknowledge a payment that
         // was never credited. Here every type except DEPOSIT has a row, so only the typed lookup reaches
-        // NOT_A_DUPLICATE. The leg's type is left unset because the transfer types arrive with the code that
-        // writes them.
-        BalanceHistory transferLeg = BalanceHistory.builder()
-                .walletId(8L)
-                .transactionReference("ref-1")
-                .amount(new BigDecimal("30.0000"))
+        // NOT_A_DUPLICATE.
+        Wallet sender = Wallet.builder()
+                .id(8L)
+                .userId("bob")
+                .currency("USD")
+                .balance(new BigDecimal("30.0000"))
                 .build();
+
+        BalanceHistory transferLeg = BalanceHistory.transferOut(
+                sender, "ref-1", "alice", new BigDecimal("30.0000"), new BigDecimal("30.0000")
+        );
+
         when(balanceHistory.findByTransactionReferenceAndType(eq("ref-1"), any())).thenAnswer(call ->
                 call.getArgument(1) == TransactionType.DEPOSIT ? Optional.empty() : Optional.of(transferLeg));
 

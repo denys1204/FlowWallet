@@ -11,17 +11,19 @@
 > **Event-driven microservices wallet system, built as an engineering showcase.**
 
 FlowWallet is a backend platform that lets a user deposit into a digital wallet through an external
-payment provider (Stripe) and have the balance credited reliably and asynchronously through events. It is
-built to demonstrate production-grade patterns on a modern stack: a Transactional Outbox, so an event is
-published if and only if the change behind it commits; an idempotent event consumer that credits a balance
-once however often an event arrives; a pluggable payment-provider abstraction (Strategy + Factory);
-database-per-service isolation; and clean module boundaries.
+payment provider (Stripe), have the balance credited reliably and asynchronously through events, and send
+money to another user's wallet in the same currency. It is built to demonstrate production-grade patterns on
+a modern stack: a Transactional Outbox, so an event is published if and only if the change behind it
+commits; an idempotent event consumer that credits a balance once however often an event arrives; a
+pluggable payment-provider abstraction (Strategy + Factory); database-per-service isolation; and clean
+module boundaries.
 
 > **Project status:** work in progress. The deposit loop works end to end. A client asks its wallet to
 > start a deposit, the wallet checks that the wallet exists and belongs to the caller, Payment Service
 > creates a Stripe PaymentIntent, a signed webhook confirms the payment, the outbox publishes to Kafka, and
-> the wallet credits the balance exactly once. Integration tests against real Postgres and Kafka, transfers
-> between wallets and withdrawals are still to come. See [Project status & roadmap](#project-status--roadmap).
+> the wallet credits the balance exactly once. A user can also send money to another user's wallet in the
+> same currency, in one local transaction inside Wallet Service. Integration tests against real Postgres and
+> Kafka, and withdrawals, are still to come. See [Project status & roadmap](#project-status--roadmap).
 >
 > The project runs against Stripe test mode only and is not meant for production use.
 
@@ -35,6 +37,7 @@ database-per-service isolation; and clean module boundaries.
 - [Modules](#modules)
 - [The Transactional Outbox](#the-transactional-outbox)
 - [The wallet consumer](#the-wallet-consumer)
+- [Transfers between wallets](#transfers-between-wallets)
 - [Data model](#data-model)
 - [Kafka topics & events](#kafka-topics--events)
 - [Identity & security model](#identity--security-model)
@@ -89,7 +92,8 @@ flowchart LR
 - Wallet Service owns wallets, balances and balance history (`wallet_db`) and serves `/api/wallets`. It
   starts a deposit by checking that the wallet exists and then asking Payment Service for a PaymentIntent.
   It consumes `payment.events`, crediting each completed payment exactly once and recording failed ones
-  without moving money.
+  without moving money. A transfer between two wallets stays inside it: Payment Service and Kafka take no
+  part.
 - Platform holds shared servlet-side infrastructure built on Spring Web MVC: RFC 9457 error handling and the
   `@CurrentUserId` resolver (both auto-configured, servlet apps only), plus an `@Iso4217Currency`
   validation constraint.
@@ -169,7 +173,7 @@ flow-wallet (parent POM)
 ├── flow-wallet-platform   error handling, @CurrentUserId, ISO 4217 validation, transport constants
 ├── flow-wallet-contract   Kafka events, topic, eventType header — nothing beyond the JDK
 ├── flow-wallet-gateway    API Gateway (reactive) — routing + CORS
-├── flow-wallet-service    Wallet Service — wallets, deposits, balance history, payment-event consumer
+├── flow-wallet-service    Wallet Service — wallets, deposits, transfers, balance history, payment-event consumer
 └── flow-wallet-payment    Payment Service — Stripe, transactions, webhooks, outbox
 ```
 
@@ -184,7 +188,7 @@ except that service.
 | Module | Port | Responsibility |
 |--------|------|----------------|
 | `flow-wallet-gateway` | 8080 | Route `/api/wallets/**` to Wallet Service and only `/api/payments/webhooks/**` to Payment Service; CORS. |
-| `flow-wallet-service` | 8081 | List, open and read wallets; cursor-paged balance history; deposit initiation (calls Payment Service over HTTP); Kafka consumer that credits balances idempotently, with a dead-letter topic. |
+| `flow-wallet-service` | 8081 | List, open and read wallets; cursor-paged balance history; deposit initiation (calls Payment Service over HTTP); transfers between two users' wallets in one currency; Kafka consumer that credits balances idempotently, with a dead-letter topic. |
 | `flow-wallet-payment` | 8082 | Payment intents (internal), Stripe webhooks, transactional outbox → Kafka. |
 | `flow-wallet-platform` | (library) | RFC 9457 error handling, `@CurrentUserId` auto-configuration, `@Iso4217Currency`, the `X-User-Id` header constant. |
 | `flow-wallet-contract` | (library) | `PaymentCompletedEvent`, `PaymentFailedEvent`, the `payment.events` topic, the `eventType` header and its values. |
@@ -261,6 +265,58 @@ An event never creates a wallet. A deposit can only start through an existing wa
 missing wallet means a payment got in some other way, and it gets recorded instead of absorbed. Nothing
 replays `REJECTED` rows automatically yet; replay is manual.
 
+## Transfers between wallets
+
+A transfer moves money from the caller's wallet to another user's wallet in the same currency. It is one
+local transaction in `wallet_db`: the debit, the credit and both ledger entries commit together or not at
+all. Payment Service and Kafka take no part, so there is no intermediate state to compensate for.
+
+`TransferService` first settles what the request alone can settle, before it takes a database connection:
+the currency, the amount's precision and a transfer to oneself. The money then moves in
+`TransferHandler.execute`, a transaction pinned to READ COMMITTED, in this order:
+
+1. It locks both wallet rows, the lower user id first. Transfers between two users take their locks in the
+   same order whichever way the money goes, so a transfer from A to B and one from B to A can't each hold
+   one row and wait for the other. The order is known from the request, so nothing is read before the locks.
+2. If the caller holds no wallet in the currency, the answer is `404`.
+3. It judges the `Idempotency-Key` by looking up the `TRANSFER_OUT` entry stored under it. The same transfer
+   from the same wallet gets the original receipt back, and any other transfer under that key gets `409`.
+   The lookup comes after the locks on purpose. Every transfer out of a wallet holds that wallet's lock, so
+   two requests with one key from one wallet run one after the other, and the second sees what the first
+   committed. The key is also judged before the funds, so a retry of a transfer that spent the whole
+   balance still gets its receipt rather than a `422`.
+4. It debits the caller's wallet, or refuses with `422` if the balance is below the amount.
+5. If the recipient holds no wallet in the currency, the answer is `422`. Funds are checked first, so only a
+   request the caller can afford learns that a wallet is missing. A transfer never creates a wallet.
+6. It credits the recipient's wallet and writes the two ledger entries under the lower-cased key:
+   `TRANSFER_OUT` on the sender's wallet and `TRANSFER_IN` on the recipient's. Each entry names the user on
+   the other side.
+
+A balance never goes below zero. `Wallet.debit` refuses an overdraft before anything is written, and a CHECK
+on `wallets.balance` holds the same rule for any code path that skips it.
+
+Two requests with one key from different sender wallets need not share a lock. If their transfers share a
+wallet, such as the recipient, they run one after the other on its lock, and the second one's key lookup
+sees the first one's `TRANSFER_OUT` if it committed, so the answer is `409`. If they share no wallet, the
+ledger's unique (`transaction_reference`, `type`) index decides between them. The second `TRANSFER_OUT`
+insert waits for the first transaction, and fails if that one commits. In Postgres a constraint violation
+aborts the transaction, so `TransferService` reads the ledger again once the rollback has ended it, possibly
+on the same pooled connection. A `TRANSFER_OUT` under the key means another wallet used it first, and the
+answer is `409`. If that entry turns out to be the caller's own identical transfer, the answer is the replay
+instead, because a `409` would send the client to a new key and move the money twice. If there is no
+`TRANSFER_OUT` under the key, either a CHECK fired, which means the code let through something it should
+have refused, or a value overflowed its column, such as a recipient's balance growing past what
+`NUMERIC(19,4)` holds. That violation is rethrown and becomes a `500` with its stack trace in the log, and it
+is never reported as a conflict or a success. The log names the constraint but not the refused row, because
+the wallet's datasource turns off the Postgres driver's error detail, which would print the row with its
+balances.
+
+The lock order should rule out deadlocks, and while the row lock is held the wallet's `@Version` check has
+nothing to catch. If a deadlock, a lock wait that timed out or a version conflict happens anyway, nothing
+has committed, and the answer is `503` asking for a retry with the same key. No lock timeout is set. A
+transfer waits as long as another transaction holds one of its rows, and every transaction in the service
+that holds a wallet row does only database work.
+
 ## Data model
 
 `payment_db` is managed by Liquibase in `flow-wallet-payment`:
@@ -277,14 +333,20 @@ replays `REJECTED` rows automatically yet; replay is manual.
 
 - `wallets` holds `id`, `user_id VARCHAR(64)`, `balance NUMERIC(19,4)` (default 0, and a CHECK refuses a
   value below zero), `currency VARCHAR(3)` (a CHECK forces upper case), `version` and timestamps. `version` is
-  an optimistic-lock backstop, since credits take a `PESSIMISTIC_WRITE` row lock. The table is unique on
-  (`user_id`, `currency`): one wallet per user per currency.
+  an optimistic-lock backstop, since credits and transfers take a `PESSIMISTIC_WRITE` row lock. The table is
+  unique on (`user_id`, `currency`): one wallet per user per currency.
 - `balance_history` is the append-only ledger: `id`, `wallet_id` (indexed), `transaction_reference`,
-  `event_id` (nullable), `type`, `amount`, `balance_before`, `balance_after` and `created_at`. It is unique on
-  (`transaction_reference`, `type`), so the two legs of a future transfer can share a reference while a
-  payment can still be credited only once. The amount is always positive and `type` gives the direction, so a
+  `event_id` (nullable), `type`, `counterparty_user_id VARCHAR(64)` (nullable), `amount`, `balance_before`,
+  `balance_after` and `created_at`. `type` is `DEPOSIT`, `TRANSFER_IN` or `TRANSFER_OUT`. `WITHDRAWAL` is
+  declared for withdrawals, and nothing writes it yet. The table is unique on (`transaction_reference`,
+  `type`), so both legs of a transfer share one reference while a payment can still be credited only once
+  and a key can start only one transfer. The amount is always positive and `type` gives the direction, so a
   CHECK refuses an amount of zero or less. That includes a positive value too small for four decimal places,
-  such as `0.00001`, which Postgres would otherwise round to `0.0000` and store.
+  such as `0.00001`, which Postgres would otherwise round to `0.0000` and store. `counterparty_user_id` is
+  the user on the other side of a transfer: the recipient on `TRANSFER_OUT`, the sender on `TRANSFER_IN`. A
+  second CHECK makes it present on the two transfer types and absent on every other, so a transfer leg
+  without a counterparty can't be stored. `event_id` is NULL on both transfer legs, since a transfer never
+  passes through Kafka.
 - `processed_events` holds one row per event the consumer settles (credited, failure recorded or refused).
   Unreadable records and records that still fail after retries go to the dead-letter topic and leave no row.
   Its columns are `id`, `event_id` (unique), `event_type`,
@@ -350,8 +412,24 @@ copes with either order, because a failure moves no money.
 - Anything else gets a `401`, the same as a missing header: a blank value, a non-UUID, a UUID of version 1, 3
   or 5, or anything longer than 64 characters. Surrounding whitespace is stripped and the value is folded to
   lower case, so one identity can't turn into two users with two balances.
-- There is no way to search for users, by design. When transfers arrive they will name the recipient by id,
-  and you know someone's id because they shared it with you.
+- While `X-User-Id` is unauthenticated, it is the only credential. Transfers move money out of a wallet, so
+  anyone who can reach Wallet Service and knows a user's id can spend that user's balance. Every transfer
+  also hands its recipient the sender's id. The network boundary described above is what is meant to prevent
+  this, and nothing enforces it yet.
+- There is no way to search for users, by design. A transfer names its recipient by user id, and you know
+  someone's id because they shared it with you.
+- Each side of a transfer sees the other's user id. The recipient's `TRANSFER_IN` entry shows the sender's id
+  and the sender's `Idempotency-Key`. Neither side sees the other's balance or other wallets. Because the
+  recipient sees the key, transfer keys should be random (UUID version 4 or 7). A key derived from something
+  guessable lets the recipient predict the sender's next key and use it first. That never moves money twice,
+  but the sender's transfer then gets a `409`.
+- A sender can learn little about a recipient. A `to` that isn't a version 4 or 7 UUID gets a `400` before any
+  query. Funds are checked before the recipient, so only a request the sender can afford gets "The recipient
+  holds no USD wallet", and that answer can only confirm that a wallet is absent. The wallet keeps no user
+  registry, so a user without a wallet and an id that belongs to nobody get the same answer. Confirming that
+  a wallet exists takes a completed transfer, which moves money and leaves the sender's id in the
+  recipient's history. Each refused recipient is logged at WARN with both user ids, so probing shows up in
+  the logs.
 - Stripe webhooks are verified cryptographically (HMAC signature with a replay window). That check doesn't
   depend on user identity and stays enforced.
 
@@ -373,11 +451,16 @@ body.
 | `GET /api/wallets/{currency}` | (none) | `200` the wallet; `400` invalid code; `404` the caller holds no such wallet (never `403`) |
 | `GET /api/wallets/{currency}/history?before={id}&limit={n}` | (none) | `200` `{items, nextBefore}`, newest first |
 | `POST /api/wallets/{currency}/deposits` | `{"amount": 50.00}` + `Idempotency-Key` header | `200` `{reference, provider, providerData}` |
+| `POST /api/wallets/{currency}/transfers` | `{"to": "<user id>", "amount": 25.00}` + `Idempotency-Key` header | `200` `{reference, to, amount, currency, balanceAfter}` |
 
 History uses a cursor instead of an offset. The ledger only grows at its newest end, so a credit landing
 between two page reads would shift every offset. Leave `before` out for the first page, then pass the
 previous `nextBefore`, which is `null` once nothing older exists. `limit` is 1 to 100, default 20. An item
-looks like `{id, transactionReference, type, amount, balanceBefore, balanceAfter, createdAt}`.
+looks like `{id, transactionReference, type, counterpartyUserId, amount, balanceBefore, balanceAfter,
+createdAt}`. `amount` is positive on every item, and `type` says which way the money went.
+`counterpartyUserId` is the other user of a transfer (the recipient on `TRANSFER_OUT`, the sender on
+`TRANSFER_IN`) and `null` for a deposit. Both legs of a transfer carry the sender's key as
+`transactionReference`.
 
 A deposit returns `200` rather than `201` or `202`. Nothing gets created on the wallet's side, and the client
 finishes the work itself by confirming the payment with Stripe using `providerData.clientSecret`.
@@ -393,6 +476,68 @@ finishes the work itself by confirming the payment with Stripe using `providerDa
   amount Payment Service rejects (its message is passed on); `404` for no such wallet, checked before
   anything is charged; `409` as above; `502` when Payment Service is unreachable, times out or answers
   unexpectedly. Retrying with the same key is safe.
+
+A transfer moves money from the caller's wallet in `{currency}` to the wallet the user `to` holds in the same
+currency. The body has no currency field, so a transfer between currencies can't be expressed. The first
+answer and every replay are `200` with the same body:
+
+```json
+{
+  "reference": "7e1855b3-4d95-4a72-a0c9-ef0d78be2e44",
+  "to": "018f3a2b-7c4d-7e5f-8a9b-0c1d2e3f4a5b",
+  "amount": 25.0000,
+  "currency": "USD",
+  "balanceAfter": 75.0000
+}
+```
+
+The body is the sender's receipt. It has no timestamp and no movement id, so a replay can match the first
+answer byte for byte; the movement itself, with both, is in the history. `balanceAfter` is the sender's
+balance right after this transfer, and on a replay that is a past balance rather than the current one.
+Nothing about the recipient's wallet appears. The status is `200` rather than `201` because no URL addresses
+a transfer, and a replay has to match the first answer in status as well as body.
+
+- `to` is the recipient's user id, held to the same rule as `X-User-Id`: a UUID of version 4 or 7, in either
+  case. Unlike the header, surrounding whitespace is refused rather than stripped. A `to` equal to the
+  caller's own id, compared after case folding, gets `400` "A transfer must go to another user".
+- `amount` must be positive and sit on the grid deposits use for its currency: whole units for the 16
+  zero-decimal currencies in Payment Service's `StripeCurrencyRules` (JPY and KRW among them), two decimals
+  for every other. The wallet keeps its own copy of that list in `AmountPrecision`, because a transfer never
+  passes through Payment Service. Trailing zeros don't count, so `10.5000` USD and `100.00` JPY are fine. An
+  amount off the grid, such as `10.001` USD or `1.5` JPY, gets a `400` and is never rounded. So does an
+  amount with more than 15 integer digits, the room a `NUMERIC(19,4)` balance has. Nothing else limits the
+  amount: the deposit range belongs to Payment Service and applies to deposits only.
+- `Idempotency-Key` follows the deposit rules: required, any UUID version, lower-cased, never generated by
+  the server. It becomes the `transactionReference` of both ledger entries.
+- Repeating a transfer with the same key, from the same wallet, to the same recipient, for the same amount
+  returns `200` with a body identical to the first and moves nothing. Amounts are compared by value, so
+  `25`, `25.0` and `25.00` all match. This holds even after the balance was spent, because the key is judged
+  before the funds. Deposits answer `409` to a completed key instead, since replaying one would hand back
+  the client secret of a payment that is already made. A transfer is complete when it answers, so its
+  replay returns the receipt a client needs after a lost response.
+- Any other use of a key that already started a transfer gets `409`: a different amount or recipient, the
+  same key from another of the caller's wallets, another user's transfer, a key copied from a transfer the
+  caller received, or a request that lost a race for the key at the ledger's unique index. Every cause gets
+  the same answer, so it reveals nothing about someone else's transfer. Keys are global, though, so a `409`
+  still tells any caller that a key was used for some transfer, which is one more reason to use random keys.
+- A refused transfer (`400`, `404`, `406`, `422`, `503`) writes nothing, so its key stays free and a later
+  request under it is judged from scratch. A transfer refused for low funds can therefore go through later
+  under the same key, after a top-up. Treat a 4xx as the final answer for that intent: a client that retries
+  a `422` automatically with the same key can move money long after the user stopped expecting it.
+- A key binds one kind of operation. The same key can name a deposit and a transfer, and each is still
+  protected on its own: a payment is credited at most once and a key starts at most one transfer. The wallet
+  can't refuse a key that a deposit uses, because an in-flight deposit's key exists only in `payment_db`
+  until its outcome event arrives. Use a fresh key for each operation.
+- Refusals come in a fixed order, so a request with several faults gets the first that applies. First is
+  `406` for an `Accept` header that rules out JSON: the endpoint produces only JSON, so the request is
+  refused while the endpoint is matched, before anything runs. Next, `401` for a missing or invalid
+  `X-User-Id` wins over everything else, because `@CurrentUserId` is the controller's first parameter. Then
+  comes `400` for anything wrong with the request itself, checked before any query; `404` when the caller
+  holds no wallet in the currency; the key (`200` replay or `409`); `422` for insufficient funds; and last
+  `422` for a recipient without a wallet in the currency.
+- Errors: `400` as above; `404` "No USD wallet", always about the caller's own wallet; `409` as above;
+  `422` "Insufficient funds in the USD wallet" (no figures) or "The recipient holds no USD wallet"; `503`
+  when a lock or version check failed, in which case nothing moved and a retry with the same key is safe.
 
 ### Provider webhook
 
@@ -471,18 +616,31 @@ The status mapping lives in one place:
 
 - `401`: missing or malformed `X-User-Id` (blank, over 64 characters, not a version 4 or 7 UUID).
 - `400`: invalid request, unknown provider, non-ISO-4217 currency, missing or non-UUID `Idempotency-Key`, a
-  deposit amount Payment Service rejects (its message passed on), missing or invalid webhook signature.
-- `404`: wallet not found. Wallet lookups are scoped to the caller, so it is never `403`.
+  deposit amount Payment Service rejects (its message passed on), a transfer `to` that isn't a version 4 or 7
+  UUID, a transfer amount off its currency's grid or too large for a balance, a transfer to oneself, missing
+  or invalid webhook signature.
+- `404`: wallet not found. Wallet lookups are scoped to the caller, so it is never `403`. On a transfer it
+  always means the caller's own wallet; a recipient without a wallet gets `422`.
+- `406`: a transfer whose `Accept` header rules out JSON. It is refused before anything runs.
 - `409`: transaction reference already in use (another user, a concurrent request, different terms, or
-  already paid), wallet already exists, `Idempotency-Key` reused for a different or completed deposit.
+  already paid), wallet already exists, `Idempotency-Key` reused for a different or completed deposit or for
+  a different transfer.
+- `422`: a transfer the caller's balance doesn't cover, or a recipient without a wallet in the currency. The
+  request is well-formed and its key unspent, and the remedy is a smaller amount, a top-up or another
+  recipient. On a transfer it is kept apart from `409`, whose remedy there is a new key, because without a
+  `type` the status is all a client can branch on.
 - `502`: upstream failure, meaning the payment provider, or Payment Service being unreachable, timing out or
   answering unexpectedly. Retrying a deposit with the same key is safe.
-- `500`: a webhook payload that can't be processed, or anything unexpected. The detail stays generic; the
-  specifics go to the logs and are never returned.
+- `503`: a transfer lost a lock or a version check (a deadlock, a lock wait that timed out, a version
+  conflict). The lock order is meant to rule these out. Nothing was moved, and retrying with the same key is
+  safe.
+- `500`: a webhook payload that can't be processed, a transfer that broke a database CHECK or overflowed a
+  column, or anything unexpected. The detail stays generic; the specifics go to the logs and are never
+  returned.
 
 ## Testing
 
-There are 177 tests, all green: 98 in the payment service, 46 in the wallet service and 33 in platform. They
+There are 263 tests, all green: 98 in the payment service, 132 in the wallet service and 33 in platform. They
 go after the parts most likely to be wrong rather than the ones easiest to reach. That means the asymmetric
 webhook state machine (a later failure must not undo an earlier success, but a later success must override
 an earlier failure), the outbox's claim, retry and backoff boundaries, Stripe signature parsing, the RFC
@@ -491,6 +649,16 @@ identity and idempotency-key rules. For the wallet consumer they cover dispatch 
 dead-lettering of unreadable records, refusals, duplicate classification (by the `DEPOSIT` entry alone, since
 one reference can own one movement of each type), the barrier row being written before the wallet is loaded,
 and failed payments never touching a wallet.
+
+For transfers they cover the lock order in both directions, the key judged only after both locks, and no
+other wallet read in the transaction. With the sender sorting first and last, they cover a retry that still
+gets its receipt after the balance was spent, funds checked before the recipient, a recipient without a
+wallet, and both ledger legs with their counterparties and balances. They also cover every cause of a `409`,
+the status of each refusal, the receipt rendering to the same bytes on a replay, the amount grid (trailing
+zeros, zero-decimal currencies, the size bound), the recipient id and key rules (including a fifth dash and
+non-ASCII digits), a `406` before the service runs, `401` coming before the header and body checks,
+violations and lock failures leaving the handler unchanged, the explanation of a violation after the
+rollback, the `503` mapping, and the READ COMMITTED pin.
 
 ```bash
 ./mvnw test
@@ -501,8 +669,26 @@ unique constraints on `processed_events.event_id` and `balance_history (transact
 classification by read-back, and the row lock. Those have been exercised by hand against real Postgres and
 Kafka (redelivery, duplicate references, forty concurrent credits to one wallet), but no automated test runs
 them yet. The hand check ran while the classification read any entry under the reference, and the lookup of
-the `DEPOSIT` entry alone has run only against mocks. Integration tests with Testcontainers are the next
-stage on the roadmap.
+the `DEPOSIT` entry alone has run only against mocks.
+
+For transfers the mocks pin the order of the calls and the decision after each one. What they can't show was
+checked by hand against real Postgres, through the running wallet service on a scratch database:
+
+- 400 transfers between two wallets in both directions and 300 around a ring of three, over 16 threads: no
+  deadlock, every reference with exactly one `TRANSFER_OUT` and one `TRANSFER_IN`, and each balance equal to
+  its seed plus what came in minus what went out.
+- Twenty parallel requests with one key: all `200` with identical bodies, and one pair of legs, so the money
+  moved once.
+- One key raced from two senders, with and without a wallet in common: one sender gets `200`, the other
+  `409`. Without a shared wallet, the unique index settles the race.
+- Two concurrent `25.00` transfers from a `30.00` wallet: one `200`, one `422`, and the balance ends at
+  `5.00`.
+- A replay after the balance was spent still gets the original receipt, byte for byte.
+- The three CHECKs refuse a direct SQL write of a negative balance, a zero amount or a transfer leg without
+  a counterparty.
+
+No automated test runs these checks yet. Integration tests with Testcontainers are the roadmap's "Proof
+that it works" stage.
 
 ## Getting started
 
@@ -649,17 +835,21 @@ deposit range that is inverted, not positive, or too wide for `NUMERIC(19,4)`.
 
 ## Project status & roadmap
 
-This is a showcase that keeps changing. The deposit loop works end to end. What's left is proving it holds
-up on real infrastructure, and building the rest of the money movement.
+This is a showcase that keeps changing. The deposit loop works end to end, and transfers between wallets
+work against real Postgres. What's left is automated tests on real infrastructure, and withdrawals.
 
 1. ~~Wallet comes alive~~: done. Domain model and migrations, an idempotent Kafka consumer, and retries with
    backoff plus a dead-letter topic.
 2. ~~The client drives the wallet~~: done. Wallet endpoints and deposits started through the wallet.
 3. Proof that it works: integration tests against real Postgres and Kafka showing that a redelivery doesn't
    credit twice, a duplicate reference is refused, a poison record lands in the dead-letter topic, and a
-   deposit raises the balance end to end.
-4. Transfers between wallets, same currency only, with the recipient named by user id. The ledger schema
-   already lets the two legs of a transfer share a reference.
+   deposit raises the balance end to end. For transfers they should show that opposite transfers don't
+   deadlock, that concurrent requests with one key move the money once, that a key raced from two senders
+   goes to one of them whether or not the two transfers share a wallet, that concurrent transfers can't
+   overdraw a wallet, and that a replay is byte for byte the first answer.
+4. ~~Transfers between wallets~~: done, with their automated tests on real infrastructure left to stage 3.
+   Same currency only, the recipient named by user id, and one local transaction that locks both wallets in
+   ascending user id.
 5. Withdrawals out to the payment provider, through Stripe Connect in test mode.
 
 Stages, definitions of done and open decisions live in `implementation_plan.md`. It is a local working file
