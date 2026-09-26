@@ -21,20 +21,11 @@ import java.util.Optional;
  * Moves money from the caller's wallet to another user's wallet in the same currency, and answers every retry
  * of one Idempotency-Key with the same transfer.
  * <p>
- * Deliberately not {@code @Transactional}, like {@code DepositService} and {@code PaymentEventListener}. The
- * money moves in {@link TransferHandler}'s transaction, and this class works on both sides of it. Before it,
- * everything the request alone can settle is settled with no connection taken: the currency, the amount's
- * precision, a transfer to oneself. After it, an integrity violation is explained by reading the ledger again.
- * A violation aborts the transaction in Postgres, so those reads can only run once the handler's transaction
- * has rolled back, from a caller outside it. If this class opened a transaction, the handler would join it and
- * the reads would run on the aborted one.
- * <p>
- * The rejected shape is a single transactional bean that catches the violation at the flush and answers 409,
- * as {@code PaymentTransactionStore.reserve} does. Apart from the aborted transaction, it would report every
- * violation as a used key. The ledger's CHECKs exist to catch a rule the code failed to keep, such as an
- * overdraft that got past {@code Wallet.debit}, and a 409 would hide that defect and send the client to a new
- * key. Here only a {@code TRANSFER_OUT} under the key explains a violation, and anything else is rethrown as
- * the bug it is.
+ * Deliberately not {@code @Transactional}: it works on both sides of {@link TransferHandler}'s transaction.
+ * Before it, everything the request alone settles is refused with no connection taken. After it, an integrity
+ * violation is explained by reading the ledger again, which works only once that transaction has rolled back. If
+ * this class opened a transaction, the handler would join it and the reads would run on the aborted one.
+ * See docs/adr/0006-short-transactions-across-bean-boundaries.md.
  */
 @Slf4j
 @Service
@@ -76,21 +67,14 @@ public class TransferService {
     /**
      * Explains an integrity violation from the ledger as it stands after the rollback.
      * <p>
-     * Only a {@code TRANSFER_OUT} under the key explains one: another sender wallet wrote it first, and this
-     * transfer lost at the unique index. That is a 409, unless the row turns out to be this caller's own
-     * transfer on the same terms. Requests from one wallet serialize on its lock and see each other's legs
-     * inside the handler, so that case should never reach the index. It is answered as a replay all the same,
-     * because the alternative is a 409 that sends the client to a new key and moves the money a second time.
+     * Only a {@code TRANSFER_OUT} under the key explains one: another sender wallet reached the unique index
+     * first, which is a 409. If that row is the caller's own transfer on the same terms, it is answered as a
+     * replay although the wallet lock should have prevented the race, because a 409 would send the client to a
+     * new key and move the money twice. No such row means a CHECK fired or a value overflowed its column, and the
+     * violation is rethrown as a 500.
      * <p>
-     * With no {@code TRANSFER_OUT} under the key, either a CHECK fired, which means a rule the code should
-     * have kept was bypassed, or a value overflowed its column. The one overflow a transfer can reach is a
-     * recipient's balance growing past what {@code NUMERIC(19,4)} holds, which no rule in the code guards.
-     * Either way the violation is rethrown and becomes a 500 logged with its stack trace, never a conflict or
-     * a success.
-     * <p>
-     * Both reads are repository queries with no transaction of their own, and they run after the handler's
-     * transaction has rolled back. The pool may hand them the very connection that transaction used. That is
-     * safe because the rollback ended the aborted transaction, not because the connection is a different one.
+     * The reads have no transaction of their own and may get the handler's pooled connection back, which is safe
+     * because the rollback ended the aborted transaction. See docs/adr/0014-transfers-in-one-local-transaction.md.
      */
     private TransferResponse explain(TransferCommand command, DataIntegrityViolationException violation) {
         Optional<BalanceHistory> taken =

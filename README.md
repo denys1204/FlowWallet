@@ -32,6 +32,7 @@ module boundaries.
 ## Table of contents
 
 - [Architecture](#architecture)
+- [Architecture decisions](#architecture-decisions)
 - [End-to-end deposit flow](#end-to-end-deposit-flow)
 - [Tech stack](#tech-stack)
 - [Modules](#modules)
@@ -104,10 +105,18 @@ flowchart LR
 - Each service has its own database. `payment_db` and `wallet_db` are separate, and neither service touches
   the other's.
 
+## Architecture decisions
+
+Design decisions that span more than one file are written up as architecture decision records (ADRs) in
+[`docs/adr/`](docs/adr/), one file per decision, each with its context, the alternatives that were rejected and
+the consequences. [`docs/adr/README.md`](docs/adr/README.md) is the index. This README describes how the
+system behaves and links the relevant ADR where a section needs the reasoning behind it.
+
 ## End-to-end deposit flow
 
 A deposit starts with a synchronous request that hands the client a payment credential. The money moves
-later, when the asynchronous confirmation arrives.
+later, when the asynchronous confirmation arrives. Why a deposit starts in the wallet and is reserved before
+Stripe is called is in [ADR 0013](docs/adr/0013-deposit-initiation.md).
 
 ```mermaid
 sequenceDiagram
@@ -177,13 +186,13 @@ flow-wallet (parent POM)
 └── flow-wallet-payment    Payment Service — Stripe, transactions, webhooks, outbox
 ```
 
-There are two library modules instead of one because they serve different purposes and need different
-rules. Platform is ordinary shared code, changed as freely as anything else. Contract is the boundary
-between services. Producer and consumer are deployed separately, so a topic always holds messages written
-by more than one version of the code, and changes there follow evolution rules: add optional fields only,
-never rename or retype, keep enums off the wire. A single module could not express both sets of rules and
-ended up with the loosest ones that fit either. Now a DTO that belongs to one service has nowhere to land
-except that service.
+Platform and contract are separate modules because they follow different rules. Platform is ordinary shared
+code, changed as freely as anything else. Contract is the boundary between services. Producer and consumer
+are deployed separately, so a topic always holds messages written by more than one version of the code, and
+changes there follow evolution rules: add optional fields only, never rename or retype, keep enums off the
+wire. A DTO that belongs to one service lives in that service. The module split is explained in
+[ADR 0002](docs/adr/0002-module-boundaries.md) and the contract rules in
+[ADR 0009](docs/adr/0009-payment-event-contract.md).
 
 | Module | Port | Responsibility |
 |--------|------|----------------|
@@ -197,7 +206,7 @@ except that service.
 
 Payment Service never publishes to Kafka straight from business logic. In the same database transaction
 that changes a transaction's status, it also writes a row to `outbox_events`, so the event exists if and
-only if the state change commits.
+only if the state change commits. The reasoning is in [ADR 0008](docs/adr/0008-transactional-outbox.md).
 
 Delivery to Kafka goes two ways:
 
@@ -263,13 +272,15 @@ The listener reads the event type from the Kafka `eventType` header and never in
 
 An event never creates a wallet. A deposit can only start through an existing wallet, so an event for a
 missing wallet means a payment got in some other way, and it gets recorded instead of absorbed. Nothing
-replays `REJECTED` rows automatically yet; replay is manual.
+replays `REJECTED` rows automatically yet; replay is manual. The consumer's design is in
+[ADR 0010](docs/adr/0010-idempotent-payment-event-consumer.md).
 
 ## Transfers between wallets
 
 A transfer moves money from the caller's wallet to another user's wallet in the same currency. It is one
 local transaction in `wallet_db`: the debit, the credit and both ledger entries commit together or not at
-all. Payment Service and Kafka take no part, so there is no intermediate state to compensate for.
+all. Payment Service and Kafka take no part, so there is no intermediate state to compensate for. The
+reasoning behind the order below is in [ADR 0014](docs/adr/0014-transfers-in-one-local-transaction.md).
 
 `TransferService` first settles what the request alone can settle, before it takes a database connection:
 the currency, the amount's precision and a transfer to oneself. The money then moves in
@@ -281,10 +292,9 @@ the currency, the amount's precision and a transfer to oneself. The money then m
 2. If the caller holds no wallet in the currency, the answer is `404`.
 3. It judges the `Idempotency-Key` by looking up the `TRANSFER_OUT` entry stored under it. The same transfer
    from the same wallet gets the original receipt back, and any other transfer under that key gets `409`.
-   The lookup comes after the locks on purpose. Every transfer out of a wallet holds that wallet's lock, so
-   two requests with one key from one wallet run one after the other, and the second sees what the first
-   committed. The key is also judged before the funds, so a retry of a transfer that spent the whole
-   balance still gets its receipt rather than a `422`.
+   The lookup runs under the sender's lock, so a second request with the same key from the same wallet
+   waits for the first and sees what it committed. It also runs before the funds check, so a retry of a
+   transfer that spent the whole balance still gets its receipt rather than a `422`.
 4. It debits the caller's wallet, or refuses with `422` if the balance is below the amount.
 5. If the recipient holds no wallet in the currency, the answer is `422`. Funds are checked first, so only a
    request the caller can afford learns that a wallet is missing. A transfer never creates a wallet.
@@ -298,24 +308,23 @@ on `wallets.balance` holds the same rule for any code path that skips it.
 Two requests with one key from different sender wallets need not share a lock. If their transfers share a
 wallet, such as the recipient, they run one after the other on its lock, and the second one's key lookup
 sees the first one's `TRANSFER_OUT` if it committed, so the answer is `409`. If they share no wallet, the
-ledger's unique (`transaction_reference`, `type`) index decides between them. The second `TRANSFER_OUT`
-insert waits for the first transaction, and fails if that one commits. In Postgres a constraint violation
-aborts the transaction, so `TransferService` reads the ledger again once the rollback has ended it, possibly
-on the same pooled connection. A `TRANSFER_OUT` under the key means another wallet used it first, and the
-answer is `409`. If that entry turns out to be the caller's own identical transfer, the answer is the replay
-instead, because a `409` would send the client to a new key and move the money twice. If there is no
-`TRANSFER_OUT` under the key, either a CHECK fired, which means the code let through something it should
-have refused, or a value overflowed its column, such as a recipient's balance growing past what
-`NUMERIC(19,4)` holds. That violation is rethrown and becomes a `500` with its stack trace in the log, and it
-is never reported as a conflict or a success. The log names the constraint but not the refused row, because
-the wallet's datasource turns off the Postgres driver's error detail, which would print the row with its
-balances.
+ledger's unique (`transaction_reference`, `type`) index decides between them: the second `TRANSFER_OUT`
+insert waits for the first transaction and fails if that one commits. `TransferService` then reads the
+ledger again after the rollback ([ADR 0007](docs/adr/0007-unique-constraints-decide.md)). A `TRANSFER_OUT`
+under the key from another wallet gives `409`. The caller's own identical transfer gives the replay instead,
+because a `409` would send the client to a new key and move the money twice. No `TRANSFER_OUT` under the key
+means either a CHECK fired (the code let through something it should have refused) or a value overflowed its
+column, such as a recipient's balance growing past what `NUMERIC(19,4)` holds. That violation is rethrown as
+a `500` with its stack trace in the log and is never reported as a conflict or a success. The log names the
+constraint but not the refused row, because the wallet's datasource turns off the Postgres driver's error
+detail, which would print the row with its balances.
 
 The lock order should rule out deadlocks, and while the row lock is held the wallet's `@Version` check has
 nothing to catch. If a deadlock, a lock wait that timed out or a version conflict happens anyway, nothing
 has committed, and the answer is `503` asking for a retry with the same key. No lock timeout is set. A
 transfer waits as long as another transaction holds one of its rows, and every transaction in the service
-that holds a wallet row does only database work.
+that holds a wallet row does only database work. The locking rules are in
+[ADR 0011](docs/adr/0011-wallet-row-locking.md).
 
 ## Data model
 
@@ -354,6 +363,10 @@ that holds a wallet row does only database work.
   `rejection_reason`, `payload TEXT` (kept for `FAILURE_RECORDED` and `REJECTED`, NULL for `CREDITED`) and
   `processed_at`. It is indexed on (`outcome`, `processed_at`).
 
+The rules behind `wallets` and `balance_history` (a balance that never goes negative, positive amounts, the
+(`transaction_reference`, `type`) key and the counterparty) are in
+[ADR 0012](docs/adr/0012-balances-and-append-only-ledger.md).
+
 `docker/postgres/init-databases.sql` creates both databases when the Postgres volume is first initialised.
 
 ## Kafka topics & events
@@ -367,22 +380,20 @@ Both topics are declared as beans (`payment.events` by Payment Service, the dead
 Service), so they are created at startup with the configured partitions and replicas instead of relying on
 broker auto-creation. Both producers use `acks=all` with idempotence enabled.
 
-Payment Service has no dead-letter topic of its own. A send fails almost only when the broker is
-unreachable, and that is exactly when publishing to another topic on the same broker would fail as well,
-so the `FAILED` rows in `outbox_events` play that role. The wallet's dead-letter topic is something else:
-it carries failed consumer records, not outbox rows.
+Payment Service has no dead-letter topic of its own. The `FAILED` rows in `outbox_events` play that role,
+because a send fails almost only when the broker is unreachable, and a publish to another topic on the same
+broker would fail then too. The wallet's dead-letter topic carries failed consumer records, not outbox rows.
 
 Events are published as JSON strings keyed by `transactionReference`. Each record carries an `eventType`
 header set to `PaymentCompletedEvent` or `PaymentFailedEvent`. Consumers dispatch on that header and treat a
 record without it as unreadable. `schemaVersion` is currently `1`, and it only changes for a change that
-can't be made additively.
+can't be made additively. The contract's rules are in [ADR 0009](docs/adr/0009-payment-event-contract.md).
 
 - `PaymentCompletedEvent` carries `eventId`, `schemaVersion`, `transactionReference`, `providerTransactionId`, `amount`, `currency`, `userId`, `completedAt`.
 - `PaymentFailedEvent` carries `eventId`, `schemaVersion`, `transactionReference`, `providerTransactionId`, `amount`, `currency`, `userId`, `reason`, `failedAt`.
 
-Neither event names a wallet. A wallet is identified by its owner and its currency, and the events already
-carry both, so a wallet id would be a second name for the same thing that nothing could check against the
-first.
+Neither event names a wallet. A wallet is identified by its owner and its currency, which the events already
+carry ([ADR 0004](docs/adr/0004-wallet-addressed-by-owner-and-currency.md)).
 
 `reason` is a fixed description written by Payment Service, not the provider's decline message, so don't
 branch on it. Consumers deduplicate on `eventId` and never on `transactionReference`. A `PaymentFailedEvent`
@@ -404,11 +415,10 @@ copes with either order, because a failure moves no money.
   gateway (for Stripe webhooks) and from Wallet Service (which forwards `X-User-Id` when it starts a
   payment). In a cluster, neither service gets a public route.
 - `X-User-Id` must be a random-based UUID, version 4 or 7, and the resolver enforces it. An identity has to
-  be opaque and must not be derivable from anything knowable. Versions 1, 3 and 5 pass a naive UUID check
-  and are refused anyway. Versions 3 and 5 are deterministic hashes of a name, so anyone who suspects an id
-  is `uuid5(namespace, e-mail)` can compute it and confirm the guess, and version 1 embeds a MAC address and
-  a creation time. Mostly this is data hygiene. Right now it matters more than that, because the header
-  isn't authenticated and whoever writes it becomes that user.
+  be opaque, so versions 1, 3 and 5 are refused even though they pass a naive UUID check. Versions 3 and 5
+  are hashes of a name, so anyone who guesses the name can compute the id, and version 1 embeds a MAC
+  address and a creation time. While the header is unauthenticated, whoever writes it becomes that user
+  ([ADR 0003](docs/adr/0003-caller-identity-and-trust-boundary.md)).
 - Anything else gets a `401`, the same as a missing header: a blank value, a non-UUID, a UUID of version 1, 3
   or 5, or anything longer than 64 characters. Surrounding whitespace is stripped and the value is folded to
   lower case, so one identity can't turn into two users with two balances.
@@ -425,11 +435,10 @@ copes with either order, because a failure moves no money.
   but the sender's transfer then gets a `409`.
 - A sender can learn little about a recipient. A `to` that isn't a version 4 or 7 UUID gets a `400` before any
   query. Funds are checked before the recipient, so only a request the sender can afford gets "The recipient
-  holds no USD wallet", and that answer can only confirm that a wallet is absent. The wallet keeps no user
-  registry, so a user without a wallet and an id that belongs to nobody get the same answer. Confirming that
-  a wallet exists takes a completed transfer, which moves money and leaves the sender's id in the
-  recipient's history. Each refused recipient is logged at WARN with both user ids, so probing shows up in
-  the logs.
+  holds no USD wallet". The wallet keeps no user registry, so a user without a wallet and an id that belongs
+  to nobody get that same answer. Confirming that a wallet exists takes a completed transfer, which moves
+  money and leaves the sender's id in the recipient's history. Each refused recipient is logged at WARN with
+  both user ids ([ADR 0014](docs/adr/0014-transfers-in-one-local-transaction.md)).
 - Stripe webhooks are verified cryptographically (HMAC signature with a replay window). That check doesn't
   depend on user identity and stays enforced.
 
@@ -441,8 +450,9 @@ The base URL through the gateway is `http://localhost:8080`. Every wallet endpoi
 
 A wallet is addressed by its ISO 4217 currency and never by an id. A user holds at most one wallet per
 currency, and `X-User-Id` already names the owner, so the pair identifies the wallet exactly. It also means
-"not yours" and "does not exist" give the same result. Currency is case-insensitive in the path and in the
-body.
+"not yours" and "does not exist" give the same result
+([ADR 0004](docs/adr/0004-wallet-addressed-by-owner-and-currency.md)). Currency is case-insensitive in the
+path and in the body.
 
 | Method & path | Request | Response |
 |---------------|---------|----------|
@@ -468,7 +478,8 @@ finishes the work itself by confirming the payment with Stripe using `providerDa
 - `Idempotency-Key` is required and can be a UUID of any version, in either case. It is lower-cased and
   becomes the payment's transaction reference, so the same string runs from the client through Payment
   Service into Stripe, onto the event and into the ledger. The server never generates one. If it did, a lost
-  response would get a fresh key on retry, and the customer would be charged twice.
+  response would get a fresh key on retry, and the customer would be charged twice. The key rules shared by
+  deposits and transfers are in [ADR 0005](docs/adr/0005-client-supplied-idempotency-keys.md).
 - Repeating a request with the same key and the same amount returns a byte-identical body. Reusing a key
   with a different amount, or a key whose deposit already completed, gets a `409`.
 - The provider comes from configuration (`WALLET_PAYMENT_PROVIDER`, default `STRIPE`), not from the request.
@@ -503,10 +514,11 @@ a transfer, and a replay has to match the first answer in status as well as body
 - `amount` must be positive and sit on the grid deposits use for its currency: whole units for the 16
   zero-decimal currencies in Payment Service's `StripeCurrencyRules` (JPY and KRW among them), two decimals
   for every other. The wallet keeps its own copy of that list in `AmountPrecision`, because a transfer never
-  passes through Payment Service. Trailing zeros don't count, so `10.5000` USD and `100.00` JPY are fine. An
-  amount off the grid, such as `10.001` USD or `1.5` JPY, gets a `400` and is never rounded. So does an
-  amount with more than 15 integer digits, the room a `NUMERIC(19,4)` balance has. Nothing else limits the
-  amount: the deposit range belongs to Payment Service and applies to deposits only.
+  passes through Payment Service ([ADR 0015](docs/adr/0015-currency-precision-and-no-rounding.md)).
+  Trailing zeros don't count, so `10.5000` USD and `100.00` JPY are fine. An amount off the grid, such as
+  `10.001` USD or `1.5` JPY, gets a `400` and is never rounded. So does an amount with more than 15 integer
+  digits, the room a `NUMERIC(19,4)` balance has. Nothing else limits the amount: the deposit range belongs
+  to Payment Service and applies to deposits only.
 - `Idempotency-Key` follows the deposit rules: required, any UUID version, lower-cased, never generated by
   the server. It becomes the `transactionReference` of both ledger entries.
 - Repeating a transfer with the same key, from the same wallet, to the same recipient, for the same amount
@@ -612,7 +624,8 @@ field is left out: nothing sets it, and a null field isn't serialised.
 The gateway is reactive and doesn't use this handler. Errors it raises itself (`404` for an unrouted path,
 `5xx` when a downstream service is unreachable) come in Spring Boot's default WebFlux format.
 
-The status mapping lives in one place:
+The status mapping lives in one place, and each status stands for one remedy
+([ADR 0016](docs/adr/0016-error-model-and-status-codes.md)):
 
 - `401`: missing or malformed `X-User-Id` (blank, over 64 characters, not a version 4 or 7 UUID).
 - `400`: invalid request, unknown provider, non-ISO-4217 currency, missing or non-UUID `Idempotency-Key`, a

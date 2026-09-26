@@ -4,9 +4,9 @@ import com.flowwallet.platform.exception.ApiException;
 import org.springframework.http.HttpStatus;
 
 /**
- * Thrown when a validly-signed webhook payload cannot be processed (e.g. its data object cannot be
- * deserialized). Maps to HTTP 500: the signature was valid, so this is a server-side / SDK-version fault
- * rather than a bad request. The detail is developer-authored and safe; the cause is logged.
+ * Thrown when a webhook cannot be processed on this side, such as a signed event whose data object fails to
+ * deserialize after an SDK version mismatch. A redelivery can succeed once that is fixed.
+ * See docs/adr/0016-error-model-and-status-codes.md.
  */
 public class WebhookProcessingException extends ApiException {
     public WebhookProcessingException(String message, Throwable cause) {

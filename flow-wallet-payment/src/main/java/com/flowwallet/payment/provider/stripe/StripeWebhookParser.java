@@ -16,12 +16,10 @@ import java.util.Map;
 import static com.flowwallet.payment.provider.stripe.StripeConstants.HEADER_SIGNATURE;
 
 /**
- * Verifies and parses a raw Stripe webhook request into a provider-agnostic {@link ParsedStripeEvent}.
- * <p>
- * Extracted from {@link StripePaymentStrategy} so the strategy stays thin and this Stripe wire-format
- * handling — signature extraction, event construction/verification, and data-object deserialization
- * (with the API-version-mismatch fallback) — is a single-responsibility collaborator that can be unit
- * tested in isolation with a mocked {@link StripeClient}.
+ * Verifies and parses a raw Stripe webhook request into a {@link ParsedStripeEvent}. The SDK reads the body
+ * before it checks the signature, so a body that is not a readable event becomes a
+ * {@link WebhookProcessingException} without its signature being checked.
+ * See docs/adr/0016-error-model-and-status-codes.md.
  */
 @Slf4j
 @Component

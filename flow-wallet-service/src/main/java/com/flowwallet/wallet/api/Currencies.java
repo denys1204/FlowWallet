@@ -11,12 +11,9 @@ public final class Currencies {
     }
 
     /**
-     * Upper-cases, then validates — in that order, and deliberately.
-     * <p>
-     * {@code Currency.getInstance} is case-sensitive, so validating first would answer a casing mistake with
-     * "not a valid ISO 4217 code", which is both wrong and unhelpful. Upper-casing also matches how the
-     * value is stored: the schema carries a CHECK that the column equals its own upper-case, so without this
-     * {@code /api/wallets/usd} would miss a wallet that plainly exists.
+     * Upper-cases, then validates. {@code Currency.getInstance} is case-sensitive, and the
+     * {@code wallets_currency_is_upper} CHECK stores only upper case, so {@code usd} must reach the {@code USD}
+     * wallet. See docs/adr/0015-currency-precision-and-no-rounding.md.
      */
     public static String normalise(String currency) {
         if (currency == null || currency.isBlank()) {

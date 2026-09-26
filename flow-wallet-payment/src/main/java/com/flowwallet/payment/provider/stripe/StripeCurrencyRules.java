@@ -5,17 +5,8 @@ import java.util.Set;
 
 /**
  * How much precision Stripe accepts for a currency, and what power of ten converts a major-unit amount
- * into the minor unit Stripe charges in.
- * <p>
- * The two numbers must be decided together. Deciding the exponent alone lets an amount with more decimals
- * than the currency has be rounded on the way out, so the customer is charged one figure and credited
- * another. Deciding the accepted precision alone lets a correctly-rounded amount be sent at the wrong scale.
- * <p>
- * The table is authoritative and the JDK is never consulted, which is deliberate. {@code Currency}
- * reports the ISO exponent, and for Stripe's purposes ISO is wrong in both directions: it gives MGA two
- * decimals where Stripe treats it as zero-decimal, which would multiply a charge by a hundred, and it gives
- * ISK none where Stripe expects two, which would divide one by a hundred. A table that is never crossed with
- * the JDK also cannot be broken by a JDK update revising an ISO figure.
+ * into the minor unit Stripe charges in. Both come from this table and never from {@code java.util.Currency},
+ * whose ISO exponents differ from Stripe's (MGA, ISK). See docs/adr/0015-currency-precision-and-no-rounding.md.
  *
  * @see <a href="https://docs.stripe.com/currencies#zero-decimal">Stripe: zero-decimal currencies</a>
  */
@@ -24,12 +15,8 @@ public final class StripeCurrencyRules {
     }
 
     /**
-     * Charged as whole units — Stripe expects the major-unit figure unchanged.
-     * <p>
-     * The wallet keeps a copy of this list, and of the two-decimal cap in {@link #MAX_ACCEPTED_SCALE}, in
-     * {@code com.flowwallet.wallet.api.AmountPrecision}. Transfers never pass through this service, yet must
-     * move amounts on the grid deposits arrive on, and services never depend on each other. A change here must
-     * be made there too.
+     * Charged as whole units. {@code com.flowwallet.wallet.api.AmountPrecision} keeps a copy of this list and of
+     * {@link #MAX_ACCEPTED_SCALE}, so a change here must be made there too.
      */
     private static final Set<String> ZERO_DECIMAL = Set.of(
             "BIF", "CLP", "DJF", "GNF", "JPY", "KMF", "KRW", "MGA",
@@ -37,9 +24,8 @@ public final class StripeCurrencyRules {
     );
 
     /**
-     * Charged in thousandths. Restricted to the five that Stripe documents; IQD and LYD also carry three
-     * decimals in ISO but are deliberately absent, because an ISO fact asserted as a Stripe fact is the
-     * mistake this class exists to avoid. An unlisted currency is charged at the default exponent.
+     * Charged in thousandths: only the five that Stripe documents. IQD and LYD carry three decimals in ISO, not
+     * in Stripe, and stay at the default exponent.
      */
     private static final Set<String> THREE_DECIMAL = Set.of("BHD", "JOD", "KWD", "OMR", "TND");
 
@@ -47,9 +33,7 @@ public final class StripeCurrencyRules {
 
     /**
      * Nothing finer than a hundredth is accepted, whatever the currency's exponent. For the three-decimal
-     * currencies this is stricter than the exponent, and that is on purpose: Stripe requires their minor
-     * amounts to end in zero, and capping the accepted precision at two decimals makes every amount we can
-     * accept satisfy that by construction, without a second rule to keep in step.
+     * currencies this makes every minor amount end in zero, as Stripe requires.
      */
     private static final int MAX_ACCEPTED_SCALE = 2;
 

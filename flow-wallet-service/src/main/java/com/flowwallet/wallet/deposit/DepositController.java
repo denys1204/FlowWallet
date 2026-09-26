@@ -11,10 +11,8 @@ import org.springframework.web.bind.annotation.*;
 /**
  * Starting a deposit into a wallet.
  * <p>
- * Returns 200 rather than 201 or 202. Nothing is created on this side, so there is no resource for a
- * {@code Location} to point at; and 202 would promise that the server finishes the work on its own, when in
- * fact the caller finishes it with the provider's SDK — a conventionally-written client would poll for a
- * balance that never moves.
+ * Answers 200: nothing is created on this side, and the client finishes the payment with the provider's SDK.
+ * See docs/adr/0013-deposit-initiation.md.
  */
 @Validated
 @RestController
@@ -24,16 +22,12 @@ public class DepositController {
     private final DepositService deposits;
 
     /**
-     * Any UUID version is accepted here, unlike the caller's own id — and the version list is spelled out
-     * because the annotation's default is 1 to 5, which would quietly refuse a version-7 key from any client
-     * library that generates them by default. This key needs only to be unique, not
-     * unguessable — a client deriving a stable key from an order number with a version-5 UUID is doing
-     * something sensible, and refusing it would buy nothing.
+     * Any UUID version is accepted, unlike the caller's own id. The versions are listed because the annotation's
+     * default, 1 to 5, refuses the version-7 keys many client libraries generate.
+     * See docs/adr/0005-client-supplied-idempotency-keys.md.
      *
-     * @param idempotencyKey the caller's retry token, which becomes the payment's reference. Required: an
-     *                       optional key would mean whoever forgets it silently loses idempotency on the one
-     *                       unsafe endpoint here, and a lost response would charge twice. Never generated
-     *                       server-side for the same reason — a fresh key on every retry is no key at all.
+     * @param idempotencyKey the caller's retry token, which becomes the payment's reference; required, and never
+     *                       generated server-side
      */
     @PostMapping
     public DepositResponse start(

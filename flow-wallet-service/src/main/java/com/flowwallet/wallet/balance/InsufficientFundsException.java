@@ -4,20 +4,11 @@ import com.flowwallet.platform.exception.ApiException;
 import org.springframework.http.HttpStatus;
 
 /**
- * The wallet's balance does not cover a debit. Maps to HTTP 422.
+ * The wallet's balance does not cover a debit: 422, whose remedy is a smaller amount or a top-up, never a new key.
  * <p>
- * 422 rather than 409. On the transfer path a 409 means only "that Idempotency-Key was already used for a
- * different transfer", and its remedy is a new key. Here the key is unspent and the request well-formed, and the
- * remedy is a smaller amount or a top-up. A problem response carries no type, so the status is the only thing a
- * client can branch on, and the two answers must not share one.
- * <p>
- * An {@code ApiException}, unlike {@link UnknownWalletException}, because every debit in scope starts from an
- * HTTP request that is waiting for the answer. A debit driven by an event, such as a chargeback, would need a
- * refusal of its own.
- * <p>
- * The message names the currency and no figures. The platform handler writes every 4xx detail to the log, and
- * none of this service's own log lines carries a balance; the caller can read its own balance from the wallet
- * endpoint.
+ * The message names the currency and no figures, because the platform handler logs every 4xx detail. It is an
+ * {@code ApiException} because every caller of {@link Wallet#debit} serves an HTTP request; a debit driven by an
+ * event would need a refusal of its own. See docs/adr/0016-error-model-and-status-codes.md.
  */
 public class InsufficientFundsException extends ApiException {
     public InsufficientFundsException(String currency) {

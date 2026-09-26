@@ -64,9 +64,8 @@ public class OutboxMessageSender {
     }
 
     /**
-     * Records a failed send: increments the retry count (or marks FAILED once maxRetries is reached) and
-     * returns the exception to throw so the caller can retry later. The error message is stored as-is —
-     * the {@code error_message} column is TEXT, so no truncation is applied.
+     * Schedules a retry with backoff, or marks the row FAILED at max-retries. The error is stored whole, since
+     * {@code error_message} is TEXT. See docs/adr/0008-transactional-outbox.md.
      */
     private OutboxMessageProcessingException recordSendFailure(
             OutboxEvent event,

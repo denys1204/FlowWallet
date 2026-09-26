@@ -10,10 +10,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 
 /**
- * Reads and writes that must happen in their own transaction, after the money transaction has rolled back.
- * <p>
- * A separate bean rather than more methods on {@link PaymentEventHandler}, because a self-invocation would
- * bypass the transaction proxy and run these on the aborted transaction they exist to escape.
+ * Reads and writes that must happen in their own transaction, after the money transaction has rolled back. A
+ * separate bean from {@link PaymentEventHandler}, because a self-invocation would bypass the transaction proxy.
+ * See docs/adr/0006-short-transactions-across-bean-boundaries.md.
  */
 @Slf4j
 @Service
@@ -25,16 +24,10 @@ public class PaymentEventOutcomeStore {
     /**
      * Asks the database which barrier refused the write, instead of parsing the exception.
      * <p>
-     * Reading back beats inspecting constraint names: it needs no knowledge of the schema's naming, keeps
-     * working when a constraint is renamed, and gives a definite answer for the case that matters most —
-     * neither barrier — where guessing would ack a payment that was never credited.
-     * <p>
-     * The reference check asks about the {@code DEPOSIT} movement only, because that is the one ledger barrier
-     * a credit can hit. Since migration 005 a reference may own one movement of each type, which is what lets
-     * the two legs of a transfer share one, and an untyped check goes wrong whichever way it is written. A
-     * lookup that expects one row throws once a reference owns two, so an event that should be classified is
-     * retried and dead-lettered instead. A check for any row reads a movement of another type as a credit, and
-     * after an unrelated violation it would acknowledge, as a duplicate, a payment that was never credited.
+     * The reference check names {@code DEPOSIT}, the one ledger barrier a credit can hit. A check for any row
+     * under the reference would take a transfer leg for a credit and acknowledge, as a duplicate, a payment that
+     * was never credited. A new barrier on the credit path needs its own verdict here.
+     * See docs/adr/0010-idempotent-payment-event-consumer.md.
      */
     @Transactional(readOnly = true)
     public DuplicateVerdict classify(String eventId, String transactionReference) {
@@ -49,8 +42,8 @@ public class PaymentEventOutcomeStore {
     }
 
     /**
-     * Records that an event was refused, so the refusal is durable and countable rather than a log line.
-     * The payload is kept whole, which is what makes the event replayable once the cause is fixed.
+     * Records a refusal as a {@code REJECTED} row with the whole payload, so the event can be replayed once the
+     * cause is fixed.
      */
     @Transactional
     public void recordRejection(

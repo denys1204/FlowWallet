@@ -6,12 +6,10 @@ import jakarta.validation.constraints.Positive;
 import java.math.BigDecimal;
 
 /**
- * Client request to deposit into a wallet. The currency is not carried here — a wallet is denominated in a
- * single currency, and taking one from the caller would only create a way for the two to disagree.
+ * Client request to deposit into a wallet. The currency is the wallet's own, named by the path.
  * <p>
- * The accepted amount range belongs to Payment Service, which enforces it. This request checks only
- * what the wallet itself can know; a copy of the bounds here would be a second source of truth that
- * eventually drifts from the first.
+ * The accepted amount range belongs to Payment Service, the only place that enforces it, so no bounds are
+ * declared here. See docs/adr/0013-deposit-initiation.md.
  *
  * @param amount amount in major currency units
  */

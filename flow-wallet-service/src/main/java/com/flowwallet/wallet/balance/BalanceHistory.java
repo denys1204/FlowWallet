@@ -9,35 +9,14 @@ import java.math.BigDecimal;
 import java.time.Instant;
 
 /**
- * One movement on a wallet, recorded append-only. Rows are never updated or deleted, so there is no
- * {@code @Version} and no {@code @UpdateTimestamp}.
+ * One movement on a wallet. The table is append-only, so there is no {@code @Version} and no
+ * {@code @UpdateTimestamp}.
  * <p>
- * {@code transactionReference} is NOT NULL and unique together with {@code type}, and that pairing is the
- * barrier that makes a credit happen at most once. Both halves matter: Postgres treats NULLs as distinct under
- * a unique index, so a nullable column would leave the barrier silently inert for exactly the malformed events
- * it exists to stop.
- * <p>
- * Since migration 005 the key includes the type, so a reference may own one movement of each type rather than
- * one movement in all. A payment can still be credited only once, because a reference owns at most one
- * {@code DEPOSIT}, while the two legs of a transfer can share a reference. The same key lets a reference start
- * at most one transfer: two sender wallets racing on one key cannot both write its {@code TRANSFER_OUT}. A
- * lookup by reference must therefore name the type it means.
- * <p>
- * A movement carries {@code balanceBefore} and {@code balanceAfter} so the ledger can be replayed and
- * reconciled against {@link Wallet#getBalance()} without recomputing history.
- * <p>
- * {@code eventId} is nullable on purpose. When the barrier refuses a second credit, it separates the routine
- * case — the same event delivered twice, which at-least-once delivery guarantees will happen — from a producer
- * contract violation, where two different events claim one transaction reference. Without it both look
- * identical, and one of them is a real payment being dropped. It is null on both legs of a transfer, which
- * never passes through {@code payment.events}.
- * <p>
- * {@code counterpartyUserId} names the user on the other side of a transfer: the recipient on
- * {@code TRANSFER_OUT}, the sender on {@code TRANSFER_IN}. Without it a credit would arrive from an invisible
- * source that the recipient could neither recognise nor dispute. It is a user id rather than a wallet id
- * because wallet ids appear in no API, and both legs share one currency, so the user id and this row's own
- * wallet name the other wallet exactly. A CHECK makes it present on the transfer types and absent on every
- * other, so a transfer leg without a counterparty cannot be stored.
+ * {@code (transactionReference, type)} is unique and the reference is NOT NULL. A reference owns at most one
+ * movement of each type, so both legs of a transfer share one and every lookup by reference names its type.
+ * {@code counterpartyUserId} is the other user of a transfer, which a CHECK requires on the transfer types and
+ * forbids on the rest. {@code eventId} is null on both transfer legs, which never pass through
+ * {@code payment.events}. See docs/adr/0012-balances-and-append-only-ledger.md.
  */
 @Entity
 @Getter
@@ -81,8 +60,7 @@ public class BalanceHistory {
     private Instant createdAt;
 
     /**
-     * Records a credit. {@code balanceBefore} is the value {@link Wallet#credit(BigDecimal)} returned, so the
-     * two sides of the movement come from one read rather than two.
+     * Records a credit. {@code balanceBefore} is the value {@link Wallet#credit(BigDecimal)} returned.
      */
     public static BalanceHistory deposit(
             Wallet wallet,
@@ -103,7 +81,7 @@ public class BalanceHistory {
 
     /**
      * Records the sender's leg of a transfer. {@code balanceBefore} is the value {@link Wallet#debit(BigDecimal)}
-     * returned, and the amount is positive, as on every movement: the type says the money left.
+     * returned, and the amount stays positive: the type says the money left.
      *
      * @param recipientUserId the owner of the wallet the money went to, which the sender's history shows
      */
@@ -151,18 +129,12 @@ public class BalanceHistory {
 
     /**
      * Whether this movement is the sending leg of the transfer described: out of the same wallet, to the same
-     * user, for the same amount. An Idempotency-Key that does not bind the terms is not idempotency. Without
-     * this, a client that corrected the amount or the recipient and retried under the old key would be handed
-     * the original transfer as a success.
+     * user, for the same amount.
      * <p>
-     * The sender is compared by wallet rather than by user. The wallet fixes the currency too, so one key used
-     * from a caller's USD wallet and then from its EUR wallet names two different transfers, and the second is
-     * a conflict. The recipient needs no currency, because both legs of a transfer share the sender's.
-     * <p>
-     * The amount is compared by value, not by {@code equals}, as Payment Service's
-     * {@code PaymentTransaction.differencesFrom} does. A stored amount comes back from {@code NUMERIC(19,4)}
-     * as 25.0000. Under {@code equals}, a retry that sent 25.00 would be judged a different transfer and sent
-     * to a new key unless every caller had rescaled first, and the answer should not rest on that.
+     * The sender is compared by wallet, which also fixes the currency. The amount is compared with
+     * {@code compareTo}: a stored amount comes back from {@code NUMERIC(19,4)} as 25.0000, and under
+     * {@code equals} a retry that sent 25.00 would count as a different transfer.
+     * See docs/adr/0005-client-supplied-idempotency-keys.md.
      */
     public boolean isRepeatOf(Long senderWalletId, String recipientUserId, BigDecimal amount) {
         return type == TransactionType.TRANSFER_OUT

@@ -6,9 +6,6 @@ import org.springframework.http.HttpStatus;
 /**
  * An amount the wallet cannot move as written: finer than its currency allows, or too large for a balance.
  * Maps to HTTP 400.
- * <p>
- * Built only through the factories, so each refusal has one wording and the reason is in the name of the call
- * that raised it.
  */
 public class InvalidAmountException extends ApiException {
     private InvalidAmountException(String detail) {

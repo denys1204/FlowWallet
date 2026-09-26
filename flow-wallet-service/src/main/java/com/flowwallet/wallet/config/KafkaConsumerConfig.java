@@ -14,21 +14,17 @@ import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.util.backoff.ExponentialBackOff;
 
 /**
- * What happens to a record the listener could not handle.
- * <p>
- * Without this the container's default recoverer logs the record and moves on, which in a service that
- * credits money means a payment quietly not arriving with nothing durable to show for it. Deferring it was
- * tempting and wrong: one poisonous record blocks its partition, and with the transaction reference as the
- * partition key that stalls a third of all credits, for people with no connection to the failure.
+ * What happens to a record the listener could not handle: bounded retries, then the wallet's dead-letter topic.
+ * The container's default recoverer would log the record and drop the payment. This error handler is the
+ * wallet's only retry mechanism. See docs/adr/0010-idempotent-payment-event-consumer.md.
  */
 @Slf4j
 @Configuration
 public class KafkaConsumerConfig {
 
     /**
-     * The wallet's own dead-letter topic, deliberately not the payment service's. What lands here is a
-     * failed {@code ConsumerRecord} with this consumer's serialization; the producer-side topic would carry
-     * raw outbox rows under a different contract, and mixing the two makes both unreadable.
+     * The wallet's own dead-letter topic for failed consumer records, kept apart from Payment Service's
+     * dead-letter store of outbox rows.
      */
     public static final String DEAD_LETTER_TOPIC = "payment.events.wallet.DLT";
 
@@ -39,9 +35,8 @@ public class KafkaConsumerConfig {
     private short deadLetterReplicas;
 
     /**
-     * Declared rather than left to broker auto-creation, which is off on any broker worth running and would
-     * otherwise turn a dead-letter publish into a failure of its own — the record then goes nowhere and the
-     * consumer retries it forever.
+     * Declared rather than left to broker auto-creation, which production brokers disable: a failed dead-letter
+     * publish would have the record redelivered without end.
      */
     @Bean
     public NewTopic paymentEventsDeadLetterTopic() {
@@ -71,8 +66,7 @@ public class KafkaConsumerConfig {
 
         var errorHandler = new DefaultErrorHandler(recoverer, backOff);
 
-        // A record that cannot be parsed or typed will not parse better in five seconds. Retrying it only
-        // delays the dead-letter that is already the answer.
+        // An unreadable record fails the same way on every attempt, so it is dead-lettered at once.
         errorHandler.addNotRetryableExceptions(UnreadablePaymentEventException.class);
 
         errorHandler.setRetryListeners((record, exception, deliveryAttempt) ->

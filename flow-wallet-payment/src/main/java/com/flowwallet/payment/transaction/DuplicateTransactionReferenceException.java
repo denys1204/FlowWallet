@@ -4,12 +4,9 @@ import com.flowwallet.platform.exception.ApiException;
 import org.springframework.http.HttpStatus;
 
 /**
- * Thrown when a transaction reference is already in use — won by a concurrent request, owned by a
- * different user, or reused for a payment on different terms. Maps to HTTP 409 Conflict.
- * <p>
- * The three cases are not distinguishable by status code, and deliberately so: the responses carry no
- * problem {@code type} beyond {@code about:blank}, so inventing a taxonomy here would promise callers a
- * precision the representation does not deliver. The detail says which it was.
+ * One 409 for a reference that is already taken by a concurrent request, by another user's payment, by a payment
+ * that succeeded or by one on other terms. The detail names the case.
+ * See docs/adr/0005-client-supplied-idempotency-keys.md.
  */
 public class DuplicateTransactionReferenceException extends ApiException {
     private DuplicateTransactionReferenceException(String message) {
@@ -21,9 +18,7 @@ public class DuplicateTransactionReferenceException extends ApiException {
     }
 
     /**
-     * The reference names a payment that already completed. Returning its intent again would hand back a
-     * credential that has been spent, with a 200 that says everything is fine — the client would then fail
-     * at the provider, learning from a third party what this service already knew.
+     * The payment already succeeded, so replaying its intent would hand back a spent client secret.
      */
     public static DuplicateTransactionReferenceException forSettledReference(String transactionReference) {
         return new DuplicateTransactionReferenceException(
@@ -32,11 +27,7 @@ public class DuplicateTransactionReferenceException extends ApiException {
     }
 
     /**
-     * The reference exists and names a payment on different terms. 409 rather than 422 because the request
-     * is not itself invalid — the same body under an unused reference would be accepted.
-     *
-     * @param differingFields which terms disagree; never their stored values, since this message is
-     *                        rendered to the caller
+     * @param differingFields which terms differ, never their stored values, because the message reaches the caller
      */
     public static DuplicateTransactionReferenceException forConflictingPayload(
             String transactionReference,

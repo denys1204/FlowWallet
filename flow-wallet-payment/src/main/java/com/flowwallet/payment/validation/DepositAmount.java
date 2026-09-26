@@ -11,14 +11,8 @@ import static java.lang.annotation.ElementType.*;
 import static java.lang.annotation.RetentionPolicy.RUNTIME;
 
 /**
- * Checks an amount against the configured deposit range.
- * <p>
- * This exists instead of {@code @DecimalMin}/{@code @DecimalMax} because annotation attributes must be
- * compile-time constants, so a bound that lives in configuration cannot be expressed as one. The
- * validator reads the range from {@code PaymentDepositProperties} at validation time, which is also why
- * it must stay in this module — the properties it depends on live here.
- * <p>
- * Presence is not its business: {@code null} passes, leaving that to {@code @NotNull}.
+ * Checks an amount against the deposit range configured in {@code PaymentDepositProperties}, read at validation
+ * time. {@code null} passes, leaving presence to {@code @NotNull}. See docs/adr/0013-deposit-initiation.md.
  */
 @Documented
 @Constraint(validatedBy = DepositAmountValidator.class)

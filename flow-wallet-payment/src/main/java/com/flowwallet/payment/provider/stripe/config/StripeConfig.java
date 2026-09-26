@@ -6,7 +6,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * Pushes the API key into Stripe's static holder, which is the only way its SDK accepts one.
+ * Sets the API key on the SDK's static holder, which {@code PaymentIntent.create} in {@code StripeClient} reads.
  */
 @Configuration
 @RequiredArgsConstructor

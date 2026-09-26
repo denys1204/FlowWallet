@@ -6,8 +6,8 @@ import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * Publishes the FAILED outbox backlog as a Micrometer gauge ({@code outbox.events.failed}) so it is
- * visible via Actuator/metrics and can be alerted on (see Phase 5 observability).
+ * The alert signal for FAILED outbox rows, which nothing retries until an operator requeues them.
+ * See docs/adr/0008-transactional-outbox.md.
  */
 @Configuration
 public class OutboxMetricsConfig {

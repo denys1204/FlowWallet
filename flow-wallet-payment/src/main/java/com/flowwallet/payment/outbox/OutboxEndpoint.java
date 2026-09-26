@@ -9,9 +9,8 @@ import org.springframework.stereotype.Component;
 import java.util.Map;
 
 /**
- * Actuator ops endpoint for the transactional outbox, exposed under management (not the public API) at
- * {@code /actuator/outbox}. Lets an operator see the FAILED backlog (GET) and requeue it (POST) after the
- * failure cause is resolved.
+ * GET counts the FAILED outbox rows and POST requeues them. The endpoint has no authentication of its own and is
+ * only as protected as Payment Service's port. See docs/adr/0008-transactional-outbox.md.
  */
 @Component
 @Endpoint(id = "outbox")

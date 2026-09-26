@@ -4,9 +4,8 @@ import com.flowwallet.platform.exception.ApiException;
 import org.springframework.http.HttpStatus;
 
 /**
- * Thrown when a provider webhook payload fails signature verification. Maps to HTTP 400 Bad Request:
- * a legitimate provider delivery is always correctly signed, so a bad signature is a malformed or
- * unauthenticated sender, not a server fault.
+ * Thrown when a webhook's signature is missing or invalid. A real delivery is always signed, so the fault is the
+ * sender's. See docs/adr/0016-error-model-and-status-codes.md.
  */
 public class InvalidWebhookSignatureException extends ApiException {
     public InvalidWebhookSignatureException(String message) {

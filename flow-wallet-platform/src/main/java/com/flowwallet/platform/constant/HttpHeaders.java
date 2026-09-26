@@ -5,14 +5,10 @@ package com.flowwallet.platform.constant;
  */
 public final class HttpHeaders {
     private HttpHeaders() {
-        // utility class — no instantiation
     }
 
     /**
-     * Header carrying the authenticated user's ID.
-     * <p>
-     * Set by API Gateway (from JWT in production, passed through in showcase mode).
-     * Read by downstream services via {@code @CurrentUserId}.
+     * Header carrying the caller's user id, read through {@code @CurrentUserId}.
      */
     public static final String USER_ID = "X-User-Id";
 }

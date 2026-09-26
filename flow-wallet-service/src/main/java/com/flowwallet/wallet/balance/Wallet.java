@@ -9,24 +9,14 @@ import java.math.BigDecimal;
 import java.time.Instant;
 
 /**
- * A user's balance in a single currency.
+ * A user's balance in a single currency. {@code (user_id, currency)} is unique and is the wallet's address; the
+ * currency never changes and nothing converts between currencies.
+ * See docs/adr/0004-wallet-addressed-by-owner-and-currency.md.
  * <p>
- * A user may hold several wallets, but only one per currency — enforced by a unique constraint on
- * {@code (user_id, currency)} rather than by a read-then-write check, which two concurrent first payments
- * would race past.
- * <p>
- * The currency is fixed for the wallet's lifetime. Nothing converts between currencies, so a movement whose
- * currency differs from the wallet's is a rejection, never a conversion.
- * <p>
- * {@code @Version} is load-bearing: two payments for one user can be credited concurrently, and the partition
- * key on {@code payment.events} is the transaction reference rather than the wallet id, so concurrent writers
- * on one row are ordinary rather than exotic. Transfers add writers from HTTP requests, each debiting one
- * wallet and crediting another while credits from the consumer land on the same rows. Every writer takes the
- * row lock first ({@link WalletRepository#lockByUserIdAndCurrency}), and the version is what stops a path
- * that does not.
- * <p>
- * A balance is never negative. {@link #debit(BigDecimal)} refuses an overdraft, and the schema's
- * {@code wallets_balance_not_negative} holds the same rule for any writer that skips it.
+ * Every balance writer locks the row first through {@link WalletRepository#lockByUserIdAndCurrency}, and
+ * {@code @Version} is the backstop for a path that does not. A balance is never negative: {@link #debit(BigDecimal)}
+ * refuses an overdraft and {@code wallets_balance_not_negative} holds the rule for any writer that skips it.
+ * See docs/adr/0011-wallet-row-locking.md and docs/adr/0012-balances-and-append-only-ledger.md.
  */
 @Entity
 @Getter
@@ -89,18 +79,11 @@ public class Wallet {
     /**
      * Debits the wallet and returns the balance as it stood beforehand, mirroring {@link #credit(BigDecimal)}.
      * <p>
-     * The caller must hold the row lock, so that the balance judged here is the one written back. Concurrent
-     * debits of one wallet then serialize: of two transfers that each fit the balance alone but not together,
-     * one commits and the other is refused here.
-     * <p>
-     * The rule is checked here although {@code wallets_balance_not_negative} also holds it. The constraint
-     * fires only at the flush, as an integrity violation in a transaction Postgres has already aborted, and
-     * from there nothing can tell the caller why. This answers 422 with a reason before anything is written.
-     * Because it lives on the entity, every later debit, such as a withdrawal, inherits it without having to
-     * remember it.
-     * <p>
-     * Both checks run before the balance is touched, so a refusal leaves the entity as it was. Draining the
-     * wallet to exactly zero is allowed.
+     * The caller must hold the row lock, so that the balance judged here is the one written back. The overdraft
+     * is refused here with a 422 because {@code wallets_balance_not_negative} fires only at the flush, in an
+     * aborted transaction that can no longer tell the caller why. Both checks run before the balance is touched,
+     * so a refusal leaves the entity as it was. Draining the wallet to exactly zero is allowed.
+     * See docs/adr/0012-balances-and-append-only-ledger.md.
      *
      * @param amount strictly positive amount in major units; the caller validates this before a transaction opens
      * @return the balance before the debit

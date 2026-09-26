@@ -5,9 +5,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 /**
- * Operational view over the outbox: reporting how many events have exhausted their retries (FAILED) and
- * providing a manual requeue so an operator can retry them once the underlying cause is fixed. FAILED rows
- * are a durable dead-letter store (kept by the cleanup job for the retention window), so nothing is lost.
+ * FAILED rows are the outbox's dead-letter store. Nothing deletes them, and only {@link #requeueFailed} returns
+ * them to delivery. See docs/adr/0008-transactional-outbox.md.
  */
 @Slf4j
 @Service
@@ -20,11 +19,10 @@ public class OutboxOperations {
     }
 
     /**
-     * Returns every FAILED event to PENDING with a clean retry state (retryCount reset, backoff cleared),
-     * so the poller picks them up again. Intended to be triggered by an operator after the failure cause
-     * (e.g. broker outage) is resolved.
+     * Returns every FAILED row to PENDING with its retry state and {@code error_message} cleared, so the cause has
+     * to be read from {@code outbox_events} before a requeue.
      *
-     * @return the number of events requeued
+     * @return the number of rows requeued
      */
     public int requeueFailed() {
         int requeued = outboxEventRepository.requeueFailed(OutboxStatus.PENDING, OutboxStatus.FAILED);

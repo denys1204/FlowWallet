@@ -7,8 +7,8 @@ import java.util.Optional;
 public interface ProcessedEventRepository extends JpaRepository<ProcessedEvent, Long> {
 
     /**
-     * Used only to classify a barrier violation after it has happened. Checking before inserting would be a
-     * race between the check and the insert; the unique constraint is the decision.
+     * Read only to classify a barrier violation after it has happened, never as a check before the insert.
+     * See docs/adr/0007-unique-constraints-decide.md.
      */
     Optional<ProcessedEvent> findByEventId(String eventId);
 }

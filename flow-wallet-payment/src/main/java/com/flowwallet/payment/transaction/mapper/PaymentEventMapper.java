@@ -16,8 +16,7 @@ import java.util.UUID;
 @Mapper(componentModel = "spring", imports = {Instant.class, UUID.class, KafkaConstants.class})
 public interface PaymentEventMapper {
     /**
-     * The outbox row's aggregate type. It lives here rather than in flow-wallet-contract because it never
-     * reaches the wire — it labels a row in this service's own table, and a consumer has no use for it.
+     * Never reaches the wire, so it stays out of flow-wallet-contract. See docs/adr/0002-module-boundaries.md.
      */
     String AGGREGATE_TYPE_PAYMENT_TRANSACTION = "PaymentTransaction";
 

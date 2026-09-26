@@ -5,7 +5,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 FlowWallet is an event-driven wallet on Java 25, Spring Boot 4.1, Kafka (KRaft), PostgreSQL and Stripe. It
 is an engineering showcase that runs against Stripe test mode only and never goes to production.
 `README.md` documents the system for humans and is kept accurate against the code: when behaviour changes,
-update it in the same piece of work.
+update it in the same piece of work. Decisions that span files, with their context and rejected alternatives,
+are ADRs in `docs/adr/` (index: `docs/adr/README.md`). The rules below are stated once and link the ADR that
+holds their reasoning.
 
 ## Commands
 
@@ -37,12 +39,13 @@ Compose ports bind to `127.0.0.1`; if `5432` is taken by another project, set `D
 
 ## Architecture
 
-Five Maven modules:
+Five Maven modules ([ADR 0002](docs/adr/0002-module-boundaries.md)):
 
 - `flow-wallet-contract`: the Kafka events (`PaymentCompletedEvent`, `PaymentFailedEvent`), the topic name, the
   `eventType` header and its values, and the schema version. No dependencies of its own. Its `package-info`
   holds the evolution rules: add optional fields only, never rename, remove or retype, keep enums off the
-  wire. Only things that actually cross the wire belong here.
+  wire ([ADR 0009](docs/adr/0009-payment-event-contract.md)). Only things that actually cross the wire belong
+  here.
 - `flow-wallet-platform`: shared servlet-side infrastructure, auto-configured: the RFC 9457
   `GlobalExceptionHandler`, `ApiException` (each subclass carries its HTTP status), the `@CurrentUserId`
   resolver, `@Iso4217Currency`. Nothing domain-shaped. A DTO that belongs to one service lives in that service.
@@ -59,10 +62,12 @@ Services depend only on platform and contract, never on each other. Payment know
    anything is charged**, then calls payment directly on `:8082` (not through the gateway) through a Spring
    declarative HTTP interface over `RestClient` (`PaymentIntentClient`). There is no Feign.
 2. Payment reserves a `PENDING` row, calls Stripe outside any DB transaction, records the intent, and returns
-   the client secret, which the wallet passes through untouched.
+   the client secret, which the wallet passes through untouched ([ADR 0013](docs/adr/0013-deposit-initiation.md)).
 3. The signed Stripe webhook marks the transaction `SUCCESS`/`FAILED` and writes an `outbox_events` row in the
-   same transaction. The outbox publishes via an `AFTER_COMMIT` fast path plus a polling fallback.
-4. `balance/PaymentEventListener` consumes `payment.events` and credits the wallet.
+   same transaction. The outbox publishes via an `AFTER_COMMIT` fast path plus a polling fallback
+   ([ADR 0008](docs/adr/0008-transactional-outbox.md)).
+4. `balance/PaymentEventListener` consumes `payment.events` and credits the wallet
+   ([ADR 0010](docs/adr/0010-idempotent-payment-event-consumer.md)).
 
 Transfers (`POST /api/wallets/{currency}/transfers`, package `transfer/`) never leave the wallet: Payment
 Service and Kafka take no part, and the money moves in one local transaction in `wallet_db`.
@@ -72,38 +77,37 @@ taken; after it, it classifies an integrity violation. `TransferHandler.execute`
 `@Transactional(isolation = READ_COMMITTED)` method and catches nothing. In order, it locks both wallets
 in ascending user id, refuses a missing sender wallet (404), judges the key (replay or 409), calls
 `Wallet.debit` (422), refuses a missing recipient wallet (422), credits, and writes `TRANSFER_OUT` then
-`TRANSFER_IN` with a single flush. No network call runs while the locks are held.
+`TRANSFER_IN` with a single flush. No network call runs while the locks are held
+([ADR 0014](docs/adr/0014-transfers-in-one-local-transaction.md),
+[ADR 0006](docs/adr/0006-short-transactions-across-bean-boundaries.md)).
 
 ### Idempotency, end to end
 
 - The client sends `Idempotency-Key` (a UUID); it is lower-cased and used verbatim as `transactionReference`,
-  which is also Stripe's idempotency key. The server never generates it.
+  which is also Stripe's idempotency key. The server never generates it
+  ([ADR 0005](docs/adr/0005-client-supplied-idempotency-keys.md)).
 - Payment binds a reference to its terms (`PaymentTransaction.differencesFrom`): same terms → original intent;
   different terms, another owner, or an already-paid reference → 409.
 - The wallet consumer has two barriers in one transaction: a unique `processed_events.event_id` (redelivery)
   and a unique `balance_history (transaction_reference, type)` (a second event for a credited payment). After a
   constraint violation it classifies by reading back from a **fresh** transaction (`PaymentEventOutcomeStore`),
-  and rethrows if neither barrier fired.
+  and rethrows if neither barrier fired ([ADR 0010](docs/adr/0010-idempotent-payment-event-consumer.md)).
 - Transfers store the key as the `transactionReference` of both legs. `TransferHandler` judges it after both
   locks and before `Wallet.debit`, with `findByTransactionReferenceAndType(key, TRANSFER_OUT)` and
   `BalanceHistory.isRepeatOf` (same sender wallet, same recipient, amount by `compareTo`). A repeat is a 200
   replay built by `TransferResponse.of` from the stored row, byte-identical and timestamp-free; anything else
-  is 409. Judged before the lock, a same-key retry could pass while the original was in flight; judged after
-  the debit, a retry after a spent balance would get 422 for money that moved. Same-key transfers that share
-  any wallet (one sender, one recipient, or one's recipient as the other's sender) serialize on its lock, and
-  the lookup settles them. Only between transfers that share no wallet does the unique index decide, and
-  `TransferService` then classifies the violation with new reads after the rollback (possibly on the same
-  pooled connection, which the rollback has cleaned): a `TRANSFER_OUT` under the key is a 409 (or a replay if
-  it is the caller's own), none means a CHECK fired or a value overflowed, and it is rethrown as a 500. Lock
-  and version failures (`ConcurrencyFailureException`) become 503 "retry with the same key".
+  is 409. Same-key transfers that share any wallet serialize on its lock; between transfers that share none,
+  the unique index decides, and `TransferService` classifies the violation with new reads after the rollback:
+  a `TRANSFER_OUT` under the key is a 409 (or a replay if it is the caller's own), none means a CHECK fired or
+  a value overflowed, and it is rethrown as a 500. Lock and version failures (`ConcurrencyFailureException`)
+  become 503 "retry with the same key" ([ADR 0014](docs/adr/0014-transfers-in-one-local-transaction.md)).
 - Refusals write nothing, so they consume no key. A key binds one kind of operation: the consumer reads
   only `DEPOSIT` rows (`PaymentEventOutcomeStore.classify`) and a transfer only `TRANSFER_OUT`, and each
   `(reference, type)` barrier holds on its own. One reference can own several rows, so every lookup by
-  reference must name its type.
+  reference must name its type ([ADR 0012](docs/adr/0012-balances-and-append-only-ledger.md)).
 - Every balance write takes a `PESSIMISTIC_WRITE` lock on the wallet row
-  (`WalletRepository.lockByUserIdAndCurrency`): the credit, and both wallets of a transfer. Optimistic locking
-  alone lost concurrent credits. `@Version` stays as a backstop. Read-only endpoints use the non-locking
-  finders.
+  (`WalletRepository.lockByUserIdAndCurrency`): the credit, and both wallets of a transfer. `@Version` stays as
+  a backstop. Read-only endpoints use the non-locking finders ([ADR 0011](docs/adr/0011-wallet-row-locking.md)).
 - Consumer error handling is split deliberately: refusals the wallet understands (invalid amount/envelope, unknown
   wallet, duplicate reference) are stored as `REJECTED` rows with the payload and acknowledged; unreadable
   records and exhausted retries go to `payment.events.wallet.DLT`. The container's `DefaultErrorHandler` is the
@@ -114,39 +118,42 @@ in ascending user id, refuses a missing sender wallet (404), judges the key (rep
 - Money is `BigDecimal` / `NUMERIC(19,4)`, never floating point.
 - A balance is never negative. `Wallet.debit` refuses an overdraft with a 422 before anything is written, and
   the schema holds the rule for any writer that skips it (`wallets_balance_not_negative`). Ledger amounts are
-  always positive and `type` carries the direction (`balance_history_amount_positive`).
+  always positive and `type` carries the direction (`balance_history_amount_positive`)
+  ([ADR 0012](docs/adr/0012-balances-and-append-only-ledger.md)).
 - Code that locks more than one wallet in a transaction locks them in ascending `(user_id, currency)`, which for
-  one currency means ascending user id, inside READ COMMITTED. The order comes from the request; ascending
-  wallet id would need a read first. Under REPEATABLE READ a lock that waited behind a committed writer fails
-  with a serialization error and a later lookup misses what that writer committed, which is why
-  `TransferHandler` pins the isolation.
-- No unlocked read of a wallet before the locks in the same transaction. The persistence context would already
-  hold that wallet, and `lockByUserIdAndCurrency` would lock the row and return the managed instance. Hibernate
-  then compares its version with the locked row's and throws `StaleObjectStateException` (a 503 on a transfer)
-  if another writer committed in between, so a pre-read turns ordinary lock waits into failed requests.
+  one currency means ascending user id, taken from the request without a read. `TransferHandler` pins READ
+  COMMITTED, because under REPEATABLE READ a lock that waited fails with a serialization error
+  ([ADR 0011](docs/adr/0011-wallet-row-locking.md)).
+- No unlocked read of a wallet before the locks in the same transaction. The locking query would return the
+  managed instance, and Hibernate throws `StaleObjectStateException` (a 503 on a transfer) whenever another
+  writer committed in between, so a pre-read turns ordinary lock waits into failed requests.
 - A wallet is addressed by `(userId, currency)`, never by a client-supplied id, and is **never created as a side
   effect of a payment event or a transfer**. The wallet id is deliberately absent from the events, the payment
-  request and every API response.
+  request and every API response ([ADR 0004](docs/adr/0004-wallet-addressed-by-owner-and-currency.md)).
 - `X-User-Id` must be a UUID version 4 or 7 (enforced in `CurrentUserIdResolver`) and is case-folded. A
   transfer's `to` is checked with the resolver's own expression (`CurrentUserIdResolver.RANDOM_UUID_REGEX` in
-  `TransferRequest`). `Idempotency-Key` accepts any UUID version.
+  `TransferRequest`). `Idempotency-Key` accepts any UUID version
+  ([ADR 0003](docs/adr/0003-caller-identity-and-trust-boundary.md)).
 - Amounts moved inside the wallet sit on `AmountPrecision`'s grid, a copy of `StripeCurrencyRules`'
   zero-decimal list and two-decimal cap, and at most 15 integer digits. They are refused, never rounded. The
-  two lists point at each other; change both together.
+  two lists point at each other; change both together
+  ([ADR 0015](docs/adr/0015-currency-precision-and-no-rounding.md)).
 - Problem responses carry no `type`, so on the transfer path each status points to a different kind of fix:
   400 fix the request, 404 open your wallet (only ever the caller's), 409 use a new key (only key reuse), 422
   lower the amount or top up (insufficient funds) or pick another recipient (no recipient wallet), with the
-  detail saying which, 503 retry with the same key.
+  detail saying which, 503 retry with the same key ([ADR 0016](docs/adr/0016-error-model-and-status-codes.md)).
 - A webhook's status reports delivery, not the business outcome: an event for an intent this service never
   created gets 200, not 404.
-- `FAILED` outbox rows are never deleted automatically; they are the dead-letter store.
-- A `PaymentFailedEvent` moves no money, which is why the consumer does not depend on event order.
-- Services take `X-User-Id` on trust, and today it is unauthenticated: the gateway has no filters and forwards
-  the client's header unchanged, so whoever sets it is that user. The intended model is that the gateway
-  validates a token and services are reachable only through it (plus wallet → payment directly on `:8082`), but
-  nothing enforces that yet. Knowing a user's id is therefore enough to spend that user's balance through a
-  transfer, and every `TRANSFER_IN` shows the recipient the sender's id and key. There is no user search
-  endpoint by design.
+- `FAILED` outbox rows are never deleted automatically; they are the dead-letter store
+  ([ADR 0008](docs/adr/0008-transactional-outbox.md)).
+- A `PaymentFailedEvent` moves no money, which is why the consumer does not depend on event order
+  ([ADR 0009](docs/adr/0009-payment-event-contract.md)).
+- Services take `X-User-Id` on trust, and it is unauthenticated: the gateway has no filters and forwards the
+  client's header unchanged, so whoever sets it is that user, and knowing a user's id is enough to spend that
+  user's balance through a transfer. The intended model (the gateway validates a token; services are reachable
+  only through it, plus wallet → payment directly on `:8082`) is not enforced yet. Every `TRANSFER_IN` shows the
+  recipient the sender's id and key. There is no user search endpoint by design
+  ([ADR 0003](docs/adr/0003-caller-identity-and-trust-boundary.md)).
 
 ## Conventions
 
@@ -166,8 +173,15 @@ in ascending user id, refuses a missing sender wallet (404), judges the key (rep
   `StripeProperties` are unvalidated, and outbox schedules, the optimistic-lock retry and topic
   partitions/replicas are read through `@Scheduled`/`@Retryable`/`@Value` placeholders. New variables go in
   `.env.example` too. Topic names are compile-time constants, not config.
-- Comments and Javadoc explain *why*, including the alternative that was rejected. Test names are sentences
-  describing the behaviour, and a comment says which failure the test guards against.
+- A comment gives the local why in a few lines: what a reader at that spot cannot get from the code and needs in
+  order to change it safely (a local invariant, a trap, a non-obvious ordering). Delete comments that restate the
+  code. A decision that spans files, with its rejected alternatives, lives in an ADR under `docs/adr/`, and the
+  comment links it with `See docs/adr/NNNN-slug.md.` A new cross-cutting decision gets a new ADR. An accepted
+  ADR is superseded by a new one rather than rewritten; only a factual correction, such as a renamed class, is
+  edited in place. Format, numbering and index: [ADR 0001](docs/adr/0001-record-architecture-decisions.md).
+- Javadoc always uses the multi-line form, never a one-line `/** ... */`. Public Javadoc keeps `@param`,
+  `@return` and `@throws` only where they tell the caller something the signature does not.
+- Test names are sentences describing the behaviour, and a comment says which failure the test guards against.
 - Wrapped argument lists chop down one per line; no blank line after a class opening brace.
 - Conventional commits (`fix(wallet): …`, `docs: …`) with a body that explains the reason for the change.
 
@@ -180,8 +194,9 @@ in ascending user id, refuses a missing sender wallet (404), judges the key (rep
   rethrow at once (see `PaymentTransactionStore.reserve`), or outside the rolled-back transaction and then read
   from a fresh one (`PaymentEventListener` with `PaymentEventOutcomeStore`, `TransferService`); never keep
   working on that connection. The catching class must not be `@Transactional` itself, or the inner
-  transaction joins it and the reads run on the aborted one.
-- `@Transactional` on a method called from the same class does nothing: there is no proxy.
+  transaction joins it and the reads run on the aborted one ([ADR 0007](docs/adr/0007-unique-constraints-decide.md)).
+- `@Transactional` on a method called from the same class does nothing: there is no proxy
+  ([ADR 0006](docs/adr/0006-short-transactions-across-bean-boundaries.md)).
 - Class-level `@Validated` routes parameter validation through an AOP proxy. Standalone `MockMvc` creates none,
   so parameter constraints silently don't run in tests unless the controller is wrapped with a
   `MethodValidationInterceptor` proxy (see `DepositControllerTest`).

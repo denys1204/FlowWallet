@@ -6,9 +6,9 @@ import java.time.Instant;
 /**
  * Published by Payment Service through the Transactional Outbox when a payment fails.
  * <p>
- * Failure is not terminal: the same provider payment may be retried and later succeed, producing a
- * {@link PaymentCompletedEvent} for the same {@code transactionReference}. Consumers must not treat
- * this event as the end of the story.
+ * Failure is not terminal: the same payment may be retried and succeed, producing a
+ * {@link PaymentCompletedEvent} for the same {@code transactionReference}.
+ * See docs/adr/0009-payment-event-contract.md.
  *
  * @param eventId               identifies this message; stable across redeliveries and topic replays
  * @param schemaVersion         payload version, bumped only if a change cannot be made additively

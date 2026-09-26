@@ -32,14 +32,13 @@ public class OutboxProperties {
 
     /**
      * Number of days to retain COMPLETED outbox events before cleanup. FAILED events are never deleted by
-     * age: they are undelivered events, and deleting one would lose it without a trace.
+     * age. See docs/adr/0008-transactional-outbox.md.
      */
     private int retentionDays = 7;
 
     /**
-     * How long (ms) an event may stay in PROCESSING before the reaper assumes the sender crashed and
-     * returns it to PENDING. MUST be comfortably larger than the longest possible single send, otherwise
-     * a live in-flight send could be reset and re-published.
+     * How long (ms) an event may stay in PROCESSING before the reaper returns it to PENDING. It must stay well
+     * above the longest single send, or a live send is reset and published twice.
      */
     private long stuckProcessingThresholdMs = 300000;
 }

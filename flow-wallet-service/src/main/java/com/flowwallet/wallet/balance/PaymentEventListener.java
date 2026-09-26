@@ -21,18 +21,9 @@ import java.util.Optional;
 /**
  * Turns payment events into wallet balances, exactly once each.
  * <p>
- * Idempotency has two independent barriers, and both are needed. The unique {@code event_id} stops a
- * redelivery of the same message, which at-least-once delivery guarantees will happen. The ledger's unique
- * {@code (transaction_reference, type)} allows at most one {@code DEPOSIT} per reference, which stops a second
- * credit for one payment even if it arrives under a different event id. That is a producer defect rather than
- * a redelivery, and the case where money is actually at stake.
- * <p>
- * The event's type comes from the {@code eventType} header, never from the shape of the JSON. Guessing from
- * the fields present breaks the first time the schema grows a field, and a payment system is a poor place
- * to learn that.
- * <p>
- * This class is not transactional. It runs after {@link PaymentEventHandler}'s transaction has already
- * committed or rolled back, which is the only position from which a rolled-back write can be examined.
+ * The event's type comes from the {@code eventType} header, never from the shape of the JSON. This class is not
+ * transactional: it runs after {@link PaymentEventHandler}'s transaction has committed or rolled back, the only
+ * position from which a rolled-back write can be classified. See docs/adr/0010-idempotent-payment-event-consumer.md.
  */
 @Slf4j
 @Component
@@ -69,13 +60,11 @@ public class PaymentEventListener {
         try {
             handler.credit(event);
         } catch (UnknownWalletException e) {
-            // Recorded, not dead-lettered: the payload is kept so the event can be replayed once the wallet
-            // exists, without depending on how long Kafka happens to retain it.
+            // Recorded with its payload rather than dead-lettered, so it can be replayed once the wallet exists.
             reject(event.eventId(), KafkaConstants.EVENT_TYPE_PAYMENT_COMPLETED, event.transactionReference(),
                     event.amount(), RejectionReason.WALLET_NOT_FOUND, record.value());
         } catch (DataIntegrityViolationException e) {
-            // The transaction is already rolled back. Ask the database which barrier refused it, from a
-            // fresh transaction, rather than reading anything off the exception.
+            // The transaction is already rolled back. A fresh one asks the database which barrier refused it.
             switch (outcomes.classify(event.eventId(), event.transactionReference())) {
                 case EVENT_ALREADY_PROCESSED -> log.info(
                         "Event {} was already processed; balance unchanged", event.eventId());
@@ -89,8 +78,8 @@ public class PaymentEventListener {
                             RejectionReason.DUPLICATE_REFERENCE, record.value());
                 }
 
-                // Neither barrier: the credit did not happen and this is not a duplicate. Raising it sends
-                // the record to the dead-letter topic rather than acknowledging money that never arrived.
+                // Neither barrier: the credit did not happen. Rethrowing sends the record through the retries
+                // to the dead-letter topic instead of acknowledging money that never arrived.
                 case NOT_A_DUPLICATE -> throw e;
             }
         }
@@ -114,10 +103,8 @@ public class PaymentEventListener {
     }
 
     /**
-     * Everything the credit depends on. A null amount would throw deep inside the transaction and a
-     * negative one would quietly debit the wallet with a perfectly self-consistent ledger row behind it,
-     * which is the worse of the two. Neither event record carries validation annotations, so this is the
-     * only place either is caught.
+     * Everything the credit depends on. The event records carry no validation and {@link Wallet#credit} takes
+     * its amount on trust, so this is the only place a negative amount, which would debit the wallet, is caught.
      */
     private Optional<RejectionReason> refusalFor(String transactionReference, String currency, String userId,
                                                  BigDecimal amount) {
@@ -131,10 +118,8 @@ public class PaymentEventListener {
     }
 
     /**
-     * Recording a refusal is a write like any other, so it meets the same barrier: redelivering an event the
-     * wallet already refused violates the unique event id. Without this guard that record would be
-     * dead-lettered, and the topic meant for records the wallet could not read would fill with ones it read
-     * perfectly well and deliberately declined.
+     * Recording a refusal meets the event-id barrier too. A redelivered refusal is acknowledged here, so it
+     * does not reach the dead-letter topic, which is for records the wallet could not read.
      */
     private void reject(String eventId, String eventType, String transactionReference, BigDecimal amount,
                         RejectionReason reason, String payload) {

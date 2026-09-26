@@ -30,9 +30,8 @@ public class DepositAmountValidator implements ConstraintValidator<DepositAmount
     }
 
     /**
-     * Reports which bound was crossed and what it currently is, so the caller does not have to guess.
-     * The text is safe to pass as a template: {@code toPlainString} emits only digits, a sign and a
-     * decimal point, never the braces or dollar signs the message interpolator would try to resolve.
+     * The message is passed as a template, which is safe because {@code toPlainString} emits only digits, a sign
+     * and a decimal point, never the braces or dollar signs the message interpolator would try to resolve.
      */
     private boolean reject(ConstraintValidatorContext context, String message) {
         context.disableDefaultConstraintViolation();

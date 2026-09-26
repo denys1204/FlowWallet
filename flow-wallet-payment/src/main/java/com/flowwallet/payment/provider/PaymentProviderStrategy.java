@@ -8,37 +8,30 @@ import com.flowwallet.payment.provider.dto.WebhookResult;
 
 public interface PaymentProviderStrategy {
     
-    /**
-     * Checks if this strategy supports the given provider.
-     */
     boolean supports(PaymentProvider provider);
 
     /**
-     * Rejects what this provider can refuse without a network call.
-     * <p>
-     * Separate from {@link #initiatePayment} so the caller can run it before writing a transaction row.
-     * A request rejected afterwards leaves its reference taken and the client unable to retry with a
-     * corrected amount.
-     *
-     * @param context the local payment request context
+     * Rejects what this provider can refuse without a network call. The caller runs it before the transaction row
+     * is reserved, so a refusal leaves the reference free. See docs/adr/0013-deposit-initiation.md.
      */
     void validateRequest(PaymentRequestContext context);
 
     /**
-     * Initiates a payment process with the provider.
-     * @param context The local payment request context.
-     * @return Any provider-specific transaction ID and initialization data (e.g. clientSecret for Stripe).
+     * Creates the payment at the provider, with the transaction reference as the provider's idempotency key, so
+     * that a retry for a reserved row gets the same payment back. See docs/adr/0013-deposit-initiation.md.
+     *
+     * @return the provider's id for the payment and the data the client needs to finish it (for Stripe,
+     *         {@code clientSecret})
      */
     PaymentInitiationResult initiatePayment(PaymentRequestContext context);
 
     /**
-     * Parses and verifies a provider-specific webhook payload.
-     * Returns a provider-agnostic {@link WebhookResult} so the caller can decide
-     * what domain action to perform — keeping the strategy free of domain service dependencies.
+     * Verifies and parses a webhook. The caller applies the provider-agnostic result, so a strategy depends on no
+     * transaction service and stays clear of a cycle through {@code PaymentService}, which depends on it.
      *
-     * @param payload The raw webhook payload
-     * @param headers The HTTP request headers (can be used to extract signatures, etc.)
-     * @return parsed result with provider transaction ID, event ID and classified event type
+     * @param payload the raw request body, which the signature covers
+     * @param headers the request headers, which carry the signature
+     * @return the classified event, or {@link WebhookResult#unknown()} for one this service ignores
      */
     WebhookResult handleWebhook(String payload, Map<String, String> headers);
 }

@@ -1,40 +1,19 @@
 package com.flowwallet.payment.provider.stripe;
 
 
-/**
- * Internal constants for the Stripe payment provider integration.
- */
 public final class StripeConstants {
     private StripeConstants() {
     }
 
-    /**
-     * Metadata key for the internal transaction reference.
-     */
     public static final String META_TRANSACTION_REF = "transactionReference";
 
-    /**
-     * Metadata key for the user ID.
-     */
     public static final String META_USER_ID = "userId";
 
-    /**
-     * Stripe event fired when a PaymentIntent is successfully completed.
-     */
     public static final String EVENT_PAYMENT_SUCCEEDED = "payment_intent.succeeded";
 
-    /**
-     * Stripe event fired when a PaymentIntent payment attempt fails.
-     */
     public static final String EVENT_PAYMENT_FAILED = "payment_intent.payment_failed";
 
-    /**
-     * HTTP header carrying the Stripe webhook signature.
-     */
     public static final String HEADER_SIGNATURE = "stripe-signature";
 
-    /**
-     * Key used in the provider metadata map for the Stripe client secret.
-     */
     public static final String RESPONSE_CLIENT_SECRET = "clientSecret";
 }

@@ -1,11 +1,11 @@
 package com.flowwallet.wallet.enums;
 
 /**
- * Kind of movement on a wallet.
+ * Kind of movement on a wallet. The type carries both the direction and the source of the money, so an amount
+ * is always positive and there is no separate source column.
  * <p>
- * The type carries both the direction and the source of the money, so an amount is always positive and there
- * is no separate source column. The type is what a statement renders and what reports group by; a second
- * column holding half of that meaning is the one the next {@code GROUP BY} forgets.
+ * A new type must fit the {@code VARCHAR(20)} column, and one with a counterparty must be added to the
+ * {@code balance_history_counterparty_on_transfers} CHECK. See docs/adr/0012-balances-and-append-only-ledger.md.
  */
 public enum TransactionType {
     /**

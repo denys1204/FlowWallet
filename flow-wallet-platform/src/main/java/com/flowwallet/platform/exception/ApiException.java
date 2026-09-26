@@ -4,12 +4,11 @@ import lombok.Getter;
 import org.springframework.http.HttpStatus;
 
 /**
- * Base type for exceptions that carry the HTTP status they should map to.
+ * Base type for exceptions that carry the HTTP status they map to; {@code GlobalExceptionHandler} renders them as
+ * RFC 9457 problems.
  * <p>
- * The shared {@code GlobalExceptionHandler} renders any {@code ApiException} as an RFC 9457
- * {@code application/problem+json} response using {@link #getStatus()}, so domain code can throw a
- * meaningful exception instead of hard-coding status codes in controllers. Messages of
- * {@code ApiException}s are considered safe to expose to clients as the problem {@code detail}.
+ * The message becomes the problem {@code detail} and is also logged, so it is written for the caller and never
+ * carries a balance figure or a rejected header value. See docs/adr/0016-error-model-and-status-codes.md.
  */
 @Getter
 public abstract class ApiException extends RuntimeException {

@@ -3,28 +3,30 @@ package com.flowwallet.wallet.enums;
 /**
  * Why an event was refused. Every name fits the {@code VARCHAR(20)} column that stores it.
  * <p>
- * The list is short because the destination cannot be misaddressed: a wallet is found by the owner and
- * currency the event itself carries, so there is no foreign owner and no currency mismatch to reject. What
- * remains is an event that does not describe a payment we can act on, or one whose wallet is missing.
+ * There is no foreign-owner or currency-mismatch reason, because the wallet is found by the owner and currency
+ * the event itself carries. See docs/adr/0004-wallet-addressed-by-owner-and-currency.md.
  */
 public enum RejectionReason {
 
-    /** Amount absent, zero or negative — crediting it would debit the wallet. */
+    /**
+     * Amount absent, zero or negative.
+     */
     INVALID_AMOUNT,
 
-    /** A field the credit depends on is missing: transaction reference, currency or user. */
+    /**
+     * A field the credit depends on is missing: transaction reference, currency or user.
+     */
     INVALID_ENVELOPE,
 
     /**
-     * The user holds no wallet in the event's currency. Wallets are never opened by an event — a deposit is
-     * initiated through the wallet, which refuses before any money moves — so this means a payment got in by
-     * some other route. The payload is kept and the event can be replayed once the wallet exists.
+     * The user holds no wallet in the event's currency. An event never opens a wallet, so the payment got in by
+     * some other route; the event can be replayed from its payload once the wallet exists.
      */
     WALLET_NOT_FOUND,
 
     /**
-     * Two different events claim one transaction reference. One of them is a real payment that will not be
-     * credited, so this is a producer contract violation rather than a routine redelivery.
+     * A different event already credited this transaction reference: a producer contract violation, not a
+     * redelivery.
      */
     DUPLICATE_REFERENCE
 }

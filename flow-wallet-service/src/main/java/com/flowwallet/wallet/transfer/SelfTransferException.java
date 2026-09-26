@@ -6,10 +6,8 @@ import org.springframework.http.HttpStatus;
 /**
  * The caller named itself as the recipient. Maps to HTTP 400.
  * <p>
- * Refused rather than carried out as a movement of nothing. Let through, it would lock one row twice and write
- * two legs that cancel out, a ledger entry that means nothing. The request alone shows it can never be valid,
- * so it is answered before a connection is taken, and the Idempotency-Key is neither judged nor spent. It is
- * 400 rather than 422 because no wallet's state enters into it.
+ * The request alone rules it out, so {@link TransferService} refuses it before a connection is taken, and the
+ * Idempotency-Key is neither judged nor spent. See docs/adr/0014-transfers-in-one-local-transaction.md.
  */
 public class SelfTransferException extends ApiException {
     public SelfTransferException() {

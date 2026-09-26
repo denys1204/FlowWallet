@@ -18,9 +18,8 @@ import java.util.List;
 /**
  * Everything a client can do to a wallet that does not move money.
  * <p>
- * Every lookup is scoped to the caller. That is not a check performed after loading — it is the only query
- * the service issues, so there is no wider read for a later change to forget to narrow, and "not yours" and
- * "does not exist" are the same result by construction.
+ * Every query takes the caller's id, so ownership is part of the lookup and never a check after it.
+ * See docs/adr/0004-wallet-addressed-by-owner-and-currency.md.
  */
 @Slf4j
 @Service
@@ -38,9 +37,9 @@ public class WalletService {
     /**
      * Opens a wallet, or refuses because the caller already holds one in this currency.
      * <p>
-     * Inserts and lets the unique constraint decide, rather than checking first: two concurrent first
-     * requests would both pass a check and one would still fail on the insert, so the check would buy
-     * nothing and hide the real arbiter.
+     * The unique {@code (user_id, currency)} constraint decides, with no check first. Every violation is reported
+     * as that duplicate, which is true only while {@code normalise} and {@code Wallet.open} satisfy every other
+     * constraint on the row. See docs/adr/0007-unique-constraints-decide.md.
      */
     @Transactional
     public WalletResponse open(String userId, String currency) {
@@ -48,9 +47,7 @@ public class WalletService {
         try {
             return mapper.toResponse(wallets.saveAndFlush(Wallet.open(userId, code)));
         } catch (DataIntegrityViolationException e) {
-            // Rethrown immediately and nothing else issued: in Postgres the violation has already aborted
-            // this transaction, so any further statement would fail with a message about the abort rather
-            // than about the conflict.
+            // The violation has aborted this transaction, so nothing else is issued on it.
             log.info("User {} already holds a {} wallet", userId, code);
             throw new WalletAlreadyExistsException(code);
         }
@@ -62,8 +59,7 @@ public class WalletService {
     }
 
     /**
-     * A page of movements, newest first. One extra row is fetched to learn whether an older page exists
-     * without a second query or a count.
+     * A page of movements, newest first.
      */
     @Transactional(readOnly = true)
     public HistoryPage history(String userId, String currency, Long before, int limit) {

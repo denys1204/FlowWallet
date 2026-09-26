@@ -15,20 +15,12 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 /**
- * A wallet is addressed by its currency, not by an id.
+ * A wallet is addressed by the caller's id and the currency in the path, never by a wallet id.
+ * See docs/adr/0004-wallet-addressed-by-owner-and-currency.md.
  * <p>
- * The owner is already authenticated, and a user holds at most one wallet per currency, so the pair
- * identifies it exactly. An id in the path would be a second name for the same thing that the caller has no
- * truthful way to learn — the mistake that put a client-chosen wallet id into the payment request, removed
- * for the same reason. It also means ownership is the query rather than a step after it, so no handler can
- * forget to check it.
- * <p>
- * {@code @Validated} decides <em>which</em> validation path runs, not whether one does. With it, parameters
- * are validated through an AOP proxy and a violation surfaces as a {@code ConstraintViolationException},
- * which the platform's handler renders with its {@code errors} list. Without it, Spring 6.1+ would still
- * validate them through its built-in MVC method validation, but raise a
- * {@code HandlerMethodValidationException} that the platform does not shape. Removing it would change the
- * error body, not switch validation off.
+ * {@code @Validated} decides how a parameter violation is reported, not whether it is caught. Without it,
+ * Spring MVC raises {@code HandlerMethodValidationException} and the problem comes back without its
+ * {@code errors} list. See docs/adr/0016-error-model-and-status-codes.md.
  */
 @Validated
 @RestController
@@ -40,8 +32,7 @@ public class WalletController {
     private final WalletService wallets;
 
     /**
-     * Every wallet the caller holds. An empty list is a correct answer, never a 404 — the caller exists,
-     * they simply hold nothing yet.
+     * Every wallet the caller holds, ordered by currency; an empty list, never a 404, when there are none.
      */
     @GetMapping
     public List<WalletResponse> list(@CurrentUserId String userId) {

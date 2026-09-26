@@ -7,11 +7,10 @@ public final class KafkaConstants {
     private KafkaConstants() {
     }
 
-    // Topic for payment lifecycle events (e.g. PaymentCompletedEvent).
     /**
-     * Version stamped into every payment event. Bump it only when a change cannot be made
-     * additively — renaming, removing or retyping a field. Adding an optional field does not
-     * warrant a bump, because consumers ignore what they do not know.
+     * Version stamped into every payment event. Bump it only for a change that cannot be made additively
+     * (renaming, removing or retyping a field); an added optional field leaves it alone.
+     * See docs/adr/0009-payment-event-contract.md.
      */
     public static final int PAYMENT_EVENT_SCHEMA_VERSION = 1;
 
@@ -19,19 +18,12 @@ public final class KafkaConstants {
 
 
     /**
-     * Carries the concrete event type alongside the message. The payload alone does not say which
-     * record it is, and telling {@code PaymentCompletedEvent} from {@code PaymentFailedEvent} by
-     * guessing at present fields breaks on the first schema change.
+     * Names the concrete event type of a record. Consumers dispatch on it and never infer the type from the
+     * fields present in the payload.
      */
     public static final String HEADER_EVENT_TYPE = "eventType";
 
-    /**
-     * Event type for payment completion
-     */
     public static final String EVENT_TYPE_PAYMENT_COMPLETED = "PaymentCompletedEvent";
 
-    /**
-     * Event type for payment failure
-     */
     public static final String EVENT_TYPE_PAYMENT_FAILED = "PaymentFailedEvent";
 }

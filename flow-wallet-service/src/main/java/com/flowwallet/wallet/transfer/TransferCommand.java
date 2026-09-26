@@ -4,9 +4,8 @@ import java.math.BigDecimal;
 
 /**
  * A transfer as {@link TransferHandler} receives it, with every value already in the one form it is locked,
- * stored and compared in. {@link TransferService} builds it once the request has passed every check that
- * needs no database, so the transaction normalises nothing itself: a second place that lower-cases the key is
- * a second place that can forget to.
+ * stored and compared in. Only {@link TransferService} normalises, and the transaction never does it again.
+ * See docs/adr/0014-transfers-in-one-local-transaction.md.
  *
  * @param senderUserId    the caller, lower-cased by {@code CurrentUserIdResolver}
  * @param recipientUserId the recipient, lower-cased, and never the sender

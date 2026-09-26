@@ -7,12 +7,10 @@ import org.springframework.web.service.annotation.HttpExchange;
 import org.springframework.web.service.annotation.PostExchange;
 
 /**
- * The wallet's one outbound call. Payment Service knows nothing about wallets and is not asked to — it takes
- * an instruction and answers.
+ * The wallet's one outbound call.
  * <p>
- * The caller's identity travels as an explicit parameter rather than through an interceptor over a
- * request-scoped holder. An interceptor would send an empty header the moment this call moves off the
- * request thread, and it would do so silently.
+ * The caller's id is an explicit parameter. An interceptor reading request-scoped state would send an empty
+ * header, with no error, once the call leaves the request thread. See docs/adr/0013-deposit-initiation.md.
  */
 @HttpExchange
 interface PaymentIntentClient {

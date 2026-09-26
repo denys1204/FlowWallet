@@ -12,51 +12,27 @@ import java.util.Locale;
 import java.util.regex.Pattern;
 
 /**
- * Resolves controller method parameters annotated with {@link CurrentUserId}
- * by reading the {@code X-User-Id} HTTP header from the incoming request.
+ * Resolves {@link CurrentUserId} parameters from the {@code X-User-Id} header. Throws
+ * {@link MissingUserIdException} if the header is absent, blank, longer than {@link #MAX_USER_ID_LENGTH} or not a
+ * random-based UUID, and returns a valid value stripped and lower-cased, so one identity has one spelling.
  * <p>
- * Throws {@link MissingUserIdException} if the header is absent, blank, longer than a service can store,
- * or not a random-based UUID.
- * <p>
- * The rule is short to state: <strong>an identity must be opaque and must not be derived from anything
- * knowable.</strong> That is data hygiene rather than a defence against an attacker with a word list — a
- * version-4 UUID carries 122 random bits, so its space cannot be searched, and a hit would reveal only that
- * some number is registered. There is no name, e-mail or profile behind it to leak.
- * <p>
- * What the excluded versions actually cost is narrower and real. Versions 3 and 5 are deterministic hashes
- * of a name in a namespace, so they let someone <em>confirm a specific guess</em>: suspecting an id is
- * {@code uuid5(ns, "someone@example.com")}, you compute it and compare. That is not searching a space, it is
- * checking one hypothesis, and no amount of entropy prevents it. Version 1 embeds a MAC address and a
- * creation time, which is a small leak with nothing to show for it. All three are UUIDs by any naive check.
- * <p>
- * Today the rule carries more weight than hygiene, because {@code X-User-Id} is not authenticated: whoever
- * writes the header is that user. Once the gateway validates a token and services are unreachable except
- * through it, knowing an id stops being worth anything and this drops back to hygiene. It stays either way —
- * it costs one expression, and the day the identity scheme changes is a day worth hearing about.
- * <p>
- * The rule is spelled out here rather than delegated to Hibernate Validator's {@code @UUID}, which does the
- * same job on request parameters. An argument resolver runs before bean validation and is constructed by
- * hand, so no annotation reaches it; the tests pin this expression against the cases the annotation is
- * configured for.
+ * The UUID check is a hand-written expression because an argument resolver runs before bean validation and is
+ * constructed by hand, so no constraint annotation reaches it.
+ * See docs/adr/0003-caller-identity-and-trust-boundary.md.
  */
 public class CurrentUserIdResolver implements HandlerMethodArgumentResolver {
     /**
-     * Longest user id any service will store. Kept in step with the {@code user_id} column width.
-     * <p>
-     * A UUID is always well inside this, so today the bound cannot fire. It stays because it guards the
-     * column, which is a different thing from what the pattern below guards: relaxing the identity rule is a
-     * product decision, and the storage guard should not disappear as a side effect of one.
+     * Longest user id any service stores, kept in step with the {@code VARCHAR(64)} user id columns. A UUID never
+     * reaches it. The bound guards storage, not identity, so it stays if the identity rule is relaxed.
      */
     public static final int MAX_USER_ID_LENGTH = 64;
 
     /**
-     * A random-based UUID: version nibble 4 or 7, RFC 4122 variant, either letter case. Case is accepted
-     * either way and normalised below, because rejecting a valid identity over capitalisation would be a
-     * needless outage.
+     * A random-based UUID: version 4 or 7, RFC 4122 variant, ASCII hex in either case. Versions 1, 3 and 5 are
+     * refused because they derive from a MAC address or a knowable name.
      * <p>
-     * Public because a user id also arrives in request bodies. The wallet's
-     * {@code com.flowwallet.wallet.dto.TransferRequest} checks a transfer's recipient with this expression
-     * through {@code @Pattern}, so a change here changes that rule too, and the two cannot drift apart.
+     * The wallet's {@code TransferRequest} checks a transfer's recipient with this expression through
+     * {@code @Pattern}, so a change here changes that rule too.
      */
     public static final String RANDOM_UUID_REGEX =
             "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[47][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$";
@@ -86,9 +62,9 @@ public class CurrentUserIdResolver implements HandlerMethodArgumentResolver {
             throw new MissingUserIdException("Missing required header: " + HttpHeaders.USER_ID);
         }
 
+        // Neither message below echoes the value: the detail goes back to the caller and into the log.
         String stripped = userId.strip();
         if (stripped.length() > MAX_USER_ID_LENGTH) {
-            // The value itself is not echoed: it is rendered to the caller and logged.
             throw new MissingUserIdException(
                     "%s must be at most %d characters, got %d"
                             .formatted(HttpHeaders.USER_ID, MAX_USER_ID_LENGTH, stripped.length())
@@ -96,7 +72,6 @@ public class CurrentUserIdResolver implements HandlerMethodArgumentResolver {
         }
 
         if (!RANDOM_UUID.matcher(stripped).matches()) {
-            // The value is not echoed: it is rendered to the caller and written to logs.
             throw new MissingUserIdException(
                     HttpHeaders.USER_ID + " must be a random-based UUID (version 4 or 7)"
             );

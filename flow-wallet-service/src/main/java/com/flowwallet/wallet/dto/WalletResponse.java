@@ -4,15 +4,10 @@ import java.math.BigDecimal;
 import java.time.Instant;
 
 /**
- * A wallet's current state.
- * <p>
- * Carries neither an id nor an owner. No URL accepts a wallet id — a wallet is addressed by its currency,
- * because the owner is already authenticated — so publishing one would invite clients to build paths that do
- * not exist. The owner is the caller, who sent it in the first place.
+ * A wallet's current state. It carries no wallet id, which no URL accepts, and no owner, who is the caller.
+ * See docs/adr/0004-wallet-addressed-by-owner-and-currency.md.
  *
- * @param balance   current balance
- * @param currency  ISO 4217 code the wallet is denominated in
- * @param createdAt when the wallet was opened
+ * @param currency  upper-case ISO 4217 code the wallet is denominated in
  * @param updatedAt when its balance last changed
  */
 public record WalletResponse(

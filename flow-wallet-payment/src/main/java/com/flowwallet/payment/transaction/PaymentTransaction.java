@@ -67,11 +67,10 @@ public class PaymentTransaction {
     private Instant updatedAt;
 
     /**
-     * Settles the transaction as SUCCESS. Idempotent — an already-SUCCESS transaction is left unchanged.
-     * A previously FAILED attempt may still be promoted, since Stripe can retry the same PaymentIntent and
-     * eventually succeed.
+     * SUCCESS is terminal, and a FAILED payment can still be promoted because Stripe can retry the same
+     * PaymentIntent. See docs/adr/0009-payment-event-contract.md.
      *
-     * @return {@code true} only if this call actually changed the state (i.e. a PaymentCompleted event is due)
+     * @return {@code true} only on a state change, which is when a PaymentCompletedEvent is due
      */
     public boolean markAsSuccess(String providerEventId) {
         if (this.status == TransactionStatus.SUCCESS) {
@@ -83,10 +82,9 @@ public class PaymentTransaction {
     }
 
     /**
-     * Marks the transaction as FAILED. Only a PENDING transaction may fail: SUCCESS is terminal, and an
-     * already-FAILED transaction is left unchanged so no duplicate event is emitted.
+     * Only a PENDING payment can fail, so a failure after a success, or a second failure, publishes nothing.
      *
-     * @return {@code true} only if this call actually changed the state (i.e. a PaymentFailed event is due)
+     * @return {@code true} only on a state change, which is when a PaymentFailedEvent is due
      */
     public boolean markAsFailed(String providerEventId) {
         if (this.status != TransactionStatus.PENDING) {
@@ -98,20 +96,17 @@ public class PaymentTransaction {
     }
 
     /**
-     * Whether this payment is finished and its provider credential spent.
-     * <p>
-     * Only SUCCESS counts. A FAILED transaction is deliberately not settled: a declined card leaves the
-     * provider's intent usable, so a client retrying under the same reference should get it back and try
-     * again rather than be told the reference is finished.
+     * Only SUCCESS counts: after a declined card the provider's intent is still usable, so a retry under the same
+     * reference gets it back. See docs/adr/0005-client-supplied-idempotency-keys.md.
      */
     public boolean isSettled() {
         return status == TransactionStatus.SUCCESS;
     }
 
     /**
-     * Whether the provider ever acknowledged this payment. False means the row was reserved but the
-     * provider call either never ran or never came back, so nothing exists on the provider's side under
-     * this reference that a client could pay.
+     * False until the provider's answer is recorded: the call never ran, failed, or was lost before
+     * {@code recordInitiation}. A retry calls the provider again on this row.
+     * See docs/adr/0013-deposit-initiation.md.
      */
     public boolean isInitiated() {
         return providerTransactionId != null;
@@ -123,19 +118,11 @@ public class PaymentTransaction {
     }
 
     /**
-     * Whether this transaction was created from terms equal to the given request.
-     * <p>
-     * An idempotency key that does not bind the payload is not idempotency. Without this, a client that
-     * posts a reference, notices a mistake and re-posts the same reference with a corrected amount receives
-     * the original payment's client secret and a 200, and charges the original amount believing it corrected
-     * it. Stripe's own idempotency would have refused that, but the local short-circuit means Stripe is
-     * never reached.
-     * <p>
-     * Compared on the canonical forms, which is why {@code providerName} is upper-cased here as it is in
-     * {@link #create} — otherwise a byte-identical retry sending {@code "stripe"} would be reported as a
-     * conflict. Amount is compared by value, not by {@code equals}, so 50.00 and a stored 50.0000 agree.
+     * Compares a retry's terms with the stored ones: the amount by {@code compareTo}, so 50.00 matches a stored
+     * 50.0000, and currency and provider name upper-cased, as {@link #create} stores them.
+     * See docs/adr/0005-client-supplied-idempotency-keys.md.
      *
-     * @return the terms that differ, in a form fit to show the caller, or empty if none do
+     * @return the names of the terms that differ, fit to show the caller, or empty if none do
      */
     public Optional<String> differencesFrom(CreatePaymentIntentRequest request) {
         List<String> differences = new ArrayList<>();

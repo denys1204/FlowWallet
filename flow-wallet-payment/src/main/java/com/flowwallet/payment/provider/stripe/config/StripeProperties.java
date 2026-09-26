@@ -5,10 +5,6 @@ import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
-/**
- * Everything Stripe needs to be told. Nested to keep the existing {@code stripe.api.key} and
- * {@code stripe.webhook.secret} keys exactly as they were, so no deployment has to relearn a variable.
- */
 @Getter
 @Setter
 @Configuration
@@ -35,11 +31,9 @@ public class StripeProperties {
         private String secret = "whsec_dummy";
 
         /**
-         * How far a webhook's timestamp may be from ours before the signature is refused, in seconds.
-         * <p>
-         * This is a clock-skew allowance, not a security parameter to tighten blindly: too small and a
-         * drifting host starts rejecting genuine deliveries, which surfaces as payments that never
-         * credit. Worth changing without a rebuild, because the moment you need to is an incident.
+         * How far a webhook's timestamp may be from ours before the signature is refused, in seconds. It is a
+         * clock-skew allowance: set too small, a drifting host refuses genuine deliveries and their payments
+         * are not credited.
          */
         private long toleranceSeconds = 300;
     }

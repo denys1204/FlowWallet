@@ -9,16 +9,13 @@ import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 
 /**
- * Request to start a payment. Reaches this service either from a client through the gateway or from
- * Wallet Service on its behalf.
- * <p>
- * The destination is not named here. A wallet is identified by its owner and its currency, and both are
- * already present — the owner from the authenticated caller, the currency below — so asking for a wallet id
- * as well would add a second name for the same thing that this service cannot check against the first.
+ * Request to start a payment, sent by Wallet Service for its caller. It names no wallet: the owner comes from
+ * {@code X-User-Id} and the currency from this body. See docs/adr/0004-wallet-addressed-by-owner-and-currency.md.
  *
- * @param transactionReference idempotency key; a repeat with the same reference returns the original transaction
+ * @param transactionReference the caller's {@code Idempotency-Key}, bound to the terms it is first used with.
+ *                             See docs/adr/0005-client-supplied-idempotency-keys.md.
  * @param amount               deposit amount in major currency units (e.g. 50.00)
- * @param currency             ISO 4217 code
+ * @param currency             upper-case ISO 4217 code
  * @param providerName         which payment provider to use, e.g. {@code STRIPE}
  */
 public record CreatePaymentIntentRequest(

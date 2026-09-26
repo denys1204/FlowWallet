@@ -22,9 +22,9 @@ public class PaymentService {
     private final PaymentEventMapper mapper;
 
     /**
-     * Orchestrates payment initiation. Deliberately NOT {@code @Transactional}: the provider call is a
-     * blocking network round-trip, so it must not run inside a DB transaction. The DB writes happen in
-     * {@link PaymentTransactionStore}'s short transactions before and after the provider call.
+     * Not {@code @Transactional}: the provider call runs between the store's short transactions, with no
+     * connection held. See docs/adr/0006-short-transactions-across-bean-boundaries.md and
+     * docs/adr/0013-deposit-initiation.md.
      */
     public PaymentIntentResponse initiatePayment(CreatePaymentIntentRequest request, String userId) {
         log.info("Initiating payment for user {} with amount {} {}", userId, request.amount(), request.currency());
@@ -54,8 +54,7 @@ public class PaymentService {
                     request.transactionReference());
         }
 
-        // Resolve the provider and let it vet the request first, so both fail fast before any row is
-        // written. A rejection afterwards would leave the reference taken with nothing the client can do.
+        // Factory lookup and validation can refuse, so they run before reserve and a refusal leaves the reference free.
         PaymentProviderStrategy strategy = factory.getStrategy(request.providerName());
         strategy.validateRequest(new PaymentRequestContext(
                 request.transactionReference(),
@@ -64,13 +63,10 @@ public class PaymentService {
                 userId
         ));
 
-        // Reuse a row that was reserved but never initiated rather than writing a second one. The
-        // reference is Stripe's idempotency key, so replaying the call cannot create a duplicate intent —
-        // and without this the client is stuck: the reference is taken, and the response it gets back
-        // carries a null client secret it can do nothing with.
+        // A reserved row whose initiation was never recorded is reused. The reference is Stripe's idempotency key,
+        // so the repeated call creates no second intent.
         PaymentTransaction reserved = existing.orElseGet(() -> store.reserve(request, userId));
 
-        // Provider (network) call runs OUTSIDE any transaction — no DB connection is held across it.
         PaymentInitiationResult result = strategy.initiatePayment(mapper.toRequestContext(reserved));
 
         PaymentTransaction initiated = store.recordInitiation(

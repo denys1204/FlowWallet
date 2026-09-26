@@ -17,20 +17,15 @@ import java.math.BigDecimal;
 import java.util.Optional;
 
 /**
- * The money transaction of a transfer: the debit, the credit and both ledger legs commit together or not at
- * all. It is one local transaction in wallet_db and no other service takes part, so there is no intermediate
- * state to compensate for.
+ * The money transaction of a transfer: the debit, the credit and both ledger legs commit together or not at all.
  * <p>
- * Nothing is caught here, for the reason {@code PaymentEventHandler} gives: a constraint violation aborts the
- * transaction in Postgres, so {@link TransferService} classifies it after the rollback, from outside. No
- * network call is made while the locks are held, so every wait on them ends when a short, database-only
- * transaction does.
+ * Nothing is caught here: a constraint violation aborts the transaction in Postgres, so {@link TransferService}
+ * classifies it after the rollback. No network call may run while the locks are held.
+ * See docs/adr/0006-short-transactions-across-bean-boundaries.md.
  * <p>
- * The isolation is pinned to READ COMMITTED instead of being left to the database default, because two steps
- * depend on it. A lock query that had to wait returns the holder's committed row only under READ COMMITTED;
- * under REPEATABLE READ it fails with a serialization error instead. And the key lookup after the locks must
- * see the legs a same-key request committed while this one waited, which takes a snapshot per statement. A
- * change to the database's {@code default_transaction_isolation} would otherwise break both without a sound.
+ * The isolation stays pinned to READ COMMITTED. Under REPEATABLE READ a lock query that waited fails with a
+ * serialization error, and the key lookup after the locks misses what a same-key request committed meanwhile.
+ * See docs/adr/0011-wallet-row-locking.md.
  */
 @Slf4j
 @Service
@@ -42,36 +37,20 @@ public class TransferHandler {
     /**
      * Moves the money, or answers with the transfer this key already made.
      * <p>
-     * Both wallets are locked first, in ascending user id, as two calls. Transfers between the same two users
-     * then take their locks in the same order whichever way the money goes, and the second waits while holding
-     * nothing. Locking the sender first would let A to B and B to A each hold one lock and wait for the other
-     * until Postgres aborted one as a deadlock. The order is known from the request. Wallet id would give an
-     * order too, but only after a read, and a read of either wallet earlier in this transaction would leave a
-     * managed instance for the locking query to return. Hibernate then checks that instance's version against
-     * the locked row and fails the transfer with a 503 whenever another writer committed in between, so a wait
-     * that should end in success ends in an error. Nothing may load either wallet before these calls. A single
-     * query over both ids, ordered for locking, would also work in Postgres, but it would put the order in the
-     * query plan, where no test sees it. Both locks come before any decision, so which refusal a request gets
-     * never depends on which id sorts first.
+     * The order of the steps decides both the answer and what a caller learns about others, and
+     * {@code TransferHandlerTest} pins it. Both wallets are locked first, in ascending user id, as two calls and
+     * before any decision, so transfers in opposite directions cannot deadlock. Nothing may load either wallet
+     * before these calls: Hibernate would check the loaded instance's version against the locked row and fail the
+     * transfer with a 503 whenever another writer committed in between.
      * <p>
-     * The key is judged after the locks and before the debit. Every transfer out of a wallet holds that
-     * wallet's lock, so two requests with one key from one wallet serialize, and the second's lookup sees what
-     * the first committed. Judged before the lock, a retry could pass while the original was in flight, reach
-     * the debit after the original had spent the money, and answer 422 for a transfer that happened; judged
-     * after the debit, it would do the same once the balance was spent. Requests from different sender wallets
-     * serialize the same way when their transfers share any other wallet, such as the recipient, and the lookup
-     * settles them too. Only between transfers that share no wallet does the ledger's unique index decide.
+     * The key is judged after the locks, which serialize same-key requests that share a wallet, and before the
+     * debit, so a retry of a transfer that happened is never answered 422. Funds are judged before the recipient,
+     * so only a request the caller can afford learns that a recipient wallet is absent. No statement runs between
+     * the debit and that refusal, so it rolls back with nothing flushed.
      * <p>
-     * Funds are judged before the recipient. Opening a wallet costs nothing, so the caller's own 404 is no
-     * barrier, and checking the recipient first would let anyone ask, for free, whether a user holds a wallet
-     * in this currency. After the funds check, only a request the caller can afford learns that a wallet is
-     * absent. The debit is made in memory before the recipient is known to exist; no statement runs between
-     * the two, so a refusal there rolls back with nothing flushed.
-     * <p>
-     * The sending leg is persisted before the receiving one and a single flush writes both, so every transfer
-     * takes the index entries for a key in the same order, and two racing on one key from different wallets
-     * cannot wait on each other in a cycle. Every constraint fires inside that flush, as an exception from the
-     * repository call rather than at commit.
+     * The sending leg is saved before the receiving one and a single flush writes both, so same-key transfers
+     * take the index entries in one order and every constraint fires inside the repository call, not at commit.
+     * See docs/adr/0014-transfers-in-one-local-transaction.md and docs/adr/0011-wallet-row-locking.md.
      *
      * @return the receipt, built from the sending leg that this call wrote or that an earlier one did
      * @throws WalletNotFoundException       if the caller holds no wallet in the currency

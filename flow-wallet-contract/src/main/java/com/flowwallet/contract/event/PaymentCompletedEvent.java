@@ -7,10 +7,9 @@ import java.time.Instant;
  * Published by Payment Service through the Transactional Outbox once a payment is confirmed.
  * Consumed by Wallet Service to credit the balance.
  * <p>
- * One transaction can legitimately produce both a {@link PaymentFailedEvent} and, later, this event:
- * a failed provider payment may be retried by the customer and then succeed. A consumer must therefore
- * deduplicate on {@code eventId} — never on {@code transactionReference}, which would silently swallow
- * the recovery.
+ * A failed payment can be retried and succeed, so one {@code transactionReference} may carry a
+ * {@link PaymentFailedEvent} and then this event. Consumers deduplicate on {@code eventId}, never on
+ * {@code transactionReference}. See docs/adr/0009-payment-event-contract.md.
  *
  * @param eventId               identifies this message; stable across redeliveries and topic replays
  * @param schemaVersion         payload version, bumped only if a change cannot be made additively

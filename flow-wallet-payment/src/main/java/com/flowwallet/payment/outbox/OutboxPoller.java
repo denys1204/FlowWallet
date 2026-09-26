@@ -22,14 +22,9 @@ public class OutboxPoller {
     private final OutboxProperties outboxProperties;
 
     /**
-     * Puts every PROCESSING row back to PENDING when the service starts, with no age threshold.
-     * <p>
-     * Right for one instance: nothing can be mid-send at startup, and rows a crashed sender left behind go
-     * out immediately instead of waiting for the reaper's threshold. With several instances -- a rolling
-     * deploy overlaps old and new -- a starting instance can reset a row another instance is still sending,
-     * and that event goes to Kafka twice. That is accepted deliberately: the payload is stored verbatim, so
-     * both copies carry the same eventId and the wallet's barrier discards the second. The cost is one extra
-     * message; the alternative, reaping with the threshold, would delay every post-crash recovery by it.
+     * Returns every PROCESSING row to PENDING at startup, with no age threshold. In a rolling deploy this can
+     * resend a row another instance is still sending; both copies carry the same eventId.
+     * See docs/adr/0008-transactional-outbox.md.
      */
     @EventListener(ApplicationReadyEvent.class)
     public void resetStuckEvents() {
@@ -41,8 +36,8 @@ public class OutboxPoller {
     }
 
     /**
-     * Recovers events left in PROCESSING by a sender that died mid-send (the startup reset only runs once).
-     * The threshold must stay well above the longest possible single send so a live in-flight send is never reset.
+     * The threshold has to stay well above the longest single send (bounded by the producer's max.block.ms and
+     * delivery.timeout.ms), or live sends are reset and go out twice.
      */
     @Scheduled(fixedDelayString = "${outbox.reaper-interval-ms:60000}")
     public void reapStuckProcessing() {
@@ -81,12 +76,8 @@ public class OutboxPoller {
             try {
                 outboxMessageSender.processEvent(event.getId());
             } catch (OutboxMessageProcessingException e) {
-                // Skip this event and keep going: one failing event must not block delivery of unrelated
-                // transactions' events. The price is that send order within one transaction is NOT
-                // guaranteed -- a failure waiting out its backoff can be overtaken by a later success for
-                // the same reference. The partition key keeps messages that ARE sent in order; it cannot
-                // order messages that have not been sent yet. The wallet does not depend on order: a failure
-                // moves no money.
+                // Skip it, so one failing row cannot block other payments' events. Send order per reference is
+                // therefore not guaranteed. See docs/adr/0008-transactional-outbox.md.
                 log.error(
                         "Fallback Poller: Failed to process outbox event {}. Skipping; it will be retried next poll.",
                         event.getId(),
@@ -100,9 +91,8 @@ public class OutboxPoller {
     public void cleanupOldEvents() {
         Instant cutoff = Instant.now().minus(outboxProperties.getRetentionDays(), ChronoUnit.DAYS);
 
-        // COMPLETED only. A FAILED row is an event that never reached Kafka -- for a completed payment, a
-        // credit that never happened -- and it is the only record of it. Deleting it on a timer would make
-        // the money disappear without a trace, so it stays until someone requeues it.
+        // COMPLETED only. A FAILED row is the only record of an event that never reached Kafka (for a completed
+        // payment, a credit that never happened), so it stays until an operator requeues it.
         int deleted = outboxEventRepository.deleteOldEvents(
                 List.of(OutboxStatus.COMPLETED),
                 cutoff

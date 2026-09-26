@@ -4,8 +4,8 @@ import com.flowwallet.platform.exception.ApiException;
 import org.springframework.http.HttpStatus;
 
 /**
- * Thrown when a {@link com.flowwallet.payment.provider.dto.PaymentRequestContext}
- * fails validation before being sent to a payment provider. Maps to HTTP 400 Bad Request.
+ * Thrown when a provider's checks refuse a {@link com.flowwallet.payment.provider.dto.PaymentRequestContext}
+ * before the transaction row is reserved.
  */
 public class InvalidPaymentRequestException extends ApiException {
     public InvalidPaymentRequestException(String message) {

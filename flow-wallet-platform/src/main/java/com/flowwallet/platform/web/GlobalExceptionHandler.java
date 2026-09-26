@@ -22,22 +22,15 @@ import java.time.Instant;
 import java.util.Map;
 
 /**
- * Shared exception handler that renders RFC 9457 {@code application/problem+json} responses for every
- * service.
- * <p>
- * Auto-registered for servlet web applications via {@link WebExceptionHandlerAutoConfiguration}, so any
- * service depending on {@code flow-wallet-common} gets consistent error responses without declaring its
- * own advice. Extends {@link ResponseEntityExceptionHandler} so standard Spring MVC exceptions
- * (unsupported method, unreadable body, ...) already produce a correctly-typed {@link ProblemDetail};
- * this class only enriches every problem with a {@code timestamp} and the request path as {@code instance}.
- * Returning a {@link ProblemDetail} lets Spring set both the HTTP status and the {@code problem+json}
- * content type.
+ * Renders every error of a servlet service as an RFC 9457 {@code application/problem+json} response; registered
+ * by {@link WebExceptionHandlerAutoConfiguration}. {@link ResponseEntityExceptionHandler} already types the
+ * standard Spring MVC exceptions, and every problem, the framework's included, gets a {@code timestamp} and the
+ * request path as {@code instance}. See docs/adr/0016-error-model-and-status-codes.md.
  */
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
-    /** Any domain exception that declares its own HTTP status. */
     @ExceptionHandler(ApiException.class)
     public ProblemDetail handleApiException(ApiException ex, HttpServletRequest request) {
         HttpStatus status = ex.getStatus();
@@ -49,7 +42,11 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return problem(status, ex.getMessage(), request.getRequestURI());
     }
 
-    /** Constraint violations on path/query params (method-level validation). */
+    /**
+     * Method validation of path, query and header parameters. It arrives here only from a controller annotated
+     * {@code @Validated}; without it Spring MVC raises {@code HandlerMethodValidationException} and the problem
+     * carries no {@code errors}.
+     */
     @ExceptionHandler(ConstraintViolationException.class)
     public ProblemDetail handleConstraintViolation(ConstraintViolationException ex, HttpServletRequest request) {
         ProblemDetail body = problem(HttpStatus.BAD_REQUEST, "Request validation failed", request.getRequestURI());
@@ -59,14 +56,18 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return body;
     }
 
-    /** Last-resort handler: never leak internal details, always log the cause. */
+    /**
+     * Last resort: the cause goes to the log and never into the detail.
+     */
     @ExceptionHandler(Exception.class)
     public ProblemDetail handleUnexpected(Exception ex, HttpServletRequest request) {
         log.error("Unhandled exception at {}", request.getRequestURI(), ex);
         return problem(HttpStatus.INTERNAL_SERVER_ERROR, "Internal server error", request.getRequestURI());
     }
 
-    /** Request-body validation (@Valid @RequestBody) — enrich the framework problem with field errors. */
+    /**
+     * Request-body validation ({@code @Valid @RequestBody}): lists the failing fields in {@code errors}.
+     */
     @Override
     protected ResponseEntity<Object> handleMethodArgumentNotValid(
             MethodArgumentNotValidException ex,
@@ -81,7 +82,10 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return handleExceptionInternal(ex, body, headers, status, request);
     }
 
-    /** Enrich every problem+json body (ours and the framework's) with a timestamp and request path. */
+    /**
+     * Enriches every problem the base class builds. The {@code @ExceptionHandler} methods above bypass it and
+     * enrich through {@code problem}.
+     */
     @Override
     protected ResponseEntity<Object> handleExceptionInternal(
             Exception ex,

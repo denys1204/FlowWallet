@@ -8,11 +8,9 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import java.util.List;
 
 /**
- * Auto-configuration that registers {@link CurrentUserIdResolver}
- * in any Spring Boot servlet-based web application that depends on {@code flow-wallet-common}.
- * <p>
- * Activated automatically via {@code META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports}.
- * Does NOT activate for WebFlux applications (e.g. API Gateway).
+ * Registers {@link CurrentUserIdResolver} in every servlet service that depends on {@code flow-wallet-platform}.
+ * Listed in {@code META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports}.
+ * See docs/adr/0002-module-boundaries.md.
  */
 @AutoConfiguration
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)

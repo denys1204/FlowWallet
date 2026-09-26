@@ -11,13 +11,9 @@ import static java.lang.annotation.ElementType.*;
 import static java.lang.annotation.RetentionPolicy.RUNTIME;
 
 /**
- * Accepts only currency codes the JDK recognises as ISO 4217.
- * <p>
- * A three-character length check lets {@code "ABC"} through, and a bad currency is not the kind of
- * mistake that should surface later as a mismatch between a payment and a wallet.
- * <p>
- * Presence is deliberately not this annotation's business: {@code null} passes, so pair it with
- * {@code @NotBlank} where the value is required.
+ * Accepts only currency codes the JDK recognises as ISO 4217. The check is case-sensitive, so {@code "usd"} fails.
+ * {@code null} passes: pair it with {@code @NotBlank} where the value is required.
+ * See docs/adr/0015-currency-precision-and-no-rounding.md.
  */
 @Documented
 @Retention(RUNTIME)

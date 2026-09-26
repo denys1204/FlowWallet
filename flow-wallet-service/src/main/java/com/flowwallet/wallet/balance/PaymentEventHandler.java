@@ -10,15 +10,11 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 
 /**
- * The money transaction: everything a credit touches commits together or not at all.
+ * The money transaction: the barrier row, the balance and the ledger entry commit together or not at all.
  * <p>
- * One transaction spans the barrier row, the wallet update and the ledger entry, which is what makes the
- * balance and its history unable to disagree. There is no intermediate state, so there is nothing to
- * reconcile later and no sweeper to write.
- * <p>
- * Nothing is caught here. A constraint violation aborts the transaction in Postgres, so recovering in place
- * would run the recovery against a connection that refuses every further statement; the caller classifies
- * it afterwards, from a fresh transaction.
+ * Nothing is caught here. A constraint violation aborts the Postgres transaction, so
+ * {@link PaymentEventListener} classifies it after the rollback.
+ * See docs/adr/0010-idempotent-payment-event-consumer.md.
  */
 @Slf4j
 @Service
@@ -29,20 +25,12 @@ public class PaymentEventHandler {
     private final ProcessedEventRepository processedEvents;
 
     /**
-     * Credits a confirmed payment exactly once.
+     * Credits a confirmed payment exactly once. The wallet is locked for the rest of the transaction and never
+     * created here.
      * <p>
-     * The wallet is resolved by the owner and currency the event carries, and is never created here. A
-     * wallet appearing as a side effect of a payment would make the API unpredictable — the caller could not
-     * tell, before paying, whether a wallet would exist afterwards. Deposits are initiated through the wallet
-     * instead, which refuses with 404 before any money moves.
-     * <p>
-     * The throw stays inside the transaction on purpose. The barrier row flushed on the line above must roll
-     * back with it, or recording the refusal afterwards would violate the unique event id and dead-letter an
-     * event the wallet understood perfectly well.
-     * <p>
-     * The lookup takes a row lock and holds it for the rest of the transaction. Letting the version decide
-     * instead would fail the loser of any concurrent credit, and that costs a rolled-back transaction and a
-     * redelivery for something the lock settles in microseconds.
+     * {@link UnknownWalletException} is thrown inside the transaction on purpose: the barrier row flushed first
+     * must roll back with it, or recording the refusal afterwards would hit the unique event id.
+     * See docs/adr/0010-idempotent-payment-event-consumer.md and docs/adr/0011-wallet-row-locking.md.
      */
     @Transactional
     public void credit(PaymentCompletedEvent event) {
@@ -61,9 +49,8 @@ public class PaymentEventHandler {
     }
 
     /**
-     * Records a failed payment. No balance moves, and that is the whole reason a failure and a success for
-     * one transaction reference can arrive in either order without any ordering logic: neither outcome can
-     * undo the other because only one of them moves money.
+     * Records a failed payment. It moves no money, which is why the consumer needs no ordering between a failure
+     * and a success for one reference. See docs/adr/0009-payment-event-contract.md.
      */
     @Transactional
     public void recordFailure(PaymentFailedEvent event, String payload) {

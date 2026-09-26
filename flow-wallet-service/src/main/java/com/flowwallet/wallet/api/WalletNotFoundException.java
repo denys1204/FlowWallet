@@ -6,9 +6,8 @@ import org.springframework.http.HttpStatus;
 /**
  * The caller holds no wallet in the requested currency. Maps to HTTP 404.
  * <p>
- * 404 rather than 403, and the distinction is not cosmetic: every lookup is scoped to the caller, so "not
- * yours" and "does not exist" are literally the same query result. Answering 403 would mean deliberately
- * running a wider query first, which would turn the endpoint into an oracle for other people's wallets.
+ * Another user's wallet gets the same answer, never a 403, because every lookup is scoped to the caller.
+ * See docs/adr/0004-wallet-addressed-by-owner-and-currency.md.
  */
 public class WalletNotFoundException extends ApiException {
     public WalletNotFoundException(String currency) {

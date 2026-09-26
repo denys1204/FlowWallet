@@ -34,9 +34,8 @@ public class StripeRequestMapper {
     }
 
     /**
-     * Everything Stripe can refuse without a network call. Public so the caller can run it before a
-     * transaction row is written — a request rejected after the row exists leaves the reference taken and
-     * the client unable to retry with a corrected amount.
+     * Everything Stripe can refuse without a network call. The strategy runs it before the transaction row is
+     * reserved, so a refusal leaves the reference free. See docs/adr/0013-deposit-initiation.md.
      */
     public void validate(PaymentRequestContext context) {
         if (context.amount() == null || context.amount().compareTo(BigDecimal.ZERO) <= 0) {
@@ -62,13 +61,10 @@ public class StripeRequestMapper {
     }
 
     /**
-     * Converts a major-unit amount to the unit Stripe charges in.
-     * <p>
-     * There is no rounding here by design. {@link #validate} has already refused any amount finer than the
-     * currency accepts, so the shift is exact and {@link BigDecimal#longValueExact()} can only fail on an
-     * amount too large for a long — which is a real error rather than something to round away. An earlier
-     * version rounded HALF_UP at this point, which meant a request for 100.005 was charged 100.01 and
-     * credited 100.005.
+     * Converts a major-unit amount to the unit Stripe charges in, without rounding. {@link #validate} has already
+     * refused any amount finer than the currency accepts, so the shift is exact and
+     * {@link BigDecimal#longValueExact()} can only fail on an amount too large for a long.
+     * See docs/adr/0015-currency-precision-and-no-rounding.md.
      */
     private long toSmallestCurrencyUnit(BigDecimal amount, String currency) {
         return amount

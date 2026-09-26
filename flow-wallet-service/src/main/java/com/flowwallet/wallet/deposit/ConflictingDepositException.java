@@ -4,12 +4,11 @@ import com.flowwallet.platform.exception.ApiException;
 import org.springframework.http.HttpStatus;
 
 /**
- * The idempotency key was already used — for a deposit on different terms, or for one that has already
+ * The idempotency key was already used, for a deposit on different terms or for one that has already
  * completed. Maps to HTTP 409.
  * <p>
- * The two cases are not told apart, and that is a decision rather than an omission. Distinguishing them
- * would mean matching on another service's message text, which breaks the first time someone rewords it,
- * and it would buy the caller nothing: the remedy is a fresh key either way.
+ * The cases share one answer because the remedy is a new key either way, and telling them apart would mean
+ * matching Payment Service's message text. See docs/adr/0005-client-supplied-idempotency-keys.md.
  */
 public class ConflictingDepositException extends ApiException {
     public ConflictingDepositException() {

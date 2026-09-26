@@ -19,9 +19,8 @@ import org.springframework.validation.annotation.Validated;
 public class PaymentEventConsumerProperties {
 
     /**
-     * Redeliveries after the first attempt. These exist for failures that a later attempt can actually
-     * resolve — two events racing to open one wallet, a momentary database blip. A record that fails
-     * deterministically will exhaust them and be dead-lettered, which is the intended end.
+     * Redeliveries after the first attempt, for failures a later attempt can resolve, such as a momentary
+     * database outage. A record that fails every time exhausts them and is dead-lettered.
      */
     @Min(value = 0, message = "wallet.consumer.retry.max-attempts must not be negative")
     private int maxAttempts = 3;
@@ -34,10 +33,6 @@ public class PaymentEventConsumerProperties {
 
     private double multiplier = 2.0;
 
-    /**
-     * A backoff that shrinks would make each retry more aggressive than the last, which is the opposite of
-     * what backoff is for and is easiest to introduce by typing the multiplier wrong.
-     */
     @AssertTrue(message = "wallet.consumer.retry.multiplier must be at least 1.0")
     public boolean isMultiplierNonShrinking() {
         return multiplier >= 1.0;

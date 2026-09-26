@@ -74,11 +74,8 @@ public class PaymentTransactionHandler {
             return;
         }
 
-        // A webhook's status code reports delivery, not the business outcome: 2xx means "received, stop
-        // sending". An intent this service never created -- `stripe trigger`, the dashboard, anything else on
-        // the same account -- is received and verified, and there is nothing a retry could change, so it is
-        // acknowledged and logged rather than refused. A 404 here would also be read by Stripe as "this
-        // endpoint does not exist".
+        // An intent this service never created (stripe trigger, the dashboard) is logged and acknowledged, since a
+        // retry could change nothing. See docs/adr/0016-error-model-and-status-codes.md.
         transactionRepository.findByProviderTransactionId(providerTransactionId).ifPresentOrElse(
                 action,
                 () -> log.warn("Ignoring event {} for provider tx {}: no transaction in this service",

@@ -19,15 +19,9 @@ import java.util.StringJoiner;
 /**
  * Starts a deposit into a wallet the caller actually holds.
  * <p>
- * The wallet's existence is proved before anything is charged. That ordering is the whole point of routing
- * deposits through this service: a payment begun anywhere else could complete against a wallet that does not
- * exist, leaving money taken with nowhere to put it. Here the caller gets a 404 while their card is still
- * untouched.
- * <p>
- * Nothing is persisted. Payment Service's idempotency already binds the reference to the terms it was used
- * for, and a second copy of that here would add a way for the two to disagree without adding a guarantee.
- * The only thing this service could usefully cache — the provider's client secret — is a bearer credential
- * with its own lifetime, and it has no business in a second database.
+ * The wallet is found before Payment Service is called, so a missing wallet costs a 404 with the card untouched.
+ * Nothing about the deposit is stored here: Payment Service's row is the only record of the key's terms.
+ * See docs/adr/0013-deposit-initiation.md.
  */
 @Slf4j
 @Service
@@ -56,8 +50,8 @@ public class DepositService {
         } catch (HttpClientErrorException e) {
             throw translate(e);
         } catch (RestClientException e) {
-            // Covers 5xx, connection refused and both timeouts. Nothing was charged, so the caller may retry
-            // with the same key -- which is exactly what the key is for.
+            // Covers 5xx, connection refused and both timeouts. Nothing was charged, so the same key may be
+            // retried.
             log.warn("Payment Service did not answer for reference {}: {}", reference, e.getMessage());
             throw new PaymentUnavailableException("Payment Service is unavailable. Retry with the same "
                     + "Idempotency-Key.");
@@ -65,13 +59,9 @@ public class DepositService {
     }
 
     /**
-     * One scoped read, in the repository's own transaction and nothing wider.
-     * <p>
-     * Deliberately not annotated: a {@code @Transactional} method called from inside the same class goes
-     * through no proxy and so does nothing, which is worse than the honest absence — it reads as a guarantee
-     * that is not there. Nothing here needs one anyway. It must also not lock: this read only decides whether
-     * to make an outbound call, and holding a row lock across a network round-trip would queue every credit
-     * to that wallet behind a provider that might be wedged.
+     * One non-locking read in the repository's own transaction. A lock or a wider transaction here would be held
+     * across the call to Payment Service, and {@code @Transactional} on this self-invoked method would do nothing.
+     * See docs/adr/0006-short-transactions-across-bean-boundaries.md.
      */
     private Wallet requireWallet(String userId, String currency) {
         return wallets.findByUserIdAndCurrency(userId, currency)
@@ -85,8 +75,7 @@ public class DepositService {
         if (e.getStatusCode() == HttpStatus.BAD_REQUEST) {
             return new DepositRejectedException(detailFrom(e));
         }
-        // Any other 4xx means the wallet sent something Payment Service did not expect, which is this
-        // service's fault rather than the caller's. Passing it through would blame the wrong party.
+        // Any other 4xx is a fault in the wallet's own request, not the caller's, so it is not passed through.
         log.error("Payment Service refused the wallet's own request with {}: {}",
                 e.getStatusCode(), e.getResponseBodyAsString());
         return new PaymentUnavailableException("Payment Service refused the request.");
@@ -94,15 +83,9 @@ public class DepositService {
 
     /**
      * Pulls the reason out of the problem+json body, preferring the field-level {@code errors} over
-     * {@code detail}.
-     * <p>
-     * That order matters more than it looks. A bean-validation failure renders {@code detail} as Spring's
-     * generic "Invalid request content." and puts the only useful sentence — "Maximum deposit amount is
-     * 10000.00" — in {@code errors}. Relaying {@code detail} alone would hand the caller a 400 that is
-     * accurate and tells them nothing, which is worse than not relaying at all: it looks like an answer.
-     * <p>
-     * Both fields are read out of a shape this project's own exception handler produces on both sides, and
-     * anything unexpected falls back to plain wording rather than throwing.
+     * {@code detail}: for a bean-validation failure, {@code detail} is Spring's generic "Invalid request
+     * content." and the crossed bound is only in {@code errors}. Anything unexpected falls back to plain wording
+     * rather than throwing. See docs/adr/0013-deposit-initiation.md.
      */
     private String detailFrom(HttpClientErrorException e) {
         try {

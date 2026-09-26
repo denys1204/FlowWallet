@@ -3,13 +3,11 @@ package com.flowwallet.payment.provider.dto;
 import com.flowwallet.payment.provider.PaymentProviderStrategy;
 
 /**
- * Provider-agnostic result of webhook parsing.
- * Returned by {@link PaymentProviderStrategy#handleWebhook} so the strategy
- * never needs to know about domain services — breaking the circular dependency.
+ * Provider-agnostic result of {@link PaymentProviderStrategy#handleWebhook}. Both ids are null for
+ * {@link WebhookEventType#UNKNOWN}.
  *
  * @param providerTransactionId provider-side transaction ID (e.g. Stripe PaymentIntent ID)
- * @param providerEventId       provider-side event ID for idempotency
- * @param eventType             classified event type
+ * @param providerEventId       provider-side event ID, the same on every redelivery, used to skip a processed one
  */
 public record WebhookResult(
         String providerTransactionId,

@@ -11,11 +11,8 @@ import org.springframework.web.service.invoker.HttpServiceProxyFactory;
 import java.net.http.HttpClient;
 
 /**
- * Builds the Payment Service client.
- * <p>
- * A declarative HTTP interface backed by {@code RestClient} — the shape Feign gave us, without Feign. That
- * dependency was deleted as unused, and everything needed here already arrives with the web starter, so
- * bringing Spring Cloud back for one call would be a poor trade.
+ * Builds the Payment Service client: a declarative HTTP interface over {@code RestClient}.
+ * See docs/adr/0013-deposit-initiation.md.
  */
 @Configuration
 @RequiredArgsConstructor
@@ -23,9 +20,8 @@ public class PaymentClientConfig {
 
     @Bean
     PaymentIntentClient paymentIntentClient(WalletPaymentProperties properties) {
-        // Both bounds are set explicitly. The connect timeout lives on the JDK client and the read timeout
-        // on the factory, and leaving either at its default means a wedged Payment Service can hold a wallet
-        // request thread for as long as it likes.
+        // The connect timeout lives on the JDK client and the read timeout on the factory. Either left at its
+        // default lets a wedged Payment Service hold a wallet request thread indefinitely.
         HttpClient httpClient = HttpClient.newBuilder()
                 .connectTimeout(properties.getConnectTimeout())
                 .build();

@@ -13,13 +13,9 @@ import java.math.BigDecimal;
 import java.time.Instant;
 
 /**
- * One row per event the wallet has seen, and the first of the two barriers protecting a balance.
- * <p>
- * The unique {@code event_id} is what makes at-least-once delivery safe: a redelivery cannot insert a
- * second row, so it cannot credit a second time. It is also the audit trail — every event is accounted
- * for, including the ones refused, which is what keeps a rejection from being a silent drop.
- * <p>
- * Append-only: no {@code @Version}, no {@code @UpdateTimestamp}, no mutators.
+ * One row per event the wallet has settled, refusals included. The unique {@code event_id} is the barrier that
+ * stops a redelivery from crediting twice. Append-only: no {@code @Version}, no {@code @UpdateTimestamp}, no
+ * mutators. See docs/adr/0010-idempotent-payment-event-consumer.md.
  */
 @Entity
 @Getter
@@ -61,8 +57,7 @@ public class ProcessedEvent {
     private Instant processedAt;
 
     /**
-     * A payment credited to a wallet. The payload is not kept: the movement it caused is already recorded
-     * in {@link BalanceHistory}, in a form far more useful than the raw JSON.
+     * A payment credited to a wallet. The payload is not kept, because {@link BalanceHistory} records the movement.
      */
     public static ProcessedEvent credited(PaymentCompletedEvent event) {
         return ProcessedEvent.builder()
@@ -75,9 +70,8 @@ public class ProcessedEvent {
     }
 
     /**
-     * A payment that failed at the provider. No balance moves, which is what makes the ordering of a
-     * failure and a success for one reference irrelevant. The payload is kept because it carries the
-     * provider's reason, and that is what a support question is actually about.
+     * A payment that failed at the provider. No balance moves, and the payload is kept for the failure reason it
+     * carries.
      */
     public static ProcessedEvent failureRecorded(PaymentFailedEvent event, String payload) {
         return ProcessedEvent.builder()
@@ -91,8 +85,7 @@ public class ProcessedEvent {
     }
 
     /**
-     * An event the wallet refused. The payload is kept in full so it can be replayed once the cause is
-     * fixed, without depending on Kafka retention or on the payment team reissuing anything.
+     * An event the wallet refused. The payload is kept in full so it can be replayed once the cause is fixed.
      */
     public static ProcessedEvent rejected(
             String eventId,
