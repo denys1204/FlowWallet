@@ -12,9 +12,15 @@ import java.time.Instant;
  * One movement on a wallet, recorded append-only. Rows are never updated or deleted, so there is no
  * {@code @Version} and no {@code @UpdateTimestamp}.
  * <p>
- * {@code transactionReference} is NOT NULL and unique, and that pairing is the barrier that makes a credit
- * happen at most once. Both halves matter: Postgres treats NULLs as distinct under a unique index, so a
- * nullable column would leave the barrier silently inert for exactly the malformed events it exists to stop.
+ * {@code transactionReference} is NOT NULL and unique together with {@code type}, and that pairing is the
+ * barrier that makes a credit happen at most once. Both halves matter: Postgres treats NULLs as distinct under
+ * a unique index, so a nullable column would leave the barrier silently inert for exactly the malformed events
+ * it exists to stop.
+ * <p>
+ * Since migration 005 the key includes the type, so a reference may own one movement of each type rather than
+ * one movement in all. A payment can still be credited only once, because a reference owns at most one
+ * {@code DEPOSIT}, while the two legs of a transfer can share a reference. A lookup by reference must
+ * therefore name the type it means.
  * <p>
  * A movement carries {@code balanceBefore} and {@code balanceAfter} so the ledger can be replayed and
  * reconciled against {@link Wallet#getBalance()} without recomputing history.

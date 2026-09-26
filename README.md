@@ -480,14 +480,15 @@ The status mapping lives in one place:
 
 ## Testing
 
-There are 175 tests, all green: 98 in the payment service, 44 in the wallet service and 33 in platform. They
+There are 177 tests, all green: 98 in the payment service, 46 in the wallet service and 33 in platform. They
 go after the parts most likely to be wrong rather than the ones easiest to reach. That means the asymmetric
 webhook state machine (a later failure must not undo an earlier success, but a later success must override
 an earlier failure), the outbox's claim, retry and backoff boundaries, Stripe signature parsing, the RFC
 9457 status mapping, the minor-unit conversion that decides how much money actually leaves a card, and the
 identity and idempotency-key rules. For the wallet consumer they cover dispatch on the `eventType` header,
-dead-lettering of unreadable records, refusals, duplicate classification, the barrier row being written
-before the wallet is loaded, and failed payments never touching a wallet.
+dead-lettering of unreadable records, refusals, duplicate classification (by the `DEPOSIT` entry alone, since
+one reference can own one movement of each type), the barrier row being written before the wallet is loaded,
+and failed payments never touching a wallet.
 
 ```bash
 ./mvnw test
@@ -497,7 +498,9 @@ All of these are unit tests with mocked collaborators, so they can't prove the r
 unique constraints on `processed_events.event_id` and `balance_history (transaction_reference, type)`, the
 classification by read-back, and the row lock. Those have been exercised by hand against real Postgres and
 Kafka (redelivery, duplicate references, forty concurrent credits to one wallet), but no automated test runs
-them yet. Integration tests with Testcontainers are the next stage on the roadmap.
+them yet. The hand check ran while the classification read any entry under the reference, and the lookup of
+the `DEPOSIT` entry alone has run only against mocks. Integration tests with Testcontainers are the next
+stage on the roadmap.
 
 ## Getting started
 

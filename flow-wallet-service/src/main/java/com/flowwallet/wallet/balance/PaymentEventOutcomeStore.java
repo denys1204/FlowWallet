@@ -1,6 +1,7 @@
 package com.flowwallet.wallet.balance;
 
 import com.flowwallet.wallet.enums.RejectionReason;
+import com.flowwallet.wallet.enums.TransactionType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -27,13 +28,21 @@ public class PaymentEventOutcomeStore {
      * Reading back beats inspecting constraint names: it needs no knowledge of the schema's naming, keeps
      * working when a constraint is renamed, and gives a definite answer for the case that matters most —
      * neither barrier — where guessing would ack a payment that was never credited.
+     * <p>
+     * The reference check asks about the {@code DEPOSIT} movement only, because that is the one ledger barrier
+     * a credit can hit. Since migration 005 a reference may own one movement of each type, which is what lets
+     * the two legs of a transfer share one, and an untyped check goes wrong whichever way it is written. A
+     * lookup that expects one row throws once a reference owns two, so an event that should be classified is
+     * retried and dead-lettered instead. A check for any row reads a movement of another type as a credit, and
+     * after an unrelated violation it would acknowledge, as a duplicate, a payment that was never credited.
      */
     @Transactional(readOnly = true)
     public DuplicateVerdict classify(String eventId, String transactionReference) {
         if (processedEvents.findByEventId(eventId).isPresent()) {
             return DuplicateVerdict.EVENT_ALREADY_PROCESSED;
         }
-        if (balanceHistory.findByTransactionReference(transactionReference).isPresent()) {
+        if (balanceHistory.findByTransactionReferenceAndType(transactionReference, TransactionType.DEPOSIT)
+                .isPresent()) {
             return DuplicateVerdict.REFERENCE_ALREADY_CREDITED;
         }
         return DuplicateVerdict.NOT_A_DUPLICATE;

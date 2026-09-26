@@ -22,10 +22,10 @@ import java.util.Optional;
  * Turns payment events into wallet balances, exactly once each.
  * <p>
  * Idempotency has two independent barriers, and both are needed. The unique {@code event_id} stops a
- * redelivery of the same message, which at-least-once delivery guarantees will happen. The unique
- * {@code transaction_reference} on the ledger stops a second credit for one payment even if it arrives
- * under a different event id — which is a producer defect rather than a redelivery, and the case where
- * money is actually at stake.
+ * redelivery of the same message, which at-least-once delivery guarantees will happen. The ledger's unique
+ * {@code (transaction_reference, type)} allows at most one {@code DEPOSIT} per reference, which stops a second
+ * credit for one payment even if it arrives under a different event id. That is a producer defect rather than
+ * a redelivery, and the case where money is actually at stake.
  * <p>
  * The event's type comes from the {@code eventType} header, never from the shape of the JSON. Guessing from
  * the fields present breaks the first time the schema grows a field, and a payment system is a poor place
