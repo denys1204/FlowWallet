@@ -74,10 +74,15 @@ public class PaymentTransactionHandler {
             return;
         }
 
-        PaymentTransaction tx = transactionRepository.findByProviderTransactionId(providerTransactionId).orElseThrow(
-                () -> new TransactionNotFoundException("Transaction not found for provider tx: " + providerTransactionId)
+        // A webhook's status code reports delivery, not the business outcome: 2xx means "received, stop
+        // sending". An intent this service never created -- `stripe trigger`, the dashboard, anything else on
+        // the same account -- is received and verified, and there is nothing a retry could change, so it is
+        // acknowledged and logged rather than refused. A 404 here would also be read by Stripe as "this
+        // endpoint does not exist".
+        transactionRepository.findByProviderTransactionId(providerTransactionId).ifPresentOrElse(
+                action,
+                () -> log.warn("Ignoring event {} for provider tx {}: no transaction in this service",
+                        providerEventId, providerTransactionId)
         );
-
-        action.accept(tx);
     }
 }

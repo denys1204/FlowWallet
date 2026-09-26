@@ -9,7 +9,7 @@ import java.math.BigDecimal;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -122,23 +122,24 @@ class PaymentTransactionHandlerTest {
     }
 
     @Test
-    void handleSuccessThrowsWhenTransactionNotFound() {
+    void aSuccessForAnIntentThisServiceNeverCreatedIsAcknowledgedAndIgnored() {
+        // A webhook's status reports delivery. An intent from `stripe trigger` or the dashboard is received
+        // and verified, and a retry could not change anything, so it must not fail -- a 404 would make Stripe
+        // retry and would read to it as "this endpoint does not exist".
         when(repository.existsByProviderEventId("evt_ok")).thenReturn(false);
         when(repository.findByProviderTransactionId("pi_missing")).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> handler.handleSuccess("pi_missing", "evt_ok"))
-                .isInstanceOf(TransactionNotFoundException.class);
+        assertThatCode(() -> handler.handleSuccess("pi_missing", "evt_ok")).doesNotThrowAnyException();
         verify(repository, never()).save(any());
         verify(outboxService, never()).publishPaymentCompleted(any());
     }
 
     @Test
-    void handleFailureThrowsWhenTransactionNotFound() {
+    void aFailureForAnIntentThisServiceNeverCreatedIsAcknowledgedAndIgnored() {
         when(repository.existsByProviderEventId("evt_fail")).thenReturn(false);
         when(repository.findByProviderTransactionId("pi_missing")).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> handler.handleFailure("pi_missing", "evt_fail"))
-                .isInstanceOf(TransactionNotFoundException.class);
+        assertThatCode(() -> handler.handleFailure("pi_missing", "evt_fail")).doesNotThrowAnyException();
         verify(repository, never()).save(any());
         verify(outboxService, never()).publishPaymentFailed(any(), anyString());
     }
