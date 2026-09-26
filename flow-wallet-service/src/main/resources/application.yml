@@ -2,6 +2,16 @@ server:
   port: ${WALLET_SERVICE_PORT:8081}
 
 spring:
+  config:
+    # The shared, git-ignored .env at the repository root -- the same file Docker Compose reads, so a
+    # local secret lives in exactly one place. Both paths are listed because the working directory is the
+    # module when run through the Maven plugin and the repository root when run as a jar or from an IDE.
+    # Real environment variables still win over it, and where the file does not exist (a container, a
+    # cluster) the import simply finds nothing. Spring reads it as .properties, so values must not be quoted:
+    # the quotes would become part of the value.
+    import:
+      - optional:file:.env[.properties]
+      - optional:file:../.env[.properties]
   application:
     name: flow-wallet-service
   datasource:
