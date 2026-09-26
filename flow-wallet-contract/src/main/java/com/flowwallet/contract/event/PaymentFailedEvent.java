@@ -17,7 +17,8 @@ import java.time.Instant;
  * @param amount                amount in major currency units
  * @param currency              ISO 4217 code
  * @param userId                who paid
- * @param reason                free-form provider message; not a stable code, do not branch on it
+ * @param reason                human-readable description of the failure, for logs and support; not a stable
+ *                              code and not the provider's own message, so do not branch on it
  * @param failedAt              when the failure was confirmed
  */
 public record PaymentFailedEvent(

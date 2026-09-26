@@ -23,8 +23,12 @@ import java.util.List;
  * for the same reason. It also means ownership is the query rather than a step after it, so no handler can
  * forget to check it.
  * <p>
- * {@code @Validated} is load-bearing rather than decorative: without it, constraints on method parameters
- * are never evaluated, and the caps below would silently do nothing.
+ * {@code @Validated} decides <em>which</em> validation path runs, not whether one does. With it, parameters
+ * are validated through an AOP proxy and a violation surfaces as a {@code ConstraintViolationException},
+ * which the platform's handler renders with its {@code errors} list. Without it, Spring 6.1+ would still
+ * validate them through its built-in MVC method validation, but raise a
+ * {@code HandlerMethodValidationException} that the platform does not shape. Removing it would change the
+ * error body, not switch validation off.
  */
 @Validated
 @RestController
