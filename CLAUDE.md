@@ -85,6 +85,9 @@ Services depend only on platform and contract, never on each other. Payment know
 ## Invariants
 
 - Money is `BigDecimal` / `NUMERIC(19,4)`, never floating point.
+- A balance is never negative. Code that debits a wallet refuses an overdraft itself, and the schema holds the
+  rule for any writer that does not (`wallets_balance_not_negative`). Ledger amounts are always positive and
+  `type` carries the direction (`balance_history_amount_positive`).
 - A wallet is addressed by `(userId, currency)`, never by a client-supplied id, and is **never created as a side
   effect of a payment event**. The wallet id is deliberately absent from the events and the payment request.
 - `X-User-Id` must be a UUID version 4 or 7 (enforced in `CurrentUserIdResolver`) and is case-folded.
@@ -134,6 +137,8 @@ Services depend only on platform and contract, never on each other. Payment know
   `MethodValidationInterceptor` proxy (see `DepositControllerTest`).
 - `UUID.fromString` is not a validator (it accepts `1-1-1-1-1`). Hibernate's `@UUID` defaults to versions 1–5,
   so set `version` explicitly.
+- Postgres rounds a value finer than a `NUMERIC` column's scale instead of refusing it: `0.00001` is stored as
+  `0.0000`. Refuse off-grid amounts before they reach the column.
 - `ObjectOptimisticLockingFailureException` is not a `DataIntegrityViolationException`; a catch for one never
   sees the other.
 - Jackson 3 is `tools.jackson.*`. Messages on the topic are JSON strings, so consumers use

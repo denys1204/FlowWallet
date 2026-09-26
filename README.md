@@ -275,14 +275,16 @@ replays `REJECTED` rows automatically yet; replay is manual.
 
 `wallet_db` is managed by Liquibase in `flow-wallet-service`:
 
-- `wallets` holds `id`, `user_id VARCHAR(64)`, `balance NUMERIC(19,4)` (default 0), `currency VARCHAR(3)`
-  (a CHECK forces upper case), `version` and timestamps. `version` is an optimistic-lock backstop, since
-  credits take a `PESSIMISTIC_WRITE` row lock. The table is unique on (`user_id`, `currency`): one wallet per
-  user per currency.
+- `wallets` holds `id`, `user_id VARCHAR(64)`, `balance NUMERIC(19,4)` (default 0, and a CHECK refuses a
+  value below zero), `currency VARCHAR(3)` (a CHECK forces upper case), `version` and timestamps. `version` is
+  an optimistic-lock backstop, since credits take a `PESSIMISTIC_WRITE` row lock. The table is unique on
+  (`user_id`, `currency`): one wallet per user per currency.
 - `balance_history` is the append-only ledger: `id`, `wallet_id` (indexed), `transaction_reference`,
   `event_id` (nullable), `type`, `amount`, `balance_before`, `balance_after` and `created_at`. It is unique on
   (`transaction_reference`, `type`), so the two legs of a future transfer can share a reference while a
-  payment can still be credited only once.
+  payment can still be credited only once. The amount is always positive and `type` gives the direction, so a
+  CHECK refuses an amount of zero or less. That includes a positive value too small for four decimal places,
+  such as `0.00001`, which Postgres would otherwise round to `0.0000` and store.
 - `processed_events` holds one row per event the consumer settles (credited, failure recorded or refused).
   Unreadable records and records that still fail after retries go to the dead-letter topic and leave no row.
   Its columns are `id`, `event_id` (unique), `event_type`,

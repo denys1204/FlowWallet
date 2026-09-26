@@ -1,0 +1,27 @@
+databaseChangeLog:
+  - changeSet:
+      id: 006-add-wallets-balance-not-negative-check
+      author: flow-wallet
+      changes:
+        - sql:
+            comment: >-
+              A balance below zero is money the user does not have. Code that debits a wallet must refuse an
+              overdraft itself, with an answer the caller understands, and the schema holds the invariant as
+              well: this also stops any writer that does not, such as a later feature or a manual UPDATE.
+              Draining a wallet to exactly zero is allowed. Written as raw SQL because addCheckConstraint is a
+              Liquibase Pro change type.
+            sql: ALTER TABLE wallets ADD CONSTRAINT wallets_balance_not_negative CHECK (balance >= 0)
+  - changeSet:
+      id: 006-add-balance-history-amount-positive-check
+      author: flow-wallet
+      changes:
+        - sql:
+            comment: >-
+              The ledger stores every amount as positive and lets type carry the direction, so a credit and a
+              debit of the same sum record the same amount. The check also refuses a movement that moves
+              nothing: Postgres rounds a value finer than the column's four decimal places instead of
+              rejecting it, so 0.00001 would otherwise be stored as 0.0000. A check tying balance_after to
+              balance_before and amount was left out, because it would have to name every type in SQL and
+              change with each new one, to guard arithmetic that lives in BalanceHistory's factories. Written
+              as raw SQL because addCheckConstraint is a Liquibase Pro change type.
+            sql: ALTER TABLE balance_history ADD CONSTRAINT balance_history_amount_positive CHECK (amount > 0)
