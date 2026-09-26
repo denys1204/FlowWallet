@@ -25,7 +25,9 @@ public class DepositController {
     private final DepositService deposits;
 
     /**
-     * Any UUID version is accepted here, unlike the caller's own id. This key needs only to be unique, not
+     * Any UUID version is accepted here, unlike the caller's own id — and the version list is spelled out
+     * because the annotation's default is 1 to 5, which would quietly refuse a version-7 key from any client
+     * library that generates them by default. This key needs only to be unique, not
      * unguessable — a client deriving a stable key from an order number with a version-5 UUID is doing
      * something sensible, and refusing it would buy nothing.
      *
@@ -39,7 +41,7 @@ public class DepositController {
             @PathVariable String currency,
             @RequestHeader("Idempotency-Key")
             @UUID(allowNil = false, allowEmpty = false, letterCase = UUID.LetterCase.INSENSITIVE,
-                    message = "Idempotency-Key must be a UUID") String idempotencyKey,
+                    version = {1, 2, 3, 4, 5, 6, 7, 8}, message = "Idempotency-Key must be a UUID") String idempotencyKey,
             @Valid @RequestBody DepositRequest request,
             @CurrentUserId String userId
     ) {
