@@ -1,0 +1,12 @@
+databaseChangeLog:
+  - changeSet:
+      id: 008-set-processed-events-reference-remarks
+      author: flow-wallet
+      changes:
+        - setColumnRemarks:
+            tableName: processed_events
+            columnName: transaction_reference
+            remarks: >-
+              The payment this event belongs to; NULL when the event carried none. Only a completed event
+              REJECTED as INVALID_ENVELOPE or a FAILURE_RECORDED event can lack one, since the listener checks
+              the envelope of completed events only.
