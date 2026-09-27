@@ -1,6 +1,7 @@
 package com.flowwallet.payment.transaction;
 
 import com.flowwallet.payment.dto.CreatePaymentIntentRequest;
+import com.flowwallet.payment.provider.PaymentProvider;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -41,9 +42,9 @@ public class PaymentTransactionStore {
      * See docs/adr/0007-unique-constraints-decide.md.
      */
     @Transactional
-    public PaymentTransaction reserve(CreatePaymentIntentRequest request, String userId) {
+    public PaymentTransaction reserve(CreatePaymentIntentRequest request, String userId, PaymentProvider provider) {
         try {
-            return repository.saveAndFlush(PaymentTransaction.create(request, userId));
+            return repository.saveAndFlush(PaymentTransaction.create(request, userId, provider));
         } catch (DataIntegrityViolationException e) {
             log.warn("Concurrent creation detected for transaction reference: {}", request.transactionReference());
             throw DuplicateTransactionReferenceException.forReference(request.transactionReference());

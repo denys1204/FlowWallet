@@ -2,6 +2,7 @@ package com.flowwallet.payment.transaction;
 
 import com.flowwallet.payment.dto.CreatePaymentIntentRequest;
 import com.flowwallet.payment.dto.PaymentIntentResponse;
+import com.flowwallet.payment.provider.PaymentProvider;
 import com.flowwallet.payment.provider.PaymentProviderFactory;
 import com.flowwallet.payment.provider.PaymentProviderStrategy;
 import com.flowwallet.payment.provider.dto.PaymentInitiationResult;
@@ -60,19 +61,23 @@ public class PaymentService {
         }
 
         // Factory lookup and validation can refuse, so they run before reserve and a refusal leaves the reference free.
-        PaymentProviderStrategy strategy = factory.getStrategy(request.providerName());
-        strategy.validateRequest(new PaymentRequestContext(
+        PaymentProvider provider = factory.resolve(request.providerName());
+        PaymentProviderStrategy strategy = factory.getStrategy(provider);
+        // One context serves validation and initiation, so the provider is sent exactly what was vetted. A reused
+        // row holds the same terms, as differencesFrom has just confirmed.
+        PaymentRequestContext context = new PaymentRequestContext(
                 request.transactionReference(),
                 request.amount(),
                 request.currency(),
                 userId
-        ));
+        );
+        strategy.validateRequest(context);
 
         // A reserved row whose initiation was never recorded is reused. The reference is Stripe's idempotency key,
         // so the repeated call creates no second intent.
-        PaymentTransaction reserved = existing.orElseGet(() -> store.reserve(request, userId));
+        PaymentTransaction reserved = existing.orElseGet(() -> store.reserve(request, userId, provider));
 
-        PaymentInitiationResult result = strategy.initiatePayment(mapper.toRequestContext(reserved));
+        PaymentInitiationResult result = strategy.initiatePayment(context);
 
         PaymentTransaction initiated = store.recordInitiation(
                 reserved.getId(),

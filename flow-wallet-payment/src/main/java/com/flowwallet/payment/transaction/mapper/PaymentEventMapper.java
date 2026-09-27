@@ -4,7 +4,6 @@ import com.flowwallet.contract.constant.KafkaConstants;
 import com.flowwallet.contract.event.PaymentCompletedEvent;
 import com.flowwallet.contract.event.PaymentFailedEvent;
 import com.flowwallet.payment.dto.PaymentIntentResponse;
-import com.flowwallet.payment.provider.dto.PaymentRequestContext;
 import com.flowwallet.payment.transaction.PaymentTransaction;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
@@ -25,6 +24,4 @@ public interface PaymentEventMapper {
     @Mapping(target = "providerData", source = "providerMetadata")
     @Mapping(target = "paymentIntentId", source = "providerTransactionId")
     PaymentIntentResponse toResponse(PaymentTransaction transaction);
-
-    PaymentRequestContext toRequestContext(PaymentTransaction transaction);
 }

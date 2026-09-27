@@ -2,6 +2,7 @@ package com.flowwallet.payment.outbox;
 
 import com.flowwallet.contract.constant.KafkaConstants;
 import com.flowwallet.payment.dto.CreatePaymentIntentRequest;
+import com.flowwallet.payment.provider.PaymentProvider;
 import com.flowwallet.payment.transaction.PaymentTransaction;
 import com.flowwallet.payment.transaction.mapper.PaymentEventMapperImpl;
 import org.junit.jupiter.api.BeforeEach;
@@ -110,6 +111,6 @@ class PaymentOutboxServiceTest {
                 "USD",
                 "STRIPE"
         );
-        return PaymentTransaction.create(request, "user-1");
+        return PaymentTransaction.create(request, "user-1", PaymentProvider.STRIPE);
     }
 }

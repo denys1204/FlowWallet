@@ -1,6 +1,7 @@
 package com.flowwallet.payment.transaction;
 
 import com.flowwallet.payment.dto.CreatePaymentIntentRequest;
+import com.flowwallet.payment.provider.PaymentProvider;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
@@ -123,7 +124,8 @@ public class PaymentTransaction {
 
     /**
      * Compares a retry's terms with the stored ones: the amount by {@code compareTo}, so 50.00 matches a stored
-     * 50.0000, and currency and provider name upper-cased, as {@link #create} stores them.
+     * 50.0000, the currency exactly, since {@code @Iso4217Currency} admits only upper case, and the provider name
+     * ignoring case, as {@code PaymentProviderFactory.resolve} reads it.
      * See docs/adr/0005-client-supplied-idempotency-keys.md.
      *
      * @return the names of the terms that differ, fit to show the caller, or empty if none do
@@ -133,10 +135,10 @@ public class PaymentTransaction {
         if (amount.compareTo(request.amount()) != 0) {
             differences.add("amount");
         }
-        if (!currency.equals(request.currency().toUpperCase())) {
+        if (!currency.equals(request.currency())) {
             differences.add("currency");
         }
-        if (!providerName.equals(request.providerName().toUpperCase())) {
+        if (!providerName.equalsIgnoreCase(request.providerName())) {
             differences.add("provider");
         }
         return differences.isEmpty() ? Optional.empty() : Optional.of(String.join(", ", differences));
@@ -160,16 +162,21 @@ public class PaymentTransaction {
         return differences.isEmpty() ? Optional.empty() : Optional.of(String.join(", ", differences));
     }
 
+    /**
+     * Stores the provider as the constant's name, resolved once by the caller, and the currency as the request
+     * carries it, which {@code @Iso4217Currency} holds to upper case.
+     */
     public static PaymentTransaction create(
             CreatePaymentIntentRequest request,
-            String userId
+            String userId,
+            PaymentProvider provider
     ) {
         return PaymentTransaction.builder()
                 .transactionReference(request.transactionReference())
-                .providerName(request.providerName().toUpperCase())
+                .providerName(provider.name())
                 .userId(userId)
                 .amount(request.amount())
-                .currency(request.currency().toUpperCase())
+                .currency(request.currency())
                 .status(TransactionStatus.PENDING)
                 .build();
     }

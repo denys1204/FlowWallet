@@ -2,6 +2,7 @@ package com.flowwallet.payment.transaction;
 
 import com.flowwallet.payment.dto.CreatePaymentIntentRequest;
 import com.flowwallet.payment.dto.PaymentIntentResponse;
+import com.flowwallet.payment.provider.PaymentProvider;
 import com.flowwallet.payment.provider.PaymentProviderFactory;
 import com.flowwallet.payment.provider.PaymentProviderStrategy;
 import com.flowwallet.payment.provider.dto.PaymentInitiationResult;
@@ -11,6 +12,7 @@ import com.flowwallet.payment.provider.exception.UnsupportedPaymentProviderExcep
 import com.flowwallet.payment.transaction.mapper.PaymentEventMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.math.BigDecimal;
 import java.util.Map;
@@ -48,8 +50,8 @@ class PaymentServiceTest {
         PaymentIntentResponse response = service.initiatePayment(request("ref-1", "STRIPE"), "user-1");
 
         assertThat(response).isSameAs(mapped);
-        verify(factory, never()).getStrategy(any());
-        verify(store, never()).reserve(any(), any());
+        verify(factory, never()).resolve(any());
+        verify(store, never()).reserve(any(), any(), any());
     }
 
     @Test
@@ -58,14 +60,14 @@ class PaymentServiceTest {
         // could not retry with a corrected amount -- the reference would already be taken by a payment that
         // never happened.
         when(store.findOwnedBy("ref-1", "user-1")).thenReturn(Optional.empty());
-        when(factory.getStrategy("STRIPE")).thenReturn(strategy);
+        strategyResolves();
         doThrow(new InvalidPaymentRequestException("amount carries more decimal places than USD accepts"))
                 .when(strategy).validateRequest(any());
 
         assertThatThrownBy(() -> service.initiatePayment(request("ref-1", "STRIPE"), "user-1"))
                 .isInstanceOf(InvalidPaymentRequestException.class);
 
-        verify(store, never()).reserve(any(), any());
+        verify(store, never()).reserve(any(), any(), any());
         verify(strategy, never()).initiatePayment(any());
     }
 
@@ -77,15 +79,15 @@ class PaymentServiceTest {
 
         assertThatThrownBy(() -> service.initiatePayment(request("ref-1", "STRIPE"), "user-1"))
                 .isInstanceOf(DuplicateTransactionReferenceException.class);
-        verify(factory, never()).getStrategy(any());
-        verify(store, never()).reserve(any(), any());
+        verify(factory, never()).resolve(any());
+        verify(store, never()).reserve(any(), any(), any());
     }
 
     @Test
     void propagatesConflictOnConcurrentReserve() {
         when(store.findOwnedBy("ref-1", "user-1")).thenReturn(Optional.empty());
-        when(factory.getStrategy("STRIPE")).thenReturn(strategy);
-        when(store.reserve(any(), eq("user-1"))).thenThrow(
+        strategyResolves();
+        when(store.reserve(any(), eq("user-1"), eq(PaymentProvider.STRIPE))).thenThrow(
                 DuplicateTransactionReferenceException.forReference("ref-1")
         );
 
@@ -96,15 +98,12 @@ class PaymentServiceTest {
 
     @Test
     void createsTransactionThenCallsProviderAndReturnsMappedResponse() {
-        PaymentTransaction reserved = PaymentTransaction.create(request("ref-1", "STRIPE"), "user-1");
+        PaymentTransaction reserved = reservedTransaction();
         PaymentTransaction initiated = initiatedTransaction("pi_123", Map.of("clientSecret", "cs_new"));
         PaymentIntentResponse mapped = new PaymentIntentResponse(Map.of("clientSecret", "cs_new"), "pi_123", "ref-1");
         when(store.findOwnedBy("ref-1", "user-1")).thenReturn(Optional.empty());
-        when(factory.getStrategy("STRIPE")).thenReturn(strategy);
-        when(store.reserve(any(), eq("user-1"))).thenReturn(reserved);
-        when(mapper.toRequestContext(reserved)).thenReturn(
-                new PaymentRequestContext("ref-1", new BigDecimal("50.00"), "USD", "user-1")
-        );
+        strategyResolves();
+        when(store.reserve(any(), eq("user-1"), eq(PaymentProvider.STRIPE))).thenReturn(reserved);
         when(strategy.initiatePayment(any())).thenReturn(
                 new PaymentInitiationResult("pi_123", Map.of("clientSecret", "cs_new"))
         );
@@ -114,14 +113,14 @@ class PaymentServiceTest {
         PaymentIntentResponse response = service.initiatePayment(request("ref-1", "STRIPE"), "user-1");
 
         assertThat(response).isSameAs(mapped);
-        verify(store).reserve(any(), eq("user-1"));
+        verify(store).reserve(any(), eq("user-1"), eq(PaymentProvider.STRIPE));
         verify(store).recordInitiation(any(), eq("pi_123"), any());
     }
 
     @Test
     void unknownProviderFailsFastWithoutReserving() {
         when(store.findOwnedBy("ref-1", "user-1")).thenReturn(Optional.empty());
-        when(factory.getStrategy("FOO")).thenThrow(
+        when(factory.resolve("FOO")).thenThrow(
                 new UnsupportedPaymentProviderException("Unsupported payment provider: FOO")
         );
 
@@ -129,7 +128,7 @@ class PaymentServiceTest {
                 () -> service.initiatePayment(request("ref-1", "FOO"), "user-1")
         ).isInstanceOf(UnsupportedPaymentProviderException.class);
 
-        verify(store, never()).reserve(any(), any());
+        verify(store, never()).reserve(any(), any(), any());
     }
 
     @Test
@@ -211,14 +210,11 @@ class PaymentServiceTest {
         // The window: reserve() commits, the provider call succeeds, and recordInitiation fails. The row is
         // left PENDING with no provider id, so the webhook cannot find it and the client's retry used to get
         // 200 with a null client secret it could do nothing with -- for a reference now permanently taken.
-        PaymentTransaction stranded = PaymentTransaction.create(request("ref-1", "STRIPE"), "user-1");
+        PaymentTransaction stranded = reservedTransaction();
         PaymentTransaction initiated = initiatedTransaction("pi_123", Map.of("clientSecret", "cs_new"));
         PaymentIntentResponse mapped = new PaymentIntentResponse(Map.of("clientSecret", "cs_new"), "pi_123", "ref-1");
         when(store.findOwnedBy("ref-1", "user-1")).thenReturn(Optional.of(stranded));
-        when(factory.getStrategy("STRIPE")).thenReturn(strategy);
-        when(mapper.toRequestContext(stranded)).thenReturn(
-                new PaymentRequestContext("ref-1", new BigDecimal("50.00"), "USD", "user-1")
-        );
+        strategyResolves();
         when(strategy.initiatePayment(any())).thenReturn(
                 new PaymentInitiationResult("pi_123", Map.of("clientSecret", "cs_new"))
         );
@@ -230,8 +226,38 @@ class PaymentServiceTest {
         assertThat(response).isSameAs(mapped);
         // No second row: the reference is Stripe's idempotency key, so replaying is safe and reserving again
         // would only violate the constraint that makes the reference unique.
-        verify(store, never()).reserve(any(), any());
+        verify(store, never()).reserve(any(), any(), any());
         verify(store).recordInitiation(any(), eq("pi_123"), any());
+    }
+
+    @Test
+    void theProviderIsSentExactlyTheContextThatWasValidated() {
+        // Guards two contexts drifting apart. The context was once built by hand for validation and again by a
+        // mapper for initiation, so a field the mapper dropped would reach Stripe unvetted or empty.
+        PaymentTransaction reserved = reservedTransaction();
+        when(store.findOwnedBy("ref-1", "user-1")).thenReturn(Optional.empty());
+        strategyResolves();
+        when(store.reserve(any(), eq("user-1"), eq(PaymentProvider.STRIPE))).thenReturn(reserved);
+        when(strategy.initiatePayment(any())).thenReturn(
+                new PaymentInitiationResult("pi_123", Map.of("clientSecret", "cs_new"))
+        );
+        when(store.recordInitiation(any(), eq("pi_123"), any())).thenReturn(reserved);
+
+        service.initiatePayment(request("ref-1", "STRIPE"), "user-1");
+
+        ArgumentCaptor<PaymentRequestContext> validated = ArgumentCaptor.forClass(PaymentRequestContext.class);
+        ArgumentCaptor<PaymentRequestContext> sent = ArgumentCaptor.forClass(PaymentRequestContext.class);
+        verify(strategy).validateRequest(validated.capture());
+        verify(strategy).initiatePayment(sent.capture());
+        assertThat(sent.getValue()).isSameAs(validated.getValue());
+        assertThat(sent.getValue()).isEqualTo(
+                new PaymentRequestContext("ref-1", new BigDecimal("50.00"), "USD", "user-1")
+        );
+    }
+
+    private void strategyResolves() {
+        when(factory.resolve("STRIPE")).thenReturn(PaymentProvider.STRIPE);
+        when(factory.getStrategy(PaymentProvider.STRIPE)).thenReturn(strategy);
     }
 
     private CreatePaymentIntentRequest request(String reference, String provider) {
@@ -243,8 +269,12 @@ class PaymentServiceTest {
         );
     }
 
+    private PaymentTransaction reservedTransaction() {
+        return PaymentTransaction.create(request("ref-1", "STRIPE"), "user-1", PaymentProvider.STRIPE);
+    }
+
     private PaymentTransaction initiatedTransaction(String providerTransactionId, Map<String, Object> metadata) {
-        PaymentTransaction tx = PaymentTransaction.create(request("ref-1", "STRIPE"), "user-1");
+        PaymentTransaction tx = reservedTransaction();
         tx.markAsInitiated(providerTransactionId, metadata);
         return tx;
     }

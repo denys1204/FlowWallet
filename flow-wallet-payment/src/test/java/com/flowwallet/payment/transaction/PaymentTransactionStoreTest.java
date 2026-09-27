@@ -1,6 +1,7 @@
 package com.flowwallet.payment.transaction;
 
 import com.flowwallet.payment.dto.CreatePaymentIntentRequest;
+import com.flowwallet.payment.provider.PaymentProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -54,7 +55,7 @@ class PaymentTransactionStoreTest {
         PaymentTransaction saved = transaction("user-1");
         when(repository.saveAndFlush(any())).thenReturn(saved);
 
-        assertThat(store.reserve(request(), "user-1")).isSameAs(saved);
+        assertThat(store.reserve(request(), "user-1", PaymentProvider.STRIPE)).isSameAs(saved);
     }
 
     @Test
@@ -62,7 +63,7 @@ class PaymentTransactionStoreTest {
         when(repository.saveAndFlush(any())).thenThrow(new DataIntegrityViolationException("dup"));
 
         assertThatThrownBy(
-                () -> store.reserve(request(), "user-1")
+                () -> store.reserve(request(), "user-1", PaymentProvider.STRIPE)
         ).isInstanceOf(DuplicateTransactionReferenceException.class);
     }
 
@@ -93,6 +94,6 @@ class PaymentTransactionStoreTest {
     }
 
     private PaymentTransaction transaction(String userId) {
-        return PaymentTransaction.create(request(), userId);
+        return PaymentTransaction.create(request(), userId, PaymentProvider.STRIPE);
     }
 }

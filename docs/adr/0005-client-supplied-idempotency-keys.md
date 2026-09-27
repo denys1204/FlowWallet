@@ -28,7 +28,8 @@ A key binds the terms it was first used with:
 
 - A deposit binds owner, amount, currency and provider. `PaymentTransactionStore.findOwnedBy` refuses a reference
   that another user owns and never returns it. `PaymentTransaction.differencesFrom` compares the amount by
-  `compareTo` and upper-cases currency and provider name, which is how `create` stores them.
+  `compareTo`, the currency exactly (`@Iso4217Currency` admits only upper case) and the provider name ignoring
+  case. `create` stores the name of the `PaymentProvider` constant that `PaymentProviderFactory.resolve` returned.
 - A transfer binds the sender wallet, which also fixes the currency, plus the recipient user and the amount by
   `compareTo`. `BalanceHistory.isRepeatOf` checks these against the key's `TRANSFER_OUT` row. How the handler judges
   the key under its locks is in [0014](0014-transfers-in-one-local-transaction.md).
@@ -59,7 +60,7 @@ key after a `502` or `503` is safe.
 - `422` for a key reused with other terms. The request is valid: the same body under an unused key is accepted.
 - `BigDecimal.equals` for amounts. `50.00` and a stored `50.0000` from `NUMERIC(19,4)` would not match unless every
   caller rescaled first.
-- Comparing `providerName` without upper-casing it. A byte-identical retry that sends `stripe` would get a conflict.
+- Comparing `providerName` case-sensitively. A byte-identical retry that sends `stripe` would get a conflict.
 - Comparing a transfer's sender by user id. One key used from a USD wallet and then an EUR wallet would count as one
   transfer.
 - A separate status or problem type for each cause of a `409`, or a wallet that tells deposit causes apart by

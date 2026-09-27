@@ -2,6 +2,7 @@ package com.flowwallet.payment.transaction;
 
 import com.flowwallet.payment.dto.CreatePaymentIntentRequest;
 import com.flowwallet.payment.outbox.PaymentOutboxService;
+import com.flowwallet.payment.provider.PaymentProvider;
 import com.flowwallet.payment.provider.dto.WebhookEventType;
 import com.flowwallet.payment.provider.dto.WebhookResult;
 import org.junit.jupiter.api.BeforeEach;
@@ -245,7 +246,7 @@ class PaymentTransactionHandlerTest {
                 "STRIPE"
         );
 
-        PaymentTransaction tx = PaymentTransaction.create(request, "user-1");
+        PaymentTransaction tx = PaymentTransaction.create(request, "user-1", PaymentProvider.STRIPE);
 
         switch (status) {
             case SUCCESS -> tx.markAsSuccess("evt_previous");
