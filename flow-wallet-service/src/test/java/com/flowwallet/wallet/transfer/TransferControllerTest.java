@@ -1,6 +1,5 @@
 package com.flowwallet.wallet.transfer;
 
-import com.flowwallet.wallet.dto.TransferRequest;
 import com.flowwallet.wallet.support.ControllerMockMvc;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

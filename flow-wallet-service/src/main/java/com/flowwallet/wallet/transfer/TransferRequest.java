@@ -1,4 +1,4 @@
-package com.flowwallet.wallet.dto;
+package com.flowwallet.wallet.transfer;
 
 import com.flowwallet.platform.security.CurrentUserIdResolver;
 import jakarta.validation.constraints.NotNull;

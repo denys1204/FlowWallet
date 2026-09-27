@@ -1,4 +1,4 @@
-package com.flowwallet.wallet.dto;
+package com.flowwallet.wallet.deposit;
 
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;

@@ -1,7 +1,6 @@
 package com.flowwallet.wallet.transfer;
 
 import com.flowwallet.platform.security.CurrentUserId;
-import com.flowwallet.wallet.dto.TransferRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Pattern;
 import lombok.RequiredArgsConstructor;

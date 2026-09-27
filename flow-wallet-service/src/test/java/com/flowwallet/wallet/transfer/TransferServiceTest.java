@@ -6,7 +6,6 @@ import com.flowwallet.wallet.balance.BalanceHistory;
 import com.flowwallet.wallet.balance.BalanceHistoryRepository;
 import com.flowwallet.wallet.balance.Wallet;
 import com.flowwallet.wallet.balance.WalletRepository;
-import com.flowwallet.wallet.dto.TransferRequest;
 import com.flowwallet.wallet.enums.TransactionType;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;

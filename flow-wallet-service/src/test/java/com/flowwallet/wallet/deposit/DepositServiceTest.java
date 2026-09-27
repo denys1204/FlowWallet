@@ -3,7 +3,6 @@ package com.flowwallet.wallet.deposit;
 import com.flowwallet.wallet.api.WalletNotFoundException;
 import com.flowwallet.wallet.balance.Wallet;
 import com.flowwallet.wallet.balance.WalletRepository;
-import com.flowwallet.wallet.dto.DepositRequest;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpHeaders;

@@ -4,7 +4,6 @@ import com.flowwallet.wallet.api.Currencies;
 import com.flowwallet.wallet.api.WalletNotFoundException;
 import com.flowwallet.wallet.balance.Wallet;
 import com.flowwallet.wallet.balance.WalletRepository;
-import com.flowwallet.wallet.dto.DepositRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;

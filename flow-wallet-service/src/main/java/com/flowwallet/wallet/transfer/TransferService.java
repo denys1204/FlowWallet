@@ -5,7 +5,6 @@ import com.flowwallet.wallet.api.Currencies;
 import com.flowwallet.wallet.balance.BalanceHistory;
 import com.flowwallet.wallet.balance.BalanceHistoryRepository;
 import com.flowwallet.wallet.balance.WalletRepository;
-import com.flowwallet.wallet.dto.TransferRequest;
 import com.flowwallet.wallet.enums.TransactionType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

@@ -1,7 +1,6 @@
 package com.flowwallet.wallet.deposit;
 
 import com.flowwallet.platform.security.CurrentUserId;
-import com.flowwallet.wallet.dto.DepositRequest;
 import com.flowwallet.wallet.transfer.TransferController;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Pattern;
