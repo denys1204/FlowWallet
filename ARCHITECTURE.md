@@ -48,7 +48,10 @@ flowchart LR
 
 - The API Gateway is a reactive Spring Cloud Gateway that routes by path only (no `StripPrefix`) and applies
   CORS globally. It sends `/api/wallets/**` to Wallet Service and only `/api/payments/webhooks/**` to
-  Payment Service, so a payment can't be started from outside except through a wallet.
+  Payment Service, so a payment can't be started from outside except through a wallet. It caps how long it
+  waits for an upstream to answer or to connect (`GATEWAY_HTTPCLIENT_RESPONSE_TIMEOUT` /
+  `_CONNECT_TIMEOUT_MS`), because Spring Cloud Gateway's Netty client otherwise never times out a response
+  and its connection pool is unbounded.
 - Payment Service handles the Stripe integration, transaction persistence, webhooks and the outbox. It knows
   nothing about wallets: it takes an instruction and answers.
 - Wallet Service owns wallets, balances and balance history (`wallet_db`) and serves `/api/wallets`. It

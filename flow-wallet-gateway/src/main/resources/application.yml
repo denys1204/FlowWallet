@@ -18,6 +18,15 @@ spring:
     gateway:
       server:
         webflux:
+          httpclient:
+            # NettyRoutingFilter applies no response timeout when this is unset, so a route to an upstream
+            # that accepts the connection and never answers hangs until the caller gives up. 20s sits above
+            # the wallet's own worst case for a deposit call to Payment Service (connect 2s + read 10s, see
+            # WALLET_PAYMENT_CONNECT_TIMEOUT / WALLET_PAYMENT_READ_TIMEOUT), so a deposit's own timeout fires
+            # first and the gateway's is a backstop, not the thing the caller usually hits.
+            response-timeout: ${GATEWAY_HTTPCLIENT_RESPONSE_TIMEOUT:20s}
+            # Millis, not a Duration string: HttpClientProperties#connectTimeout is a plain Integer.
+            connect-timeout: ${GATEWAY_HTTPCLIENT_CONNECT_TIMEOUT_MS:2000}
           # Enable CORS for frontend development
           globalcors:
             cors-configurations:
