@@ -8,6 +8,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.dao.DataIntegrityViolationException;
 import tools.jackson.databind.ObjectMapper;
 
@@ -86,6 +87,27 @@ class PaymentEventListenerTest {
                 .isInstanceOf(UnreadablePaymentEventException.class);
 
         verifyNoInteractions(handler);
+    }
+
+    @Test
+    void aRecordWithATypeHeaderAndNoValueIsDeadLetteredAtOnce() {
+        // Jackson throws IllegalArgumentException for a null value, which is not a JacksonException. Unless it
+        // is refused as unreadable, the record is retried and dead-lettered as if a retry could have fixed it.
+        assertThatThrownBy(() -> listener.onPaymentEvent(record(COMPLETED, null)))
+                .isInstanceOf(UnreadablePaymentEventException.class);
+
+        verifyNoInteractions(handler, outcomes);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {COMPLETED, FAILED})
+    void aJsonNullPayloadIsDeadLetteredAtOnce(String eventType) {
+        // The literal null parses to a null event. Without the check the listener fails with a
+        // NullPointerException, which is retried and reaches the dead-letter topic without saying why.
+        assertThatThrownBy(() -> listener.onPaymentEvent(record(eventType, "null")))
+                .isInstanceOf(UnreadablePaymentEventException.class);
+
+        verifyNoInteractions(handler, outcomes);
     }
 
     @Test

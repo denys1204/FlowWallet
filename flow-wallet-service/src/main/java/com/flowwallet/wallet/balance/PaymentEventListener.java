@@ -150,12 +150,25 @@ public class PaymentEventListener {
         return new String(header.value(), StandardCharsets.UTF_8);
     }
 
+    /**
+     * A record with no value makes {@code readValue} throw {@code IllegalArgumentException}, which is no
+     * {@code JacksonException}, and the JSON literal {@code null} parses to a null event. Both are refused here as
+     * unreadable, or they would be retried and dead-lettered under a misleading exception.
+     */
     private <T> T read(ConsumerRecord<String, String> record, Class<T> type, String eventType) {
+        if (record.value() == null) {
+            throw UnreadablePaymentEventException.noEvent(eventType);
+        }
+        T event;
         try {
-            return objectMapper.readValue(record.value(), type);
+            event = objectMapper.readValue(record.value(), type);
         } catch (JacksonException e) {
             throw UnreadablePaymentEventException.unparseable(eventType, e);
         }
+        if (event == null) {
+            throw UnreadablePaymentEventException.noEvent(eventType);
+        }
+        return event;
     }
 
     private void requireEventId(String eventId, String eventType) {

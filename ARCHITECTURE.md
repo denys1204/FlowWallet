@@ -225,7 +225,7 @@ The listener reads the event type from the Kafka `eventType` header and never in
 | `PaymentCompletedEvent` for an existing wallet | Credited: balance updated, `DEPOSIT` ledger entry, `processed_events` row `CREDITED` |
 | `PaymentFailedEvent` | Recorded as `FAILURE_RECORDED`; the balance never moves |
 | Readable but refused (invalid amount or envelope, no wallet for that user and currency, a second event for a credited reference) | Stored as `REJECTED` with the reason and the full payload so it can be replayed; the offset is committed |
-| Unreadable (missing or unknown `eventType` header, unparseable JSON, no `eventId`) | Sent to `payment.events.wallet.DLT` immediately, without retrying |
+| Unreadable (missing or unknown `eventType` header, unparseable JSON, no value or the JSON literal `null`, no `eventId`) | Sent to `payment.events.wallet.DLT` immediately, without retrying |
 | Anything else that fails | Retried with exponential backoff, then sent to `payment.events.wallet.DLT` |
 
 An event never creates a wallet. A deposit can only start through an existing wallet, so an event for a
