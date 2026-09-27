@@ -173,18 +173,18 @@ There are 513 tests, all green: 240 in the payment service, 228 in the wallet se
 the gateway (it binds the gateway's own `application.yml` into Spring Cloud Gateway's `HttpClientProperties`,
 so a YAML regression that drops the response or connect timeout fails here rather than in a live request left
 waiting). The rest go after the parts most likely to be wrong rather than the ones easiest to reach. That means
-the asymmetric
-webhook state machine (a later failure must not undo an earlier success, but a later success must override
-an earlier failure), the outbox's claim, retry and backoff boundaries, Stripe signature verification
-against payloads signed with a real secret (placeholder secrets and malformed headers refused, nothing parsed
-before the check), the webhook size cap, the check of a success against the stored amount and currency, the
-RFC 9457 status mapping (a database the service cannot reach answers `503`, any other data access failure
-`500`, and no detail quotes a rejected currency, provider or parameter value), the minor-unit conversion that
-decides how much money actually leaves a card, the currencies Stripe charges and its minimum charges checked before a row is reserved, a Stripe refusal told
-apart from a failure (400 against 502) and the wallet's three kinds of 502, a deposit that loses the
-reservation to its own twin, a second recording of the same Stripe answer, the Stripe call's timeouts and
-retries, the optimistic-lock retry on both webhook paths, the field names of the internal intent call on both
-sides of it, and the identity and idempotency-key rules. For the wallet consumer they cover dispatch on the
+the asymmetric webhook state machine (a later failure must not undo an earlier success, but a later success
+must override an earlier failure), the outbox's claim, retry and backoff boundaries, Stripe signature
+verification against payloads signed with a real secret (placeholder secrets and malformed headers refused,
+nothing parsed before the check), the webhook size cap, the check of a success against the stored amount and
+currency, the RFC 9457 status mapping (a database the service cannot reach answers `503`, any other data access
+failure `500`, and no detail quotes a rejected currency, provider or parameter value), the minor-unit
+conversion that decides how much money actually leaves a card, the currencies Stripe charges and its minimum
+charges checked before a row is reserved, a Stripe refusal told apart from a failure (400 against 502) and
+the wallet's three kinds of 502, a deposit that loses the reservation to its own twin, a second recording of
+the same Stripe answer, the Stripe call's timeouts and retries, the optimistic-lock retry on both webhook
+paths, the field names of the internal intent call on both sides of it, and the identity and idempotency-key
+rules. For the wallet consumer they cover dispatch on the
 `eventType` header, dead-lettering of unreadable records, refusals (an event amount off its currency's grid
 among them), duplicate classification (by the `DEPOSIT` entry alone, since one reference can own one movement
 of each type), the barrier row being written before the wallet is loaded, failed payments never touching a wallet

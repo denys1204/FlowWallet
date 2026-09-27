@@ -7,11 +7,12 @@ paths:
 # Controllers and request DTOs
 
 - Without `produces` on the mapping, Spring MVC negotiates the response only after the handler has returned,
-  so a request whose `Accept` rules out JSON gets a 406 after the work is done. A mapping that changes state
-  declares `produces = MediaType.APPLICATION_JSON_VALUE`: the transfer, the deposit (Payment Service creates the
-  intent) and opening a wallet (`TransferController`, `DepositController`, `WalletController.open`).
+  so a request whose `Accept` rules out JSON gets a 406 after the work is done. Every Wallet Service mapping that
+  changes state declares `produces = MediaType.APPLICATION_JSON_VALUE`: the transfer, the deposit (Payment Service
+  creates the intent) and opening a wallet (`TransferController`, `DepositController`, `WalletController.open`).
 - Spring MVC resolves arguments in declaration order, so `@CurrentUserId` is the first parameter of every
-  mapping; declared later, a caller without `X-User-Id` and a bad body or parameter gets 400 instead of 401.
+  Wallet Service mapping; declared later, a caller without `X-User-Id` and a bad body or parameter gets 400
+  instead of 401.
 - Class-level `@Validated` routes parameter validation through an AOP proxy. Standalone `MockMvc` creates none,
   so parameter constraints silently don't run in tests unless the controller is wrapped with a
   `MethodValidationInterceptor` proxy. Wallet controller tests build their `MockMvc` with

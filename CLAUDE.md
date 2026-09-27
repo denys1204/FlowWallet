@@ -126,7 +126,8 @@ lock order and the idempotency checks are specified there, not here.
   recipient (no recipient wallet), with the detail saying which, 503 retry with the same key; a 500 is a server
   defect the caller cannot fix ([ADR 0016](docs/adr/0016-error-model-and-status-codes.md)). On every endpoint,
   `GlobalExceptionHandler` answers a database the service cannot reach (a failed begin, a lost connection,
-  SQLState class 08 or 57P0x) with that 503, whose detail does not claim that nothing moved
+  SQLState class 08 or 57P0x) and any `TransientDataAccessException` (a query timeout, a lock failure) with that
+  503, whose detail does not claim that nothing moved
   ([ADR 0025](docs/adr/0025-unreachable-database-answers-503.md)).
 - The consumer's `DefaultErrorHandler` is the only retry mechanism in the wallet; do not add Spring Retry there.
   Refusals the wallet understands (invalid amount or envelope, unknown wallet, duplicate reference) are stored

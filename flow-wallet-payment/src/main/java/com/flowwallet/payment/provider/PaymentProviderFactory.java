@@ -30,7 +30,7 @@ public class PaymentProviderFactory {
      * under a Turkish default, {@code "stripe".toUpperCase()} is {@code "STRİPE"}, which names no provider.
      * <p>
      * The refusal does not quote the name. On the webhook it is a public path segment of any content, and the
-     * handler logs every 4xx detail.
+     * handler logs every 4xx detail. See docs/adr/0026-problem-details-never-quote-rejected-input.md.
      */
     public PaymentProvider resolve(String providerName) {
         try {
