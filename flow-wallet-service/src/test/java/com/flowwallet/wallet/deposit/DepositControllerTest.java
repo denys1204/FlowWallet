@@ -1,17 +1,12 @@
 package com.flowwallet.wallet.deposit;
 
-import com.flowwallet.platform.security.CurrentUserIdResolver;
-import com.flowwallet.platform.web.GlobalExceptionHandler;
+import com.flowwallet.wallet.support.ControllerMockMvc;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
-import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.setup.MockMvcBuilders;
-import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
-import org.springframework.validation.beanvalidation.MethodValidationInterceptor;
 
 import java.util.Map;
 
@@ -32,22 +27,7 @@ class DepositControllerTest {
 
     @BeforeEach
     void setUp() {
-        LocalValidatorFactoryBean validator = new LocalValidatorFactoryBean();
-        validator.afterPropertiesSet();
-
-        // The controller is @Validated, and with class-level @Validated Spring validates parameters through
-        // an AOP proxy and deliberately switches its built-in MVC method validation off. standaloneSetup
-        // creates no proxy, so without this one the header constraint would simply never run here -- while
-        // running fine in the real application. Wrapping the controller the same way keeps the test honest.
-        ProxyFactory proxy = new ProxyFactory(new DepositController(deposits));
-        proxy.setProxyTargetClass(true);
-        proxy.addAdvice(new MethodValidationInterceptor((jakarta.validation.Validator) validator));
-
-        mockMvc = MockMvcBuilders.standaloneSetup(proxy.getProxy())
-                .setControllerAdvice(new GlobalExceptionHandler())
-                .setCustomArgumentResolvers(new CurrentUserIdResolver())
-                .setValidator(validator)
-                .build();
+        mockMvc = ControllerMockMvc.of(new DepositController(deposits));
 
         when(deposits.start(anyString(), anyString(), anyString(), any())).thenReturn(
                 new DepositResponse("ref", "STRIPE", Map.of("clientSecret", "cs"))

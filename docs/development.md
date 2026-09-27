@@ -169,7 +169,7 @@ webhooks.
 
 ## Testing
 
-There are 478 tests, all green: 239 in the payment service, 205 in the wallet service, 33 in platform and 1 in
+There are 484 tests, all green: 239 in the payment service, 211 in the wallet service, 33 in platform and 1 in
 the gateway (it binds the gateway's own `application.yml` into Spring Cloud Gateway's `HttpClientProperties`,
 so a YAML regression that drops the response or connect timeout fails here rather than in a live request left
 waiting). The rest go after the parts most likely to be wrong rather than the ones easiest to reach. That means
@@ -203,7 +203,8 @@ rollback, the `503` mapping, and the READ COMMITTED pin.
 
 For the ledger they cover entry numbers rising by one per wallet across credits and both transfer legs, a
 refused debit taking no number, history paged by entry number without skipping or repeating a movement while
-credits arrive, and every field of the wallet and history responses through the real mapper.
+credits arrive, the history `limit` bounds (1 to 100) and a non-numeric cursor refused with `400`, and every
+field of the wallet and history responses through the real mapper.
 
 ```bash
 ./mvnw test

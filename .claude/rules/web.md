@@ -11,7 +11,9 @@ paths:
   declares `produces = MediaType.APPLICATION_JSON_VALUE` (see `TransferController`).
 - Class-level `@Validated` routes parameter validation through an AOP proxy. Standalone `MockMvc` creates none,
   so parameter constraints silently don't run in tests unless the controller is wrapped with a
-  `MethodValidationInterceptor` proxy (see `DepositControllerTest`).
+  `MethodValidationInterceptor` proxy. Wallet controller tests build their `MockMvc` with
+  `ControllerMockMvc.of` (wallet test sources), which adds the proxy, `GlobalExceptionHandler` and
+  `CurrentUserIdResolver`.
 - `UUID.fromString` is not a validator (it accepts `1-1-1-1-1`), and Hibernate Validator 9.1's `@UUID` is an
   unreliable one. Its validator throws on a 36-character value with a fifth dash, which the platform's
   last-resort handler answers with a 500, and it accepts non-ASCII digits. The transfer endpoint checks its ids

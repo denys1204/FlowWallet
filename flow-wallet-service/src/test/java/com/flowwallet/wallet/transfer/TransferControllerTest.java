@@ -1,19 +1,14 @@
 package com.flowwallet.wallet.transfer;
 
-import com.flowwallet.platform.security.CurrentUserIdResolver;
-import com.flowwallet.platform.web.GlobalExceptionHandler;
 import com.flowwallet.wallet.dto.TransferRequest;
+import com.flowwallet.wallet.support.ControllerMockMvc;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
-import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
-import org.springframework.test.web.servlet.setup.MockMvcBuilders;
-import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
-import org.springframework.validation.beanvalidation.MethodValidationInterceptor;
 
 import java.math.BigDecimal;
 
@@ -39,21 +34,7 @@ class TransferControllerTest {
 
     @BeforeEach
     void setUp() {
-        LocalValidatorFactoryBean validator = new LocalValidatorFactoryBean();
-        validator.afterPropertiesSet();
-
-        // The controller is @Validated, so the header constraint runs through an AOP proxy that standalone
-        // MockMvc does not create. Without this one the key rule would never run here while running fine in
-        // the application, as DepositControllerTest explains.
-        ProxyFactory proxy = new ProxyFactory(new TransferController(transfers));
-        proxy.setProxyTargetClass(true);
-        proxy.addAdvice(new MethodValidationInterceptor((jakarta.validation.Validator) validator));
-
-        mockMvc = MockMvcBuilders.standaloneSetup(proxy.getProxy())
-                .setControllerAdvice(new GlobalExceptionHandler())
-                .setCustomArgumentResolvers(new CurrentUserIdResolver())
-                .setValidator(validator)
-                .build();
+        mockMvc = ControllerMockMvc.of(new TransferController(transfers));
 
         when(transfers.transfer(anyString(), anyString(), anyString(), any())).thenReturn(new TransferResponse(
                 KEY, RECIPIENT, new BigDecimal("25.0000"), "USD", new BigDecimal("75.0000")
