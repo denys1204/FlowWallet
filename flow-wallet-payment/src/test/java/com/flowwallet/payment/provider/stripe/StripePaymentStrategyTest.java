@@ -38,6 +38,8 @@ class StripePaymentStrategyTest {
 
     @Test
     void usesTransactionReferenceAsStripeIdempotencyKey() throws Exception {
+        // A retried request must reuse the client-supplied reference as Stripe's own idempotency key, or a
+        // retry would create a second PaymentIntent and charge the card twice (see ADR 0005).
         PaymentRequestContext context =
                 new PaymentRequestContext("ref-1", new BigDecimal("50.00"), "USD", "user-1");
         PaymentIntentCreateParams params = PaymentIntentCreateParams.builder()
@@ -60,6 +62,8 @@ class StripePaymentStrategyTest {
 
     @Test
     void wrapsStripeExceptionAsPaymentInitiationException() throws Exception {
+        // A raw StripeException must not leak past this strategy, or the caller could not handle it uniformly
+        // across payment providers.
         PaymentRequestContext context =
                 new PaymentRequestContext("ref-1", new BigDecimal("50.00"), "USD", "user-1");
         PaymentIntentCreateParams params = PaymentIntentCreateParams.builder()
@@ -78,6 +82,7 @@ class StripePaymentStrategyTest {
 
     @Test
     void mapsSucceededWebhookToPaymentSuccessResult() {
+        // The ordinary path: a genuinely succeeded intent must map to PAYMENT_SUCCESS with its real terms.
         PaymentIntent paymentIntent = paymentIntent("succeeded", 5000L, "usd");
         when(webhookParser.parse("payload", Map.of())).thenReturn(
                 new ParsedStripeEvent("evt_1", "payment_intent.succeeded", CREATED, paymentIntent)
@@ -142,6 +147,8 @@ class StripePaymentStrategyTest {
 
     @Test
     void returnsUnknownForNonPaymentIntentObject() {
+        // A webhook for an object type this strategy does not model (a charge, not a PaymentIntent) must be
+        // acknowledged as UNKNOWN rather than fail with a cast error.
         StripeObject other = mock(StripeObject.class);
         when(webhookParser.parse("payload", Map.of())).thenReturn(
                 new ParsedStripeEvent("evt_2", "charge.refunded", CREATED, other)
@@ -154,6 +161,8 @@ class StripePaymentStrategyTest {
 
     @Test
     void returnsUnknownForUnhandledEventType() {
+        // An event type this strategy does not act on (creation, not settlement) must not be mistaken for a
+        // success or a failure.
         PaymentIntent paymentIntent = mock(PaymentIntent.class);
 
         when(webhookParser.parse("payload", Map.of())).thenReturn(

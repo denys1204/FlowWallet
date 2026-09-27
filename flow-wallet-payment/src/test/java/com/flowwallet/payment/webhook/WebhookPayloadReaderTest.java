@@ -43,11 +43,15 @@ class WebhookPayloadReaderTest {
 
     @Test
     void aChunkedBodyWithinTheLimitIsReadWhole() {
+        // Guards against the length check alone swallowing a legitimate chunked webhook.
         assertThat(reader.read(chunked("{\"id\":\"evt_1\"}".getBytes()))).isEqualTo("{\"id\":\"evt_1\"}");
     }
 
     @Test
-    void aBodyThatCannotBeReadIsTheSame400AsAnUnreadableRequestBody() throws Exception {
+    void anIoFailureWhileReadingIsWrappedAsTheSameExceptionAnUnreadableRequestBodyThrows() throws Exception {
+        // This class has no Spring MVC context to render a status from, so it only pins the exception type;
+        // WebhookControllerTest#anUnreadableBodyIsA400Problem asserts the 400 that GlobalExceptionHandler
+        // gives HttpMessageNotReadableException end to end.
         HttpServletRequest request = mock(HttpServletRequest.class);
         ServletInputStream input = mock(ServletInputStream.class);
         when(request.getContentLengthLong()).thenReturn(-1L);

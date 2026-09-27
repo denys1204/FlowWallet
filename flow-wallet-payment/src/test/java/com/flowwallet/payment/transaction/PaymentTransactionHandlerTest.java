@@ -42,6 +42,7 @@ class PaymentTransactionHandlerTest {
 
     @Test
     void handleFailureIgnoresAlreadySuccessfulTransaction() {
+        // A late failure event for an intent that already settled must not undo the success.
         PaymentTransaction tx = transactionWith(TransactionStatus.SUCCESS);
         when(repository.existsByProviderEventId("evt_fail")).thenReturn(false);
         when(repository.findByProviderTransactionId("pi_123")).thenReturn(Optional.of(tx));
@@ -55,6 +56,7 @@ class PaymentTransactionHandlerTest {
 
     @Test
     void handleFailureIsIdempotentForAlreadyFailedTransaction() {
+        // A retried failure event must not save again or publish a second PaymentFailedEvent.
         PaymentTransaction tx = transactionWith(TransactionStatus.FAILED);
         when(repository.existsByProviderEventId("evt_fail_2")).thenReturn(false);
         when(repository.findByProviderTransactionId("pi_123")).thenReturn(Optional.of(tx));
@@ -68,6 +70,7 @@ class PaymentTransactionHandlerTest {
 
     @Test
     void handleFailureMarksPendingTransactionAsFailedAndPublishes() {
+        // The ordinary path: a genuine failure must actually move the transaction to FAILED and publish it.
         PaymentTransaction tx = transactionWith(TransactionStatus.PENDING);
         when(repository.existsByProviderEventId("evt_fail")).thenReturn(false);
         when(repository.findByProviderTransactionId("pi_123")).thenReturn(Optional.of(tx));
@@ -81,6 +84,7 @@ class PaymentTransactionHandlerTest {
 
     @Test
     void handleSuccessPromotesFailedTransactionToSuccess() {
+        // A retry that later succeeds must still credit the wallet, so FAILED is not treated as terminal.
         PaymentTransaction tx = transactionWith(TransactionStatus.FAILED);
         when(repository.existsByProviderEventId("evt_ok")).thenReturn(false);
         when(repository.findByProviderTransactionId("pi_123")).thenReturn(Optional.of(tx));
@@ -94,6 +98,7 @@ class PaymentTransactionHandlerTest {
 
     @Test
     void handleSuccessIsIdempotentForAlreadySuccessfulTransaction() {
+        // A duplicated delivery of the same success must not save again or credit the wallet twice.
         PaymentTransaction tx = transactionWith(TransactionStatus.SUCCESS);
         when(repository.existsByProviderEventId("evt_ok_2")).thenReturn(false);
         when(repository.findByProviderTransactionId("pi_123")).thenReturn(Optional.of(tx));
@@ -107,6 +112,7 @@ class PaymentTransactionHandlerTest {
 
     @Test
     void skipsWhenProviderEventAlreadyProcessed() {
+        // A replayed webhook event id must short-circuit before the transaction is even looked up.
         when(repository.existsByProviderEventId("evt_dup")).thenReturn(true);
 
         handler.handleSuccess(success("pi_123", "evt_dup"));
@@ -117,6 +123,7 @@ class PaymentTransactionHandlerTest {
 
     @Test
     void handleSuccessSettlesPendingTransactionAndPublishes() {
+        // The ordinary path: a genuine success must actually move the transaction to SUCCESS and publish it.
         PaymentTransaction tx = transactionWith(TransactionStatus.PENDING);
         when(repository.existsByProviderEventId("evt_ok")).thenReturn(false);
         when(repository.findByProviderTransactionId("pi_123")).thenReturn(Optional.of(tx));
@@ -143,6 +150,7 @@ class PaymentTransactionHandlerTest {
 
     @Test
     void aFailureForAnIntentThisServiceNeverCreatedIsAcknowledgedAndIgnored() {
+        // Same case as the success above, for a failure event: the webhook must still be acknowledged.
         when(repository.existsByProviderEventId("evt_fail")).thenReturn(false);
         when(repository.findByProviderTransactionId("pi_missing")).thenReturn(Optional.empty());
 

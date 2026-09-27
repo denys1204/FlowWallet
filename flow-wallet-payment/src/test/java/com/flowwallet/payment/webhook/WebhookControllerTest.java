@@ -8,6 +8,7 @@ import com.flowwallet.platform.web.GlobalExceptionHandler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.util.unit.DataSize;
@@ -25,6 +26,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -118,5 +120,22 @@ class WebhookControllerTest {
     void aBodyExactlyAtTheLimitIsAccepted() throws Exception {
         mockMvc.perform(post(PATH).contentType(MediaType.APPLICATION_JSON).content(new byte[1024]))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void anUnreadableBodyIsA400Problem() throws Exception {
+        // WebhookPayloadReaderTest only pins the exception type thrown on an I/O failure; this proves
+        // GlobalExceptionHandler turns that exception into the 400 a caller actually sees.
+        WebhookPayloadReader payloadReader = mock(WebhookPayloadReader.class);
+        when(payloadReader.read(any())).thenThrow(new HttpMessageNotReadableException(
+                "I/O error while reading the webhook body", (Throwable) null, null));
+        MockMvc mvcWithUnreadableBody = MockMvcBuilders
+                .standaloneSetup(new WebhookController(webhookService, payloadReader))
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build();
+
+        mvcWithUnreadableBody.perform(post(PATH).contentType(MediaType.APPLICATION_JSON).content(PAYLOAD))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON));
     }
 }

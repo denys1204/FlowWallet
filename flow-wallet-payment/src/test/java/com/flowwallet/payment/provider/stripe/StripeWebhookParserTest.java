@@ -38,6 +38,7 @@ class StripeWebhookParserTest {
 
     @Test
     void aPayloadSignedWithTheConfiguredSecretIsParsedIntoItsEventAndPaymentIntent() throws Exception {
+        // Guards against a legitimately signed webhook failing verification or its fields being misparsed.
         String payload = succeededEvent(Stripe.API_VERSION);
 
         ParsedStripeEvent result = parserWithSecret(SECRET).parse(payload, signatureHeader(payload, SECRET));
@@ -55,6 +56,7 @@ class StripeWebhookParserTest {
 
     @Test
     void aPayloadSignedWithAnotherSecretIsRefusedAsABadSignature() throws Exception {
+        // Guards against a signature computed with the wrong secret being accepted as genuine.
         String payload = succeededEvent(Stripe.API_VERSION);
 
         assertThatThrownBy(() -> parserWithSecret(SECRET).parse(
@@ -107,6 +109,7 @@ class StripeWebhookParserTest {
 
     @Test
     void aMissingSignatureHeaderIsRefusedAsABadSignature() {
+        // Guards against a request with no signature header being processed as though it were verified.
         assertThatThrownBy(() -> parserWithSecret(SECRET).parse(succeededEvent(Stripe.API_VERSION), Map.of()))
                 .isInstanceOf(InvalidWebhookSignatureException.class);
     }
@@ -133,6 +136,8 @@ class StripeWebhookParserTest {
 
     @Test
     void anEventFromAnotherApiVersionFallsBackToUnsafeDeserialization() throws Exception {
+        // Guards against an event from an API version stripe-java does not model failing to parse instead of
+        // falling back to unsafe deserialization.
         String payload = succeededEvent("2020-08-27");
 
         ParsedStripeEvent result = parserWithSecret(SECRET).parse(payload, signatureHeader(payload, SECRET));
@@ -142,6 +147,7 @@ class StripeWebhookParserTest {
 
     @Test
     void aFailedUnsafeDeserializationIsAProcessingFailure() throws Exception {
+        // Guards against a broken unsafe-deserialization fallback being swallowed instead of surfaced.
         StripeClient client = mock(StripeClient.class);
         Event event = mock(Event.class);
         EventDataObjectDeserializer deserializer = mock(EventDataObjectDeserializer.class);
