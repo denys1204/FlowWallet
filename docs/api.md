@@ -27,6 +27,10 @@ path and in the body.
 | `POST /api/wallets/{currency}/deposits` | `{"amount": 50.00}` + `Idempotency-Key` header | `200` `{reference, provider, providerData}` |
 | `POST /api/wallets/{currency}/transfers` | `{"to": "<user id>", "amount": 25.00}` + `Idempotency-Key` header | `200` `{reference, to, amount, currency, balanceAfter}` |
 
+On every wallet endpoint a missing or invalid `X-User-Id` gets `401` before the body or any parameter is
+checked. `POST /api/wallets`, deposits and transfers produce only JSON, so an `Accept` header that rules it out
+gets `406` before anything is created.
+
 Every movement on a wallet has an `entryNo`: the wallet's movements are numbered 1, 2, 3 in the order they
 committed, with no gaps. History is sorted by it, newest first, so the first page's first `balanceAfter` is
 the wallet's balance. History uses this number as a cursor instead of an offset. The ledger only grows at its
@@ -52,6 +56,9 @@ finishes the work itself by confirming the payment with Stripe using `providerDa
 - Repeating a request with the same key and the same amount returns a byte-identical body. Reusing a key
   with a different amount, or a key whose deposit already completed, gets a `409`.
 - The provider comes from configuration (`WALLET_PAYMENT_PROVIDER`, default `STRIPE`), not from the request.
+- Refusals come in the transfer's order: `406` for an `Accept` header that rules out JSON, refused before
+  anything runs, so no payment intent is created for an answer the client can't read; then `401` for a
+  missing or invalid `X-User-Id`, before the key and the body are looked at.
 - Errors: `400` for an invalid currency, a missing or invalid key, an amount that isn't positive, or a
   deposit Payment Service refuses (its message is passed on); `404` for no such wallet, checked before
   anything is charged; `409` as above; `502` when Payment Service is unreachable, times out, fails to start
@@ -234,7 +241,8 @@ The status mapping lives in one place, and each status stands for one remedy
   webhook while no signing secret is configured.
 - `404`: wallet not found. Wallet lookups are scoped to the caller, so it is never `403`. On a transfer it
   always means the caller's own wallet; a recipient without a wallet gets `422`.
-- `406`: a transfer whose `Accept` header rules out JSON. It is refused before anything runs.
+- `406`: a transfer, a deposit or a wallet opening whose `Accept` header rules out JSON. It is refused before
+  anything runs.
 - `409`: transaction reference already in use (another user, different terms, or already paid), wallet
   already exists, `Idempotency-Key` reused for a different or completed deposit or for a different transfer.
 - `413`: a webhook body larger than `PAYMENT_WEBHOOK_MAX_PAYLOAD_SIZE`, refused before its signature is

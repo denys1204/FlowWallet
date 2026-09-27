@@ -72,6 +72,42 @@ class WalletControllerTest {
         verifyNoInteractions(wallets);
     }
 
+    @Test
+    void anUnidentifiedCallerOpeningAWalletIsRefusedWith401BeforeTheBodyIsRead() throws Exception {
+        // Guards the parameter order: with @CurrentUserId declared after the body, a caller with no X-User-Id
+        // and a malformed body was told "Failed to read request" (400) instead of being refused (401).
+        mockMvc.perform(post("/api/wallets")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"currency\": "))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(wallets);
+    }
+
+    @Test
+    void anUnidentifiedCallerReadingHistoryIsRefusedWith401BeforeTheParametersAreChecked() throws Exception {
+        // Guards the parameter order on history: a caller with no X-User-Id and a non-numeric cursor must be
+        // refused for the identity (401), not told about the cursor (400).
+        mockMvc.perform(get("/api/wallets/USD/history").param("before", "abc"))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(wallets);
+    }
+
+    @Test
+    void aClientThatCannotReadJsonIsRefusedBeforeTheWalletIsCreated() throws Exception {
+        // Guards a 406 that arrives after the wallet exists: the client would retry and get 409 for a wallet
+        // it was told nothing about.
+        mockMvc.perform(post("/api/wallets")
+                        .header("X-User-Id", CALLER)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"currency\": \"USD\"}")
+                        .accept(MediaType.APPLICATION_XML))
+                .andExpect(status().isNotAcceptable());
+
+        verifyNoInteractions(wallets);
+    }
+
     @ParameterizedTest(name = "limit={0} is refused")
     @ValueSource(strings = {"0", "101", "-1"})
     void aHistoryLimitOutsideOneToAHundredIsRefused(String limit) throws Exception {

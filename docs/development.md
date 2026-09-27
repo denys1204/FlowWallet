@@ -169,7 +169,7 @@ webhooks.
 
 ## Testing
 
-There are 504 tests, all green: 240 in the payment service, 219 in the wallet service, 44 in platform and 1 in
+There are 512 tests, all green: 240 in the payment service, 227 in the wallet service, 44 in platform and 1 in
 the gateway (it binds the gateway's own `application.yml` into Spring Cloud Gateway's `HttpClientProperties`,
 so a YAML regression that drops the response or connect timeout fails here rather than in a live request left
 waiting). The rest go after the parts most likely to be wrong rather than the ones easiest to reach. That means
@@ -198,7 +198,8 @@ gets its receipt after the balance was spent, funds checked before the recipient
 wallet, and both ledger legs with their counterparties and balances. They also cover every cause of a `409`,
 the status of each refusal, the receipt rendering to the same bytes on a replay, the amount grid (trailing
 zeros, zero-decimal currencies, the size bound), the recipient id and key rules (including a fifth dash and
-non-ASCII digits), a `406` before the service runs, `401` coming before the header and body checks,
+non-ASCII digits, on the deposit key as well), a `406` before the service runs (also for a deposit and a
+wallet opening), `401` coming before the header, body and parameter checks on every wallet endpoint,
 violations and lock failures leaving the handler unchanged, the explanation of a violation after the
 rollback, the `503` mapping, and the READ COMMITTED pin.
 

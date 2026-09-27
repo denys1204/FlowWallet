@@ -33,8 +33,8 @@ a table of users.
 - UUID-shaped input is checked with an ASCII `@Pattern`, not Hibernate Validator's `@UUID`. In Hibernate Validator 9.1
   that validator throws on a 36-character value with a fifth dash, which the platform's last-resort handler answers
   with a 500. It also reads digits with `Character.digit` and so accepts non-ASCII digits the resolver refuses. The
-  one remaining `@UUID` is on `DepositController`'s `Idempotency-Key`, which answers such a key with a 500. The key's
-  version policy is in [0005](0005-client-supplied-idempotency-keys.md).
+  idempotency keys of both money endpoints use the pattern `TransferController.ANY_UUID`, and the key's version
+  policy is in [0005](0005-client-supplied-idempotency-keys.md).
 - Services take the header on trust. Nothing authenticates it and the gateway forwards the client's value unchanged,
   so the header is the only credential. The intended model is that the gateway validates a token and sets
   `X-User-Id`, and that services are reachable only through the gateway, plus Wallet Service calling Payment Service

@@ -41,7 +41,8 @@ remedy share a status, with the detail naming the cause:
   ([0003](0003-caller-identity-and-trust-boundary.md)).
 - `404`, the caller's own wallet does not exist: `WalletNotFoundException`, never `403` and never about a recipient
   ([0004](0004-wallet-addressed-by-owner-and-currency.md)).
-- `406`, accept JSON: a transfer whose `Accept` header rules JSON out, refused before the handler method runs
+- `406`, accept JSON: a transfer, deposit or wallet opening whose `Accept` header rules JSON out, refused before the
+  handler method runs
   ([0014](0014-transfers-in-one-local-transaction.md)).
 - `409`, already taken: a key or reference used for something else (`ConflictingDepositException`,
   `ConflictingTransferException`, `DuplicateTransactionReferenceException`), whose remedy is a new key

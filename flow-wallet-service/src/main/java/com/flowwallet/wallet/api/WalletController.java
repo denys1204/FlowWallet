@@ -9,6 +9,7 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
@@ -21,6 +22,9 @@ import java.util.List;
  * {@code @Validated} decides how a parameter violation is reported, not whether it is caught. Without it,
  * Spring MVC raises {@code HandlerMethodValidationException} and the problem comes back without its
  * {@code errors} list. See docs/adr/0016-error-model-and-status-codes.md.
+ * <p>
+ * {@code @CurrentUserId} is the first parameter of every mapping: Spring MVC resolves arguments in declaration
+ * order, so a caller without a usable identity gets 401 before the body or the parameters are looked at.
  */
 @Validated
 @RestController
@@ -39,14 +43,18 @@ public class WalletController {
         return wallets.listFor(userId);
     }
 
-    @PostMapping
+    /**
+     * The mapping declares that it produces JSON, so an {@code Accept} header that rules JSON out gets 406 before
+     * the wallet is created; otherwise the 406 would come after, and the retry would get 409.
+     */
+    @PostMapping(produces = MediaType.APPLICATION_JSON_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
-    public WalletResponse open(@Valid @RequestBody CreateWalletRequest request, @CurrentUserId String userId) {
+    public WalletResponse open(@CurrentUserId String userId, @Valid @RequestBody CreateWalletRequest request) {
         return wallets.open(userId, request.currency());
     }
 
     @GetMapping("/{currency}")
-    public WalletResponse read(@PathVariable String currency, @CurrentUserId String userId) {
+    public WalletResponse read(@CurrentUserId String userId, @PathVariable String currency) {
         return wallets.read(userId, currency);
     }
 
@@ -56,12 +64,12 @@ public class WalletController {
      */
     @GetMapping("/{currency}/history")
     public HistoryPage history(
+            @CurrentUserId String userId,
             @PathVariable String currency,
             @RequestParam(required = false) Long before,
             @RequestParam(defaultValue = "" + DEFAULT_PAGE_SIZE)
             @Min(value = 1, message = "limit must be at least 1")
-            @Max(value = 100, message = "limit must not exceed 100") int limit,
-            @CurrentUserId String userId
+            @Max(value = 100, message = "limit must not exceed 100") int limit
     ) {
         return wallets.history(userId, currency, before, limit);
     }
