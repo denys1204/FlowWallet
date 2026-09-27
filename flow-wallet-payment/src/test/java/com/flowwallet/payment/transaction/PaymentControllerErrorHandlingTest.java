@@ -18,7 +18,9 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -77,7 +79,7 @@ class PaymentControllerErrorHandlingTest {
 
     private static final String VALID_BODY = """
             {
-              "transactionReference": "ref-123",
+              "transactionReference": "7e1855b3-4d95-4a72-a0c9-ef0d78be2e44",
               "amount": 50.00,
               "currency": "USD",
               "providerName": "STRIPE"
@@ -92,6 +94,42 @@ class PaymentControllerErrorHandlingTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.status").value(401))
                 .andExpect(jsonPath("$.instance").value("/api/payments/intent"));
+    }
+
+    @Test
+    void anUnidentifiedCallerWithAnInvalidBodyIsRefusedWith401BeforeTheBodyIsChecked() throws Exception {
+        // Guards the parameter order: with @CurrentUserId declared after the body, a caller with no X-User-Id and
+        // an invalid body was told to fix the body (400) instead of being refused (401).
+        mockMvc.perform(post("/api/payments/intent")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"transactionReference\": \"\", \"amount\": 0}"))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(paymentService);
+    }
+
+    @Test
+    void aReferenceWithALineBreakIsRefusedWithoutBeingQuoted() throws Exception {
+        // Guards log forging through the reference: the duplicate and in-progress refusals quote it in their
+        // details, which GlobalExceptionHandler logs, so an unbounded value with line breaks forged log lines.
+        String body = VALID_BODY.replace(
+                "7e1855b3-4d95-4a72-a0c9-ef0d78be2e44",
+                "7e1855b3-4d95-4a72-a0c9-ef0d78be2e44\\nFORGED"
+        );
+
+        String response = mockMvc.perform(post("/api/payments/intent")
+                        .header("X-User-Id", CALLER)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0]")
+                        .value("transactionReference Transaction reference must be a lower-case UUID"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        assertThat(response).doesNotContain("FORGED");
+        verifyNoInteractions(paymentService);
     }
 
     @Test

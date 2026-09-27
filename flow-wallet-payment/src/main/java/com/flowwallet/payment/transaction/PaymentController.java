@@ -18,8 +18,8 @@ public class PaymentController {
 
     @PostMapping("/intent")
     public PaymentIntentResponse initiateDeposit(
-            @Valid @RequestBody CreatePaymentIntentRequest request,
-            @CurrentUserId String userId
+            @CurrentUserId String userId,
+            @Valid @RequestBody CreatePaymentIntentRequest request
     ) {
         return paymentService.initiatePayment(request, userId);
     }

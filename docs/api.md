@@ -163,7 +163,7 @@ signed payload couldn't be processed. The reasoning is in
 ### Internal: Payment Service (`:8082` directly)
 
 Wallet Service calls this with `X-User-Id`. The gateway doesn't route it, and it isn't reachable through
-`:8080`.
+`:8080`. A missing or invalid `X-User-Id` gets `401` before the body is checked.
 
 ```
 POST /api/payments/intent
@@ -193,8 +193,8 @@ Stripe.
   (a `400` or `402` from Stripe). The reserved row stays, so a retry with the same key and terms gets the same
   answer. Any other Stripe failure is a `502`
   ([ADR 0022](adr/0022-stripe-charge-rules-checked-before-the-reservation.md)).
-- `currency` must be an upper-case ISO 4217 code, `transactionReference` can be at most 64 characters, and
-  `providerName` at most 32 (case-insensitive).
+- `currency` must be an upper-case ISO 4217 code, `transactionReference` a lower-case UUID (the wallet
+  lower-cases the caller's key), and `providerName` at most 32 characters (case-insensitive).
 - `amount` must be between `1.00` and `10000.00` inclusive by default (`PAYMENT_MIN_DEPOSIT_AMOUNT` /
   `PAYMENT_MAX_DEPOSIT_AMOUNT`). For Stripe it can have at most two decimal places, and none for
   zero-decimal currencies such as JPY or for ISK, which Stripe takes in hundredths but charges in whole units;
