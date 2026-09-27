@@ -71,8 +71,9 @@ its events could only reject a mismatch after the customer has paid.
   foreign-owner or currency-mismatch value, only `INVALID_AMOUNT`, `INVALID_ENVELOPE`, `WALLET_NOT_FOUND` and
   `DUPLICATE_REFERENCE`.
 - A client has to open a wallet before its first deposit. A `WALLET_NOT_FOUND` rejection means a payment started
-  by some other route, or a wallet that has disappeared. The payload is kept so that the event can be replayed
-  once the wallet exists.
+  by some other route, or a wallet that has disappeared. The payload is kept so that the event can be
+  republished once the wallet exists, under a fresh `eventId`, because the `REJECTED` row holds the original one
+  ([0010](0010-idempotent-payment-event-consumer.md)).
 - The unique constraint alone treats `usd` and `USD` as different values. `Currencies.normalise` upper-cases the
   path and the body before any lookup, `Wallet.open` upper-cases again, and the `wallets_currency_is_upper`
   CHECK enforces the rule in the schema ([0015](0015-currency-precision-and-no-rounding.md)).

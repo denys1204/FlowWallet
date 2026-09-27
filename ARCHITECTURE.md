@@ -224,14 +224,26 @@ The listener reads the event type from the Kafka `eventType` header and never in
 |-------|---------|
 | `PaymentCompletedEvent` for an existing wallet | Credited: balance updated, `DEPOSIT` ledger entry, `processed_events` row `CREDITED` |
 | `PaymentFailedEvent` | Recorded as `FAILURE_RECORDED`; the balance never moves |
-| Readable but refused (an amount that is missing, not positive or off its currency's grid, an incomplete envelope, no wallet for that user and currency, a second event for a credited reference) | Stored as `REJECTED` with the reason and the full payload so it can be replayed; the offset is committed |
+| Readable but refused (an amount that is missing, not positive or off its currency's grid, an incomplete envelope, no wallet for that user and currency, a second event for a credited reference) | Stored as `REJECTED` with the reason and the full payload; the offset is committed |
 | Unreadable (missing or unknown `eventType` header, unparseable JSON, no value or the JSON literal `null`, no `eventId`) | Sent to `payment.events.wallet.DLT` immediately, without retrying |
 | Anything else that fails | Retried with exponential backoff, then sent to `payment.events.wallet.DLT` |
 
 An event never creates a wallet. A deposit can only start through an existing wallet, so an event for a
-missing wallet means a payment got in some other way, and it gets recorded instead of absorbed. Nothing
-replays `REJECTED` rows automatically yet; replay is manual. The consumer's design is in
-[ADR 0010](docs/adr/0010-idempotent-payment-event-consumer.md).
+missing wallet means a payment got in some other way, and it gets recorded instead of absorbed. The
+consumer's design is in [ADR 0010](docs/adr/0010-idempotent-payment-event-consumer.md).
+
+Nothing replays a refused or dead-lettered event automatically; an operator republishes it to
+`payment.events` with its `eventType` header and the transaction reference as key.
+
+- A `REJECTED` row holds the event's id in `processed_events`, so the payload republished unchanged meets
+  that barrier: the listener logs it as already processed and credits nothing. Republish it under a fresh
+  `eventId`. The unique (`transaction_reference`, `type`) key on `balance_history` still stops a second
+  credit for a payment that was credited in the meantime.
+- Only a `WALLET_NOT_FOUND` payload is replayed with nothing but the id changed, once the user has opened
+  the wallet. `INVALID_AMOUNT` and `INVALID_ENVELOPE` payloads are wrong in themselves and need correcting
+  first. `DUPLICATE_REFERENCE` is never replayed: the payment is already credited.
+- A record on `payment.events.wallet.DLT` has no `processed_events` row and keeps its original key and
+  headers, so it can be republished unchanged once the cause of the failure is fixed.
 
 ## Transfers between wallets
 

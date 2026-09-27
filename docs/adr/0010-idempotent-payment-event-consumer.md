@@ -34,12 +34,14 @@ record that blocks its partition holds up about a third of all credits.
   this check and does not repeat it.
 - `PaymentEventOutcomeStore.recordRejection` stores refusals the wallet understands (`INVALID_AMOUNT`,
   `INVALID_ENVELOPE`, `WALLET_NOT_FOUND`, `DUPLICATE_REFERENCE`) as `REJECTED` rows with the reason and the full
-  payload, and the offset is committed. Replay is manual. `UnknownWalletException` is thrown inside the money
-  transaction, so the `processed_events` row flushed before the wallet lookup rolls back and the `REJECTED` row can
-  take the event id. An event never opens a wallet ([0004](0004-wallet-addressed-by-owner-and-currency.md)).
-- An unreadable record (missing or unknown `eventType` header, unparseable JSON, no value or the JSON literal
-  `null`, no `eventId`) raises `UnreadablePaymentEventException`. It is registered as not retryable and goes to `payment.events.wallet.DLT` at
-  once: without an event id there is nothing to write a row under.
+  payload, and the offset is committed. Replay is manual, and a refused event is republished under a fresh `eventId`,
+  because the `REJECTED` row holds the original one and an unchanged payload is acknowledged as already processed. The
+  `DEPOSIT` key on `balance_history` still stops a second credit. `UnknownWalletException` is thrown inside the money
+  transaction, so the `processed_events` row flushed before the wallet lookup rolls back and the `REJECTED` row can take
+  the event id. An event never opens a wallet ([0004](0004-wallet-addressed-by-owner-and-currency.md)).
+- An unreadable record (missing or unknown `eventType` header, unparseable JSON, no value or the JSON literal `null`, no
+  `eventId`) raises `UnreadablePaymentEventException`. It is registered as not retryable and goes to
+  `payment.events.wallet.DLT` at once: without an event id there is nothing to write a row under.
 - The container's `DefaultErrorHandler` retries any other failure with an `ExponentialBackOff`
   (`wallet.consumer.retry.*`; by default 3 retries from 500 ms, doubling, capped at 10,000 ms), then a
   `DeadLetterPublishingRecoverer` publishes it to `payment.events.wallet.DLT`. It is the wallet's only retry mechanism.
@@ -84,7 +86,7 @@ record that blocks its partition holds up about a third of all credits.
 - Every readable event the listener settles has a `processed_events` row. `REJECTED` rows keep their payload, and
   nothing replays them automatically. A second event for a credited reference is also logged at error level.
 - `payment.events.wallet.DLT` has no consumer; its records are inspected and replayed by hand. Unreadable and
-  exhausted records leave no `processed_events` row.
+  exhausted records leave no `processed_events` row, so a dead-lettered record can be republished unchanged.
 - A failure the retries cannot fix holds its partition only for the length of the backoff.
 - `classify` knows only the two barriers, so a violation of any other constraint on the credit path is retried and
   dead-lettered, never acknowledged. A further barrier needs its own case in `classify`.

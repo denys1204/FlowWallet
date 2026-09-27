@@ -111,7 +111,8 @@ Details: [data model](data-model.md), [API reference](api.md#wallet-service). Re
   and credits nothing until an operator steps in.
 - An outcome the wallet cannot apply, such as a conflicting second completion for a payment already credited, a
   credit for a wallet it cannot find, or a credit whose amount is off its currency's grid, is recorded as
-  rejected with its payload and changes no balance. Only an operator can act on it.
+  rejected with its payload and changes no balance. Only an operator can act on it, by sending the payment again
+  as a new event once the cause is fixed; it is still credited at most once.
 
 Details: [webhooks](api.md#provider-webhook), [the wallet consumer](../ARCHITECTURE.md#the-wallet-consumer),
 [events](events.md). Reasoning: [ADR 0017](adr/0017-webhooks-verified-before-they-are-read.md),

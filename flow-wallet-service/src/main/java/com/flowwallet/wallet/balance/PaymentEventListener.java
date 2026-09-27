@@ -62,7 +62,8 @@ public class PaymentEventListener {
         try {
             handler.credit(event);
         } catch (UnknownWalletException e) {
-            // Recorded with its payload rather than dead-lettered, so it can be replayed once the wallet exists.
+            // Recorded with its payload rather than dead-lettered, so it can be republished under a fresh event id
+            // once the wallet exists.
             reject(event, RejectionReason.WALLET_NOT_FOUND, record.value());
         } catch (DataIntegrityViolationException e) {
             // The transaction is already rolled back. A fresh one asks the database which barrier refused it. A

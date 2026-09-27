@@ -86,8 +86,8 @@ public class ProcessedEvent {
     }
 
     /**
-     * A completed payment the wallet refused. The payload is kept in full so it can be replayed once the cause is
-     * fixed.
+     * A completed payment the wallet refused. The payload is kept in full so the event can be republished once
+     * the cause is fixed, under a fresh event id, because this row holds the original one.
      */
     public static ProcessedEvent rejected(PaymentCompletedEvent event, RejectionReason reason, String payload) {
         return ProcessedEvent.builder()

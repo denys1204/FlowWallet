@@ -41,8 +41,8 @@ public class PaymentEventOutcomeStore {
     }
 
     /**
-     * Records a refusal as a {@code REJECTED} row with the whole payload, so the event can be replayed once the
-     * cause is fixed.
+     * Records a refusal as a {@code REJECTED} row with the whole payload, so the event can be republished under a
+     * fresh event id once the cause is fixed. The row takes the original id, which a replay would otherwise meet.
      */
     @Transactional
     public void recordRejection(PaymentCompletedEvent event, RejectionReason reason, String payload) {

@@ -20,7 +20,8 @@ public enum RejectionReason {
 
     /**
      * The user holds no wallet in the event's currency. An event never opens a wallet, so the payment got in by
-     * some other route; the event can be replayed from its payload once the wallet exists.
+     * some other route. Once the wallet exists, the payload can be republished under a fresh event id; the
+     * original id already has this row. See docs/adr/0010-idempotent-payment-event-consumer.md.
      */
     WALLET_NOT_FOUND,
 

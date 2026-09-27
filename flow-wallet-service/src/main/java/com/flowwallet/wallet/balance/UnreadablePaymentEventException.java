@@ -2,8 +2,9 @@ package com.flowwallet.wallet.balance;
 
 /**
  * A record that cannot be turned into an event the wallet could record a refusal for: malformed JSON, no value or
- * a JSON {@code null}, a missing or unrecognised type header, or no event id. It is not retried and goes to the dead-letter topic, because a
- * row would need an event id. Not an {@code ApiException}, because a Kafka listener has no HTTP response.
+ * a JSON {@code null}, a missing or unrecognised type header, or no event id. It is not retried and goes to the
+ * dead-letter topic, because a row would need an event id. Not an {@code ApiException}, because a Kafka listener
+ * has no HTTP response.
  * See docs/adr/0010-idempotent-payment-event-consumer.md.
  */
 public class UnreadablePaymentEventException extends RuntimeException {
