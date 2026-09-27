@@ -104,6 +104,17 @@ class WalletServiceTest {
     }
 
     @Test
+    void aWalletIsOpenedInTheCodeTheServiceNormalised() {
+        // Guards the one normalisation: Wallet.open stores what it is given, so a lower-case code reaching it
+        // would break the wallets_currency_is_upper CHECK and be reported as a duplicate wallet.
+        when(wallets.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        assertThat(service.open("erin", "usd").currency()).isEqualTo("USD");
+
+        verify(wallets).saveAndFlush(argThat(wallet -> wallet.getCurrency().equals("USD")));
+    }
+
+    @Test
     void aSecondWalletInOneCurrencyIsRefusedByTheConstraintRatherThanByAPriorCheck() {
         // Two concurrent first requests would both pass a check-then-insert and one would still fail on the
         // insert, so the check would buy nothing and hide what actually decides.

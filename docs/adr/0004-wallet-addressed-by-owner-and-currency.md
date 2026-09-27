@@ -75,7 +75,7 @@ its events could only reject a mismatch after the customer has paid.
   republished once the wallet exists, under a fresh `eventId`, because the `REJECTED` row holds the original one
   ([0010](0010-idempotent-payment-event-consumer.md)).
 - The unique constraint alone treats `usd` and `USD` as different values. `Currencies.normalise` upper-cases the
-  path and the body before any lookup, `Wallet.open` upper-cases again, and the `wallets_currency_is_upper`
+  path and the body before any lookup, `Wallet.open` stores the code it returns, and the `wallets_currency_is_upper`
   CHECK enforces the rule in the schema ([0015](0015-currency-precision-and-no-rounding.md)).
 - On a transfer, `404` always refers to the caller's own wallet and never to the recipient's
   ([0016](0016-error-model-and-status-codes.md)).

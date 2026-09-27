@@ -169,7 +169,7 @@ webhooks.
 
 ## Testing
 
-There are 512 tests, all green: 240 in the payment service, 227 in the wallet service, 44 in platform and 1 in
+There are 513 tests, all green: 240 in the payment service, 228 in the wallet service, 44 in platform and 1 in
 the gateway (it binds the gateway's own `application.yml` into Spring Cloud Gateway's `HttpClientProperties`,
 so a YAML regression that drops the response or connect timeout fails here rather than in a live request left
 waiting). The rest go after the parts most likely to be wrong rather than the ones easiest to reach. That means

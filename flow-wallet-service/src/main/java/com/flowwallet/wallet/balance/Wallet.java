@@ -59,14 +59,17 @@ public class Wallet {
     private Instant updatedAt;
 
     /**
-     * Opens an empty wallet. The currency is upper-cased here so that the uniqueness of
-     * {@code (user_id, currency)} cannot be defeated by casing.
+     * Opens an empty wallet.
+     *
+     * @param currency the upper-case code from {@code Currencies.normalise}, the one place that normalises it;
+     *                 the {@code wallets_currency_is_upper} CHECK refuses any other casing, so the uniqueness of
+     *                 {@code (user_id, currency)} cannot be defeated by it
      */
     public static Wallet open(String userId, String currency) {
         return Wallet.builder()
                 .userId(userId)
                 .balance(BigDecimal.ZERO)
-                .currency(currency.toUpperCase())
+                .currency(currency)
                 .build();
     }
 

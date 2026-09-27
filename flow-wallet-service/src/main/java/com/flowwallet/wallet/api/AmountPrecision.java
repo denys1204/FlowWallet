@@ -53,28 +53,29 @@ public final class AmountPrecision {
      * {@code RoundingMode.UNNECESSARY} throws instead of rounding if the checks ever stop making the rescale exact.
      *
      * @param amount   a positive amount in major units; the sign is the request's concern
-     * @param currency the ISO code of the wallet the amount moves in
+     * @param currency the upper-case ISO code of the wallet the amount moves in, as {@code Currencies.normalise}
+     *                 returns it
      * @return the same value at scale 4
      * @throws InvalidAmountException if the amount has more than 15 integer digits or more decimal places than
      *                                the currency accepts
      */
     public static BigDecimal canonical(BigDecimal amount, String currency) {
-        String code = currency.toUpperCase(Locale.ROOT);
         BigDecimal stripped = amount.stripTrailingZeros();
 
         if (!fitsIntegerDigits(stripped)) {
             throw InvalidAmountException.tooLarge();
         }
-        int acceptedScale = acceptedScale(code);
+        int acceptedScale = acceptedScale(currency);
         if (stripped.scale() > acceptedScale) {
-            throw InvalidAmountException.tooPrecise(code, acceptedScale);
+            throw InvalidAmountException.tooPrecise(currency, acceptedScale);
         }
         return stripped.setScale(LEDGER_SCALE, RoundingMode.UNNECESSARY);
     }
 
     /**
      * Whether {@link #canonical} would accept the amount, for a caller that records a refusal instead of throwing
-     * one, such as the payment event consumer. The sign is not judged.
+     * one, such as the payment event consumer. The sign is not judged. An event's currency has not passed through
+     * {@code Currencies.normalise}, so it is upper-cased here.
      */
     public static boolean isOnGrid(BigDecimal amount, String currency) {
         BigDecimal stripped = amount.stripTrailingZeros();
