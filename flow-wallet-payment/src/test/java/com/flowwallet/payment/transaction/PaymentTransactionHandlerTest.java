@@ -9,7 +9,13 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.core.annotation.AnnotatedElementUtils;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.retry.annotation.Retryable;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Optional;
@@ -214,6 +220,22 @@ class PaymentTransactionHandlerTest {
 
         assertThat(tx.getStatus()).isEqualTo(TransactionStatus.SUCCESS);
         verify(outboxService).publishPaymentCompleted(tx, OCCURRED_AT);
+    }
+
+    @ParameterizedTest(name = "{0} retries on an optimistic-lock conflict inside its own transaction")
+    @ValueSource(strings = {"handleSuccess", "handleFailure"})
+    void bothWebhookPathsRetryAnOptimisticLockConflict(String method) throws NoSuchMethodException {
+        // Guards the retry being dropped or narrowed. Two webhooks for one transaction collide on @Version, and
+        // without the retry the loser answers 500, so Stripe redelivers an event that a second attempt would
+        // have applied at once. @Transactional must sit on the same method, so each attempt gets a fresh
+        // transaction and reads the winner's row.
+        Method handler = PaymentTransactionHandler.class.getMethod(method, WebhookResult.class);
+
+        Retryable retryable = AnnotatedElementUtils.findMergedAnnotation(handler, Retryable.class);
+        assertThat(retryable).isNotNull();
+        assertThat(retryable.retryFor()).containsExactly(ObjectOptimisticLockingFailureException.class);
+        assertThat(retryable.maxAttemptsExpression()).isEqualTo("${payment.retry.optimistic-lock.max-attempts:3}");
+        assertThat(AnnotatedElementUtils.findMergedAnnotation(handler, Transactional.class)).isNotNull();
     }
 
     private static WebhookResult success(String providerTransactionId, String providerEventId) {
