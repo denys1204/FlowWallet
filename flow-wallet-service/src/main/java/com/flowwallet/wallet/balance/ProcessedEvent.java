@@ -1,8 +1,8 @@
 package com.flowwallet.wallet.balance;
 
+import com.flowwallet.contract.constant.KafkaConstants;
 import com.flowwallet.contract.event.PaymentCompletedEvent;
 import com.flowwallet.contract.event.PaymentFailedEvent;
-import com.flowwallet.contract.constant.KafkaConstants;
 import com.flowwallet.wallet.enums.ProcessedEventOutcome;
 import com.flowwallet.wallet.enums.RejectionReason;
 import jakarta.persistence.*;
@@ -85,21 +85,15 @@ public class ProcessedEvent {
     }
 
     /**
-     * An event the wallet refused. The payload is kept in full so it can be replayed once the cause is fixed.
+     * A completed payment the wallet refused. The payload is kept in full so it can be replayed once the cause is
+     * fixed.
      */
-    public static ProcessedEvent rejected(
-            String eventId,
-            String eventType,
-            String transactionReference,
-            BigDecimal amount,
-            RejectionReason reason,
-            String payload
-    ) {
+    public static ProcessedEvent rejected(PaymentCompletedEvent event, RejectionReason reason, String payload) {
         return ProcessedEvent.builder()
-                .eventId(eventId)
-                .eventType(eventType)
-                .transactionReference(transactionReference)
-                .amount(amount)
+                .eventId(event.eventId())
+                .eventType(KafkaConstants.EVENT_TYPE_PAYMENT_COMPLETED)
+                .transactionReference(event.transactionReference())
+                .amount(event.amount())
                 .outcome(ProcessedEventOutcome.REJECTED)
                 .rejectionReason(reason)
                 .payload(payload)

@@ -1,13 +1,12 @@
 package com.flowwallet.wallet.balance;
 
+import com.flowwallet.contract.event.PaymentCompletedEvent;
 import com.flowwallet.wallet.enums.RejectionReason;
 import com.flowwallet.wallet.enums.TransactionType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.math.BigDecimal;
 
 /**
  * Reads and writes that must happen in their own transaction, after the money transaction has rolled back. A
@@ -46,16 +45,7 @@ public class PaymentEventOutcomeStore {
      * cause is fixed.
      */
     @Transactional
-    public void recordRejection(
-            String eventId,
-            String eventType,
-            String transactionReference,
-            BigDecimal amount,
-            RejectionReason reason,
-            String payload
-    ) {
-        processedEvents.saveAndFlush(ProcessedEvent.rejected(
-                eventId, eventType, transactionReference, amount, reason, payload
-        ));
+    public void recordRejection(PaymentCompletedEvent event, RejectionReason reason, String payload) {
+        processedEvents.saveAndFlush(ProcessedEvent.rejected(event, reason, payload));
     }
 }

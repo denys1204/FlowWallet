@@ -165,7 +165,7 @@ webhooks.
 
 ## Testing
 
-There are 351 tests, all green: 185 in the payment service, 132 in the wallet service, 33 in platform and 1 in
+There are 356 tests, all green: 185 in the payment service, 137 in the wallet service, 33 in platform and 1 in
 the gateway (it binds the gateway's own `application.yml` into Spring Cloud Gateway's `HttpClientProperties`,
 so a YAML regression that drops the response or connect timeout fails here rather than in a live request left
 waiting). The rest go after the parts most likely to be wrong rather than the ones easiest to reach. That means
@@ -178,7 +178,8 @@ RFC 9457 status mapping, the minor-unit conversion that decides how much money a
 identity and idempotency-key rules. For the wallet consumer they cover dispatch on the `eventType` header,
 dead-lettering of unreadable records, refusals, duplicate classification (by the `DEPOSIT` entry alone, since
 one reference can own one movement of each type), the barrier row being written before the wallet is loaded,
-and failed payments never touching a wallet.
+and failed payments never touching a wallet (a redelivered failure is acknowledged, any other violation is
+raised).
 
 For transfers they cover the lock order in both directions, the key judged only after both locks, and no
 other wallet read in the transaction. With the sender sorting first and last, they cover a retry that still

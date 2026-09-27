@@ -1,8 +1,12 @@
 package com.flowwallet.wallet.balance;
 
+import com.flowwallet.contract.constant.KafkaConstants;
 import com.flowwallet.contract.event.PaymentCompletedEvent;
+import com.flowwallet.wallet.enums.ProcessedEventOutcome;
+import com.flowwallet.wallet.enums.RejectionReason;
 import com.flowwallet.wallet.enums.TransactionType;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -71,5 +75,26 @@ class PaymentEventOutcomeStoreTest {
 
         assertThat(outcomes.classify("evt-2", "ref-1")).isEqualTo(DuplicateVerdict.REFERENCE_ALREADY_CREDITED);
         assertThat(outcomes.classify("evt-1", "ref-1")).isEqualTo(DuplicateVerdict.EVENT_ALREADY_PROCESSED);
+    }
+
+    @Test
+    void aRejectionIsStoredUnderTheEventsOwnIdTypeReferenceAndAmount() {
+        // Guards the fields a replay and an operator's totals read. The row must carry the event's id, or its
+        // redelivery would miss the barrier and be refused again; the payload, or nothing could be replayed.
+        PaymentCompletedEvent event = completed("evt-1");
+
+        outcomes.recordRejection(event, RejectionReason.WALLET_NOT_FOUND, "{\"eventId\":\"evt-1\"}");
+
+        ArgumentCaptor<ProcessedEvent> saved = ArgumentCaptor.forClass(ProcessedEvent.class);
+        verify(processedEvents).saveAndFlush(saved.capture());
+        ProcessedEvent row = saved.getValue();
+
+        assertThat(row.getEventId()).isEqualTo("evt-1");
+        assertThat(row.getEventType()).isEqualTo(KafkaConstants.EVENT_TYPE_PAYMENT_COMPLETED);
+        assertThat(row.getTransactionReference()).isEqualTo("ref-1");
+        assertThat(row.getAmount()).isEqualByComparingTo("30.00");
+        assertThat(row.getOutcome()).isEqualTo(ProcessedEventOutcome.REJECTED);
+        assertThat(row.getRejectionReason()).isEqualTo(RejectionReason.WALLET_NOT_FOUND);
+        assertThat(row.getPayload()).isEqualTo("{\"eventId\":\"evt-1\"}");
     }
 }

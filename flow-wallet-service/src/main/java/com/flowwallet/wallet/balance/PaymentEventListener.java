@@ -14,7 +14,6 @@ import org.springframework.stereotype.Component;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
-import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 
@@ -52,21 +51,9 @@ public class PaymentEventListener {
         );
         requireEventId(event.eventId(), KafkaConstants.EVENT_TYPE_PAYMENT_COMPLETED);
 
-        Optional<RejectionReason> refusal = refusalFor(
-                event.transactionReference(),
-                event.currency(),
-                event.userId(),
-                event.amount()
-        );
+        Optional<RejectionReason> refusal = refusalFor(event);
         if (refusal.isPresent()) {
-            reject(
-                    event.eventId(),
-                    KafkaConstants.EVENT_TYPE_PAYMENT_COMPLETED,
-                    event.transactionReference(),
-                    event.amount(),
-                    refusal.get(),
-                    record.value()
-            );
+            reject(event, refusal.get(), record.value());
             return;
         }
 
@@ -74,21 +61,17 @@ public class PaymentEventListener {
             handler.credit(event);
         } catch (UnknownWalletException e) {
             // Recorded with its payload rather than dead-lettered, so it can be replayed once the wallet exists.
-            reject(
-                    event.eventId(),
-                    KafkaConstants.EVENT_TYPE_PAYMENT_COMPLETED,
-                    event.transactionReference(),
-                    event.amount(),
-                    RejectionReason.WALLET_NOT_FOUND,
-                    record.value()
-            );
+            reject(event, RejectionReason.WALLET_NOT_FOUND, record.value());
         } catch (DataIntegrityViolationException e) {
-            // The transaction is already rolled back. A fresh one asks the database which barrier refused it.
-            switch (outcomes.classify(event.eventId(), event.transactionReference())) {
-                case EVENT_ALREADY_PROCESSED -> log.info(
-                        "Event {} was already processed; balance unchanged",
-                        event.eventId()
-                );
+            // The transaction is already rolled back. A fresh one asks the database which barrier refused it. A
+            // switch expression, so a verdict added later fails to compile here instead of falling through and
+            // committing the offset of a payment that was never credited.
+            DuplicateVerdict verdict = outcomes.classify(event.eventId(), event.transactionReference());
+            Optional<RejectionReason> duplicate = switch (verdict) {
+                case EVENT_ALREADY_PROCESSED -> {
+                    log.info("Event {} was already processed; balance unchanged", event.eventId());
+                    yield Optional.empty();
+                }
 
                 case REFERENCE_ALREADY_CREDITED -> {
                     log.error(
@@ -97,20 +80,14 @@ public class PaymentEventListener {
                             event.transactionReference(),
                             event.eventId()
                     );
-                    reject(
-                            event.eventId(),
-                            KafkaConstants.EVENT_TYPE_PAYMENT_COMPLETED,
-                            event.transactionReference(),
-                            event.amount(),
-                            RejectionReason.DUPLICATE_REFERENCE,
-                            record.value()
-                    );
+                    yield Optional.of(RejectionReason.DUPLICATE_REFERENCE);
                 }
 
                 // Neither barrier: the credit did not happen. Rethrowing sends the record through the retries
                 // to the dead-letter topic instead of acknowledging money that never arrived.
                 case NOT_A_DUPLICATE -> throw e;
-            }
+            };
+            duplicate.ifPresent(reason -> reject(event, reason, record.value()));
         }
     }
 
@@ -136,16 +113,11 @@ public class PaymentEventListener {
      * {@code INVALID_AMOUNT} and stored with its payload. Without it, {@code balance_history_amount_positive}
      * would refuse the ledger row, and the record would be retried and dead-lettered instead.
      */
-    private Optional<RejectionReason> refusalFor(
-            String transactionReference,
-            String currency,
-            String userId,
-            BigDecimal amount
-    ) {
-        if (isBlank(transactionReference) || isBlank(currency) || isBlank(userId)) {
+    private Optional<RejectionReason> refusalFor(PaymentCompletedEvent event) {
+        if (isBlank(event.transactionReference()) || isBlank(event.currency()) || isBlank(event.userId())) {
             return Optional.of(RejectionReason.INVALID_ENVELOPE);
         }
-        if (amount == null || amount.signum() <= 0) {
+        if (event.amount() == null || event.amount().signum() <= 0) {
             return Optional.of(RejectionReason.INVALID_AMOUNT);
         }
         return Optional.empty();
@@ -156,20 +128,14 @@ public class PaymentEventListener {
      * does not reach the dead-letter topic, which is for records the wallet could not read or could not settle
      * after its retries.
      */
-    private void reject(
-            String eventId,
-            String eventType,
-            String transactionReference,
-            BigDecimal amount,
-            RejectionReason reason,
-            String payload
-    ) {
-        log.error("Refused event {} for transaction {}: {}", eventId, transactionReference, reason);
+    private void reject(PaymentCompletedEvent event, RejectionReason reason, String payload) {
+        log.error("Refused event {} for transaction {}: {}", event.eventId(), event.transactionReference(), reason);
         try {
-            outcomes.recordRejection(eventId, eventType, transactionReference, amount, reason, payload);
+            outcomes.recordRejection(event, reason, payload);
         } catch (DataIntegrityViolationException e) {
-            if (outcomes.classify(eventId, transactionReference) == DuplicateVerdict.EVENT_ALREADY_PROCESSED) {
-                log.info("Event {} was already refused; the refusal is on record", eventId);
+            if (outcomes.classify(event.eventId(), event.transactionReference())
+                    == DuplicateVerdict.EVENT_ALREADY_PROCESSED) {
+                log.info("Event {} was already refused; the refusal is on record", event.eventId());
                 return;
             }
             throw e;
