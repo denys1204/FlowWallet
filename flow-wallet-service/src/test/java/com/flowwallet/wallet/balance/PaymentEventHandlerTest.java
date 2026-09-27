@@ -80,6 +80,28 @@ class PaymentEventHandlerTest {
     }
 
     @Test
+    void aCreditGivesItsLedgerRowTheWalletsNextEntryNumber() {
+        // Guards the deposit row being numbered from anything but the locked wallet's counter, which the history
+        // is ordered and paged by, and a credit that leaves the counter behind its newest row.
+        Wallet existing = Wallet.builder()
+                .id(7L)
+                .userId("alice")
+                .currency("USD")
+                .balance(new BigDecimal("20.0000"))
+                .lastEntryNo(41L)
+                .build();
+        when(wallets.lockByUserIdAndCurrency("alice", "USD")).thenReturn(Optional.of(existing));
+
+        handler.credit(completed("30.00"));
+
+        ArgumentCaptor<BalanceHistory> movement = ArgumentCaptor.forClass(BalanceHistory.class);
+        verify(balanceHistory).saveAndFlush(movement.capture());
+        assertThat(movement.getValue().getWalletId()).isEqualTo(7L);
+        assertThat(movement.getValue().getEntryNo()).isEqualTo(42L);
+        assertThat(existing.getLastEntryNo()).isEqualTo(42L);
+    }
+
+    @Test
     void theBarrierRowIsWrittenBeforeTheWalletIsEvenLoaded() {
         // Ordering matters: the event_id barrier must decide before any money is touched, so a redelivery
         // cannot get as far as reading a wallet.

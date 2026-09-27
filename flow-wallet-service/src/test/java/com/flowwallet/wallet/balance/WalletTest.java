@@ -62,4 +62,36 @@ class WalletTest {
 
         assertThat(wallet.getBalance()).isEqualByComparingTo("30.00");
     }
+
+    @Test
+    void everyCreditAndDebitTakesTheNextEntryNumber() {
+        // Guards a balance change that does not advance the counter, which would give its ledger row the number
+        // of the row before and fail the unique (wallet_id, entry_no) at the flush, and a step other than one,
+        // which would leave holes a client could read as missing movements.
+        Wallet wallet = Wallet.open("alice", "USD");
+        assertThat(wallet.getLastEntryNo()).isZero();
+
+        wallet.credit(new BigDecimal("30.00"));
+        assertThat(wallet.getLastEntryNo()).isEqualTo(1L);
+
+        wallet.debit(new BigDecimal("10.00"));
+        assertThat(wallet.getLastEntryNo()).isEqualTo(2L);
+
+        wallet.credit(new BigDecimal("5.00"));
+        assertThat(wallet.getLastEntryNo()).isEqualTo(3L);
+    }
+
+    @Test
+    void aRefusedDebitTakesNoEntryNumber() {
+        // A refused debit writes no ledger row. If it still advanced the counter, a caller that caught the
+        // refusal and went on to write another movement would leave a hole in the wallet's numbering.
+        Wallet wallet = funded("30.00");
+
+        assertThatThrownBy(() -> wallet.debit(new BigDecimal("30.01")))
+                .isInstanceOf(InsufficientFundsException.class);
+        assertThatThrownBy(() -> wallet.debit(BigDecimal.ZERO))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        assertThat(wallet.getLastEntryNo()).isEqualTo(1L);
+    }
 }

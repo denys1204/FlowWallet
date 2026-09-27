@@ -19,7 +19,7 @@ decision unchanged, such as a renamed class, is edited in place.
 | [0009](0009-payment-event-contract.md) | Payment events evolve additively, are typed by header, deduplicated on eventId and need no ordering | Accepted |
 | [0010](0010-idempotent-payment-event-consumer.md) | The wallet consumer credits each payment once and sends every failure to a durable place | Accepted, extended by [0019](0019-payment-event-amounts-on-the-grid.md) and [0020](0020-wallet-dead-letters-kept-and-counted.md) |
 | [0011](0011-wallet-row-locking.md) | Every balance write locks the wallet row, in a fixed order, with nothing read first | Accepted |
-| [0012](0012-balances-and-append-only-ledger.md) | A balance never goes negative, and every movement is an append-only ledger row keyed by reference and type | Accepted |
+| [0012](0012-balances-and-append-only-ledger.md) | A balance never goes negative, and every movement is an append-only ledger row keyed by reference and type | Accepted, history paging superseded by [0021](0021-per-wallet-ledger-entry-numbers.md) |
 | [0013](0013-deposit-initiation.md) | A deposit starts in Wallet Service and is reserved in Payment Service before Stripe is called | Accepted |
 | [0014](0014-transfers-in-one-local-transaction.md) | A transfer is one local transaction in wallet_db with a fixed decision order | Accepted |
 | [0015](0015-currency-precision-and-no-rounding.md) | Amounts sit on an explicit per-currency grid and are refused, never rounded | Accepted, extended by [0019](0019-payment-event-amounts-on-the-grid.md) |
@@ -28,3 +28,4 @@ decision unchanged, such as a renamed class, is edited in place.
 | [0018](0018-outbox-sends-own-their-claim.md) | An outbox send acts on its row only while it holds the claim, and only a failed send counts as an attempt | Accepted, extends [0008](0008-transactional-outbox.md) |
 | [0019](0019-payment-event-amounts-on-the-grid.md) | Payment event amounts sit on the wallet's grid, and a refusal stores only an amount its column holds | Accepted, extends [0010](0010-idempotent-payment-event-consumer.md) and [0015](0015-currency-precision-and-no-rounding.md) |
 | [0020](0020-wallet-dead-letters-kept-and-counted.md) | The wallet's dead-letter topic keeps its records without a time limit, and every dead letter is counted | Accepted, extends [0010](0010-idempotent-payment-event-consumer.md) |
+| [0021](0021-per-wallet-ledger-entry-numbers.md) | Each wallet numbers its ledger entries under its row lock, and history is ordered and paged by that number | Accepted, supersedes the history paging of [0012](0012-balances-and-append-only-ledger.md) |

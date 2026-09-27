@@ -1,0 +1,57 @@
+databaseChangeLog:
+  - changeSet:
+      id: 010-add-ledger-entry-numbers
+      author: flow-wallet
+      comment: >-
+        Numbers each wallet's movements 1, 2, 3 so the history can be ordered and paged by commit order rather
+        than by id, which a pooled sequence hands out per instance. The existing movements are numbered in id
+        order: every row so far was written by a single instance, so id order is commit order. Each wallet's
+        counter is set to its last number, then the column is made NOT NULL and unique per wallet. The unique
+        index leads with wallet_id, so it replaces the single-column index. The changeset runs in one
+        transaction and first locks both tables EXCLUSIVE, wallets before balance_history as every writer does.
+        That lock conflicts with the row locks writers hold, so it waits for running writers to finish, and no
+        row can be added between the backfill and the constraint.
+      changes:
+        - sql:
+            sql: LOCK TABLE wallets, balance_history IN EXCLUSIVE MODE
+        - addColumn:
+            tableName: wallets
+            columns:
+              - column:
+                  name: last_entry_no
+                  type: BIGINT
+                  defaultValueNumeric: 0
+                  remarks: >-
+                    Entry number of the wallet's newest balance_history row, 0 before the first. Every balance
+                    change advances it under the wallet's row lock and gives its ledger row the new value.
+                  constraints:
+                    nullable: false
+        - addColumn:
+            tableName: balance_history
+            columns:
+              - column:
+                  name: entry_no
+                  type: BIGINT
+                  remarks: >-
+                    The movement's place in its wallet's ledger, counting from 1 in commit order. It orders the
+                    history and is its paging cursor; the id comes from a pooled sequence and orders nothing.
+        - sql:
+            sql: >-
+              UPDATE balance_history h SET entry_no = n.entry_no
+              FROM (SELECT id, ROW_NUMBER() OVER (PARTITION BY wallet_id ORDER BY id) AS entry_no
+              FROM balance_history) n
+              WHERE h.id = n.id;
+              UPDATE wallets w SET last_entry_no = n.last_entry_no
+              FROM (SELECT wallet_id, MAX(entry_no) AS last_entry_no FROM balance_history GROUP BY wallet_id) n
+              WHERE w.id = n.wallet_id
+        - addNotNullConstraint:
+            tableName: balance_history
+            columnName: entry_no
+            columnDataType: BIGINT
+        - addUniqueConstraint:
+            tableName: balance_history
+            columnNames: wallet_id, entry_no
+            constraintName: balance_history_wallet_entry_no_key
+        - dropIndex:
+            tableName: balance_history
+            indexName: idx_balance_history_wallet_id

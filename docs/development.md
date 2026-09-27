@@ -167,7 +167,7 @@ webhooks.
 
 ## Testing
 
-There are 396 tests, all green: 185 in the payment service, 177 in the wallet service, 33 in platform and 1 in
+There are 404 tests, all green: 185 in the payment service, 185 in the wallet service, 33 in platform and 1 in
 the gateway (it binds the gateway's own `application.yml` into Spring Cloud Gateway's `HttpClientProperties`,
 so a YAML regression that drops the response or connect timeout fails here rather than in a live request left
 waiting). The rest go after the parts most likely to be wrong rather than the ones easiest to reach. That means
@@ -195,6 +195,10 @@ non-ASCII digits), a `406` before the service runs, `401` coming before the head
 violations and lock failures leaving the handler unchanged, the explanation of a violation after the
 rollback, the `503` mapping, and the READ COMMITTED pin.
 
+For the ledger they cover entry numbers rising by one per wallet across credits and both transfer legs, a
+refused debit taking no number, and history paged by entry number without skipping or repeating a movement
+while credits arrive.
+
 ```bash
 ./mvnw test
 ```
@@ -204,7 +208,9 @@ unique constraints on `processed_events.event_id` and `balance_history (transact
 classification by read-back, and the row lock. Those have been exercised by hand against real Postgres and
 Kafka (redelivery, duplicate references, forty concurrent credits to one wallet), but no automated test runs
 them yet. The hand check ran while the classification read any entry under the reference, and the lookup of
-the `DEPOSIT` entry alone has run only against mocks.
+the `DEPOSIT` entry alone has run only against mocks. The unique `balance_history (wallet_id, entry_no)`, the
+history queries and the migration that numbers existing ledger rows have not run against a real database
+yet.
 
 For transfers the mocks pin the order of the calls and the decision after each one. What they can't show was
 checked by hand against real Postgres, through the running wallet service on a scratch database:

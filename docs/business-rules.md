@@ -89,10 +89,15 @@ Details: [API reference](api.md#wallet-service). Reasoning:
   deposit writes a `DEPOSIT` entry; a transfer writes `TRANSFER_OUT` for the sender and `TRANSFER_IN` for the
   recipient.
 - The ledger only grows. The application never changes or deletes an entry.
-- A user sees their own wallet's full history, newest first.
+- Each wallet numbers its entries 1, 2, 3 in the order they happened, with no gaps. The number belongs to the
+  wallet, so the two legs of a transfer take their numbers from their own wallets.
+- A user sees their own wallet's full history, newest first by entry number, so the newest entry's balance after
+  is the wallet's balance. History is paged by entry number, and paging never shows an entry twice or skips one,
+  even while money arrives.
 
 Details: [data model](data-model.md), [API reference](api.md#wallet-service). Reasoning:
-[ADR 0012](adr/0012-balances-and-append-only-ledger.md).
+[ADR 0012](adr/0012-balances-and-append-only-ledger.md),
+[ADR 0021](adr/0021-per-wallet-ledger-entry-numbers.md).
 
 ## Payment outcomes
 

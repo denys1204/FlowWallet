@@ -7,6 +7,7 @@ import java.math.BigDecimal;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 class BalanceHistoryTest {
     private static final String REFERENCE = "7e1855b3-4d95-4a72-a0c9-ef0d78be2e44";
@@ -74,5 +75,32 @@ class BalanceHistoryTest {
         assertThat(out.isRepeatOf(13L, "bob", new BigDecimal("25.00"))).isFalse();
         assertThat(in.isRepeatOf(12L, "alice", new BigDecimal("25.00"))).isFalse();
         assertThat(deposit.isRepeatOf(11L, "bob", new BigDecimal("25.00"))).isFalse();
+    }
+
+    @Test
+    void entryNumbersRiseByOnePerWalletAcrossCreditsAndBothTransferLegs() {
+        // Guards a factory taking its entry number from the wrong wallet, such as a transfer leg numbered from
+        // the other side's counter, and a counter shared across wallets. Each wallet counts its own movements
+        // 1, 2, 3, whichever side of a transfer it is on.
+        Wallet alice = wallet(11L, "alice", "0");
+        Wallet bob = wallet(12L, "bob", "0");
+        BigDecimal ten = new BigDecimal("10.0000");
+
+        BalanceHistory aliceDeposit = BalanceHistory.deposit(alice, "ref-1", "evt-1", ten, alice.credit(ten));
+        BalanceHistory bobDeposit = BalanceHistory.deposit(bob, "ref-2", "evt-2", ten, bob.credit(ten));
+        BigDecimal five = new BigDecimal("5.0000");
+        BalanceHistory aliceOut = BalanceHistory.transferOut(alice, "ref-3", "bob", five, alice.debit(five));
+        BalanceHistory bobIn = BalanceHistory.transferIn(bob, "ref-3", "alice", five, bob.credit(five));
+        BalanceHistory bobOut = BalanceHistory.transferOut(bob, "ref-4", "alice", five, bob.debit(five));
+        BalanceHistory aliceIn = BalanceHistory.transferIn(alice, "ref-4", "bob", five, alice.credit(five));
+
+        assertThat(List.of(aliceDeposit, aliceOut, aliceIn))
+                .extracting(BalanceHistory::getWalletId, BalanceHistory::getEntryNo)
+                .containsExactly(tuple(11L, 1L), tuple(11L, 2L), tuple(11L, 3L));
+        assertThat(List.of(bobDeposit, bobIn, bobOut))
+                .extracting(BalanceHistory::getWalletId, BalanceHistory::getEntryNo)
+                .containsExactly(tuple(12L, 1L), tuple(12L, 2L), tuple(12L, 3L));
+        assertThat(alice.getLastEntryNo()).isEqualTo(3L);
+        assertThat(bob.getLastEntryNo()).isEqualTo(3L);
     }
 }

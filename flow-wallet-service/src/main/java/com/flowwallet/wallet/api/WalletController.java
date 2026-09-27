@@ -51,7 +51,7 @@ public class WalletController {
     }
 
     /**
-     * Movements, newest first, paged by cursor. {@code before} is the id of the oldest movement already
+     * Movements, newest first, paged by cursor. {@code before} is the entry number of the oldest movement already
      * seen; omit it for the first page.
      */
     @GetMapping("/{currency}/history")

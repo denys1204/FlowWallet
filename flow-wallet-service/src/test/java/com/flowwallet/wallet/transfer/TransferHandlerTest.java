@@ -59,12 +59,17 @@ class TransferHandlerTest {
      * to check. The balance has the scale a {@code NUMERIC(19,4)} column gives it.
      */
     private Wallet holds(long id, String userId, String balance) {
+        return holds(id, userId, balance, 0L);
+    }
+
+    private Wallet holds(long id, String userId, String balance, long lastEntryNo) {
         Wallet wallet = Wallet.builder()
                 .id(id)
                 .userId(userId)
                 .currency("USD")
                 .balance(new BigDecimal(balance))
                 .version(0L)
+                .lastEntryNo(lastEntryNo)
                 .build();
         when(wallets.lockByUserIdAndCurrency(userId, "USD")).thenReturn(Optional.of(wallet));
         return wallet;
@@ -303,6 +308,31 @@ class TransferHandlerTest {
         ));
         // The balances change on the managed entities and reach the database through the flush.
         verify(wallets, never()).save(any());
+    }
+
+    @ParameterizedTest(name = "from {0} to {1}")
+    @CsvSource({
+            ALICE + ", " + BOB,
+            BOB + ", " + ALICE
+    })
+    void eachLegTakesTheNextEntryNumberOfItsOwnWallet(String sender, String recipient) {
+        // Guards a leg numbered from the other wallet's counter, or from the first-locked wallet whatever its
+        // role, and a transfer that advances one counter but not the other. Either would give a leg a number
+        // its wallet already used, or leave a wallet's counter behind its newest row. The counters differ so
+        // that a mix-up shows, and the test runs both ways because the lock order swaps the wallets.
+        Wallet from = holds(11L, sender, "100.0000", 1L);
+        Wallet to = holds(12L, recipient, "5.0000", 6L);
+
+        handler.execute(command(sender, recipient));
+
+        ArgumentCaptor<BalanceHistory> out = ArgumentCaptor.forClass(BalanceHistory.class);
+        ArgumentCaptor<BalanceHistory> in = ArgumentCaptor.forClass(BalanceHistory.class);
+        verify(movements).save(out.capture());
+        verify(movements).saveAndFlush(in.capture());
+        assertThat(out.getValue().getEntryNo()).isEqualTo(2L);
+        assertThat(in.getValue().getEntryNo()).isEqualTo(7L);
+        assertThat(from.getLastEntryNo()).isEqualTo(2L);
+        assertThat(to.getLastEntryNo()).isEqualTo(7L);
     }
 
     @Test

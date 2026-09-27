@@ -22,10 +22,11 @@ events that connect these two databases.
 `wallet_db` is managed by Liquibase in `flow-wallet-service`:
 
 - `wallets` holds `id`, `user_id VARCHAR(64)`, `balance NUMERIC(19,4)` (default 0, and a CHECK refuses a
-  value below zero), `currency VARCHAR(3)` (a CHECK forces upper case), `version` and timestamps. `version` is
-  an optimistic-lock backstop, since credits and transfers take a `PESSIMISTIC_WRITE` row lock. The table is
+  value below zero), `currency VARCHAR(3)` (a CHECK forces upper case), `last_entry_no BIGINT` (the entry
+  number of the wallet's newest ledger row, 0 before the first), `version` and timestamps. `version` is an
+  optimistic-lock backstop, since credits and transfers take a `PESSIMISTIC_WRITE` row lock. The table is
   unique on (`user_id`, `currency`): one wallet per user per currency.
-- `balance_history` is the append-only ledger: `id`, `wallet_id` (indexed), `transaction_reference`,
+- `balance_history` is the append-only ledger: `id`, `wallet_id`, `entry_no BIGINT`, `transaction_reference`,
   `event_id` (nullable), `type`, `counterparty_user_id VARCHAR(64)` (nullable), `amount`, `balance_before`,
   `balance_after` and `created_at`. `type` is `DEPOSIT`, `TRANSFER_IN` or `TRANSFER_OUT`. `WITHDRAWAL` is
   declared for withdrawals, and nothing writes it yet. The table is unique on (`transaction_reference`,
@@ -36,7 +37,10 @@ events that connect these two databases.
   the user on the other side of a transfer: the recipient on `TRANSFER_OUT`, the sender on `TRANSFER_IN`. A
   second CHECK makes it present on the two transfer types and absent on every other, so a transfer leg
   without a counterparty can't be stored. `event_id` is NULL on both transfer legs, since a transfer never
-  passes through Kafka.
+  passes through Kafka. `entry_no` numbers each wallet's movements 1, 2, 3 in commit order: every balance change
+  advances `wallets.last_entry_no` under the row lock and gives its ledger row the new value. The table is
+  unique on (`wallet_id`, `entry_no`) (`balance_history_wallet_entry_no_key`), and that index also serves
+  every read by wallet, including the history, which is ordered and paged by `entry_no`.
 - `processed_events` holds one row per event the consumer settles (credited, failure recorded or refused).
   Unreadable records and records that still fail after retries go to the dead-letter topic and leave no row.
   Its columns are `id`, `event_id` (unique), `event_type`,
@@ -48,10 +52,12 @@ events that connect these two databases.
   ([ADR 0019](adr/0019-payment-event-amounts-on-the-grid.md)).
 
 Every table's `id` comes from a `<table>_seq` sequence with an increment of 50, matching the entities'
-`allocationSize = 50`.
+`allocationSize = 50`. Each instance hands out its own block of 50, so ids do not follow commit order, and
+nothing orders by them ([ADR 0021](adr/0021-per-wallet-ledger-entry-numbers.md)).
 
 The rules behind `wallets` and `balance_history` (a balance that never goes negative, positive amounts, the
 (`transaction_reference`, `type`) key and the counterparty) are in
-[ADR 0012](adr/0012-balances-and-append-only-ledger.md).
+[ADR 0012](adr/0012-balances-and-append-only-ledger.md); the entry numbers are in
+[ADR 0021](adr/0021-per-wallet-ledger-entry-numbers.md).
 
 `docker/postgres/init-databases.sql` creates both databases when the Postgres volume is first initialised.

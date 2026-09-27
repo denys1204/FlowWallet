@@ -17,6 +17,11 @@ import java.time.Instant;
  * {@code counterpartyUserId} is the other user of a transfer, which a CHECK requires on the transfer types and
  * forbids on the rest. {@code eventId} is null on both transfer legs, which never pass through
  * {@code payment.events}. See docs/adr/0012-balances-and-append-only-ledger.md.
+ * <p>
+ * {@code entryNo} numbers a wallet's movements 1, 2, 3 in commit order and is unique per wallet; it orders the
+ * history and is its cursor. The id comes from a pooled sequence and orders nothing. Each factory takes the
+ * entry number the wallet's {@code credit} or {@code debit} just advanced, so it must be called right after the
+ * mutation it records. See docs/adr/0021-per-wallet-ledger-entry-numbers.md.
  */
 @Entity
 @Getter
@@ -32,6 +37,9 @@ public class BalanceHistory {
 
     @Column(name = "wallet_id", nullable = false)
     private Long walletId;
+
+    @Column(name = "entry_no", nullable = false)
+    private Long entryNo;
 
     @Column(name = "transaction_reference", nullable = false, length = 64)
     private String transactionReference;
@@ -70,6 +78,7 @@ public class BalanceHistory {
     ) {
         return BalanceHistory.builder()
                 .walletId(wallet.getId())
+                .entryNo(wallet.getLastEntryNo())
                 .transactionReference(transactionReference)
                 .eventId(eventId)
                 .type(TransactionType.DEPOSIT)
@@ -94,6 +103,7 @@ public class BalanceHistory {
     ) {
         return BalanceHistory.builder()
                 .walletId(from.getId())
+                .entryNo(from.getLastEntryNo())
                 .transactionReference(transactionReference)
                 .type(TransactionType.TRANSFER_OUT)
                 .counterpartyUserId(recipientUserId)
@@ -118,6 +128,7 @@ public class BalanceHistory {
     ) {
         return BalanceHistory.builder()
                 .walletId(to.getId())
+                .entryNo(to.getLastEntryNo())
                 .transactionReference(transactionReference)
                 .type(TransactionType.TRANSFER_IN)
                 .counterpartyUserId(senderUserId)

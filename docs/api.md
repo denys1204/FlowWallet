@@ -23,15 +23,20 @@ path and in the body.
 | `GET /api/wallets` | (none) | `200` `[{balance, currency, createdAt, updatedAt}]`, ordered by currency; an empty list if none, never `404` |
 | `POST /api/wallets` | `{"currency": "USD"}` | `201` the wallet; `400` not an ISO 4217 code; `409` a wallet in that currency already exists |
 | `GET /api/wallets/{currency}` | (none) | `200` the wallet; `400` invalid code; `404` the caller holds no such wallet (never `403`) |
-| `GET /api/wallets/{currency}/history?before={id}&limit={n}` | (none) | `200` `{items, nextBefore}`, newest first |
+| `GET /api/wallets/{currency}/history?before={entryNo}&limit={n}` | (none) | `200` `{items, nextBefore}`, newest first |
 | `POST /api/wallets/{currency}/deposits` | `{"amount": 50.00}` + `Idempotency-Key` header | `200` `{reference, provider, providerData}` |
 | `POST /api/wallets/{currency}/transfers` | `{"to": "<user id>", "amount": 25.00}` + `Idempotency-Key` header | `200` `{reference, to, amount, currency, balanceAfter}` |
 
-History uses a cursor instead of an offset. The ledger only grows at its newest end, so a credit landing
-between two page reads would shift every offset. Leave `before` out for the first page, then pass the
-previous `nextBefore`, which is `null` once nothing older exists. `limit` is 1 to 100, default 20. An item
-looks like `{id, transactionReference, type, counterpartyUserId, amount, balanceBefore, balanceAfter,
-createdAt}`. `amount` is positive on every item, and `type` says which way the money went.
+Every movement on a wallet has an `entryNo`: the wallet's movements are numbered 1, 2, 3 in the order they
+committed, with no gaps. History is sorted by it, newest first, so the first page's first `balanceAfter` is
+the wallet's balance. History uses this number as a cursor instead of an offset. The ledger only grows at its
+newest end, so a credit landing between two page reads would shift every offset but leaves every entry number
+where it was. Leave `before` out for the first page, then pass the previous `nextBefore`, the
+`entryNo` of that page's oldest item, until it is `null`. Paging this way never repeats or skips a movement.
+`limit` is 1 to 100, default 20. An item looks like `{entryNo, transactionReference, type, counterpartyUserId,
+amount, balanceBefore, balanceAfter, createdAt}`, with no row id
+([ADR 0021](adr/0021-per-wallet-ledger-entry-numbers.md)). `amount` is positive on every item, and `type`
+says which way the money went.
 `counterpartyUserId` is the other user of a transfer (the recipient on `TRANSFER_OUT`, the sender on
 `TRANSFER_IN`) and `null` for a deposit. Both legs of a transfer carry the sender's key as
 `transactionReference`.
@@ -66,7 +71,7 @@ answer and every replay are `200` with the same body:
 }
 ```
 
-The body is the sender's receipt. It has no timestamp and no movement id, so a replay can match the first
+The body is the sender's receipt. It has no timestamp and no entry number, so a replay can match the first
 answer byte for byte; the movement itself, with both, is in the history. `balanceAfter` is the sender's
 balance right after this transfer, and on a replay that is a past balance rather than the current one.
 Nothing about the recipient's wallet appears. The status is `200` rather than `201` because no URL addresses

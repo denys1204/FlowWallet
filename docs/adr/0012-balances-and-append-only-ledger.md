@@ -1,6 +1,6 @@
 # 0012. A balance never goes negative, and every movement is an append-only ledger row keyed by reference and type
 
-- Status: Accepted
+- Status: Accepted, history paging superseded by [0021](0021-per-wallet-ledger-entry-numbers.md)
 - Date: 2026-09-26
 
 ## Context

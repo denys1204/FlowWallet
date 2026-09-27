@@ -17,6 +17,10 @@ import java.time.Instant;
  * {@code @Version} is the backstop for a path that does not. A balance is never negative: {@link #debit(BigDecimal)}
  * refuses an overdraft and {@code wallets_balance_not_negative} holds the rule for any writer that skips it.
  * See docs/adr/0011-wallet-row-locking.md and docs/adr/0012-balances-and-append-only-ledger.md.
+ * <p>
+ * {@code lastEntryNo} is the entry number of the wallet's newest ledger row. {@link #credit(BigDecimal)} and
+ * {@link #debit(BigDecimal)} advance it under the row lock, so the next entry number is taken in commit order
+ * whichever instance writes it. See docs/adr/0021-per-wallet-ledger-entry-numbers.md.
  */
 @Entity
 @Getter
@@ -38,6 +42,9 @@ public class Wallet {
 
     @Column(name = "currency", nullable = false, length = 3)
     private String currency;
+
+    @Column(name = "last_entry_no", nullable = false)
+    private long lastEntryNo;
 
     @Version
     @Column(name = "version", nullable = false)
@@ -65,7 +72,8 @@ public class Wallet {
 
     /**
      * Credits the wallet and returns the balance as it stood beforehand, so the caller can record both sides of
-     * the movement without reading the balance twice.
+     * the movement without reading the balance twice. It also takes the next entry number, which the ledger row
+     * recording this credit carries.
      *
      * @param amount strictly positive amount in major units; the caller validates this before a transaction opens
      * @return the balance before the credit
@@ -73,6 +81,7 @@ public class Wallet {
     public BigDecimal credit(BigDecimal amount) {
         BigDecimal balanceBefore = balance;
         balance = balance.add(amount);
+        lastEntryNo++;
         return balanceBefore;
     }
 
@@ -82,7 +91,8 @@ public class Wallet {
      * The caller must hold the row lock, so that the balance judged here is the one written back. The overdraft
      * is refused here with a 422 because {@code wallets_balance_not_negative} fires only at the flush, in an
      * aborted transaction that can no longer tell the caller why. Both checks run before the balance is touched,
-     * so a refusal leaves the entity as it was. Draining the wallet to exactly zero is allowed.
+     * so a refusal leaves the entity as it was, entry number included. Draining the wallet to exactly zero is
+     * allowed.
      * See docs/adr/0012-balances-and-append-only-ledger.md.
      *
      * @param amount strictly positive amount in major units; the caller validates this before a transaction opens
@@ -100,6 +110,7 @@ public class Wallet {
         }
         BigDecimal balanceBefore = balance;
         balance = balance.subtract(amount);
+        lastEntryNo++;
         return balanceBefore;
     }
 }

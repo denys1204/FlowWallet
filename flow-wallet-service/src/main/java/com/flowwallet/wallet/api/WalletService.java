@@ -59,19 +59,23 @@ public class WalletService {
     }
 
     /**
-     * A page of movements, newest first.
+     * A page of movements, newest first by entry number. {@code before} is the entry number of the oldest
+     * movement the client already holds. See docs/adr/0021-per-wallet-ledger-entry-numbers.md.
      */
     @Transactional(readOnly = true)
     public HistoryPage history(String userId, String currency, Long before, int limit) {
         Wallet wallet = require(userId, Currencies.normalise(currency));
 
-        List<BalanceHistory> fetched = movements.findPageBefore(wallet.getId(), before, Limit.of(limit + 1));
+        Limit oneMore = Limit.of(limit + 1);
+        List<BalanceHistory> fetched = before == null
+                ? movements.findNewest(wallet.getId(), oneMore)
+                : movements.findPageBefore(wallet.getId(), before, oneMore);
         boolean hasOlder = fetched.size() > limit;
         List<BalanceHistory> page = hasOlder ? fetched.subList(0, limit) : fetched;
 
         return new HistoryPage(
                 mapper.toHistoryResponses(page),
-                hasOlder ? page.getLast().getId() : null
+                hasOlder ? page.getLast().getEntryNo() : null
         );
     }
 

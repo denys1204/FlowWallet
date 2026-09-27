@@ -85,6 +85,9 @@ lock order and the idempotency checks are specified there, not here.
   the schema holds the rule for any writer that skips it (`wallets_balance_not_negative`). Ledger amounts are
   always positive and `type` carries the direction (`balance_history_amount_positive`)
   ([ADR 0012](docs/adr/0012-balances-and-append-only-ledger.md)).
+- Ledger order is the per-wallet `entry_no`, never the id: `Wallet.credit`/`debit` advance `last_entry_no` under
+  the row lock and the `BalanceHistory` factory called right after takes it; `(wallet_id, entry_no)` is unique,
+  and history sorts and pages by it ([ADR 0021](docs/adr/0021-per-wallet-ledger-entry-numbers.md)).
 - Every balance write takes a `PESSIMISTIC_WRITE` lock on the wallet row
   (`WalletRepository.lockByUserIdAndCurrency`); `@Version` stays as a backstop, and read-only endpoints use the
   non-locking finders. Code that locks more than one wallet in a transaction locks them in ascending

@@ -274,10 +274,16 @@ the currency, the amount's precision and a transfer to oneself. The money then m
    request the caller can afford learns that a wallet is missing. A transfer never creates a wallet.
 6. It credits the recipient's wallet and writes the two ledger entries under the lower-cased key:
    `TRANSFER_OUT` on the sender's wallet and `TRANSFER_IN` on the recipient's. Each entry names the user on
-   the other side.
+   the other side and takes the next entry number of its own wallet.
 
 A balance never goes below zero. `Wallet.debit` refuses an overdraft before anything is written, and a CHECK
 on `wallets.balance` holds the same rule for any code path that skips it.
+
+Every balance change, a credit from the consumer as much as either side of a transfer, advances the wallet's
+`last_entry_no` under its row lock, and the ledger entry it writes carries that number. Each wallet's entries
+are therefore numbered 1, 2, 3 in commit order, whichever instance wrote them, and the history endpoint sorts
+and pages by that number rather than by the row id, which a pooled sequence hands out per instance
+([ADR 0021](docs/adr/0021-per-wallet-ledger-entry-numbers.md)).
 
 Two requests with one key from different sender wallets need not share a lock. If their transfers share a
 wallet, such as the recipient, they run one after the other on its lock, and the second one's key lookup

@@ -21,13 +21,23 @@ public interface BalanceHistoryRepository extends JpaRepository<BalanceHistory, 
     Optional<BalanceHistory> findByTransactionReferenceAndType(String transactionReference, TransactionType type);
 
     /**
-     * A page of movements for one wallet, newest first, starting just below {@code before}, or from the newest
-     * when it is null. A cursor rather than an offset keeps pages stable while credits arrive.
-     * See docs/adr/0012-balances-and-append-only-ledger.md.
+     * The newest movements of one wallet, newest first: the first page of its history.
+     * See docs/adr/0021-per-wallet-ledger-entry-numbers.md.
+     */
+    @Query("select h from BalanceHistory h where h.walletId = :walletId order by h.entryNo desc")
+    List<BalanceHistory> findNewest(@Param("walletId") Long walletId, Limit limit);
+
+    /**
+     * A later page of one wallet's history, newest first, starting just below the entry number {@code before}.
+     * <p>
+     * It is separate from {@link #findNewest} rather than one query with an optional bound: under a generic plan
+     * Postgres cannot turn {@code :before is null or ...} into an index range, and every page would scan all
+     * newer rows. With the bound always present, the unique {@code (wallet_id, entry_no)} index serves both the
+     * filter and the order, so a page reads about {@code limit} rows however long the history is.
      */
     @Query(
-            "select h from BalanceHistory h where h.walletId = :walletId "
-                    + "and (:before is null or h.id < :before) order by h.id desc"
+            "select h from BalanceHistory h where h.walletId = :walletId and h.entryNo < :before "
+                    + "order by h.entryNo desc"
     )
-    List<BalanceHistory> findPageBefore(@Param("walletId") Long walletId, @Param("before") Long before, Limit limit);
+    List<BalanceHistory> findPageBefore(@Param("walletId") Long walletId, @Param("before") long before, Limit limit);
 }
