@@ -89,10 +89,14 @@ Reasoning: [ADR 0014](adr/0014-transfers-in-one-local-transaction.md),
   its key stays tied to the refused request.
 - A deposit and a transfer are protected separately, so a key used for one does not block the other. Use a
   fresh key for each operation anyway.
+- When the service is briefly unavailable, the client cannot tell whether its request went through. Sending
+  the same request again with the same key is safe: the money still moves at most once, and the answer says
+  what happened.
 
 Details: [API reference](api.md#wallet-service). Reasoning:
 [ADR 0005](adr/0005-client-supplied-idempotency-keys.md),
-[ADR 0022](adr/0022-stripe-charge-rules-checked-before-the-reservation.md).
+[ADR 0022](adr/0022-stripe-charge-rules-checked-before-the-reservation.md),
+[ADR 0025](adr/0025-unreachable-database-answers-503.md).
 
 ## Ledger and history
 

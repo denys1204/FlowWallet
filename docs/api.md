@@ -55,8 +55,8 @@ finishes the work itself by confirming the payment with Stripe using `providerDa
 - Errors: `400` for an invalid currency, a missing or invalid key, an amount that isn't positive, or a
   deposit Payment Service refuses (its message is passed on); `404` for no such wallet, checked before
   anything is charged; `409` as above; `502` when Payment Service is unreachable, times out, fails to start
-  the payment or answers unexpectedly, with the detail saying which. Retrying a `502` with the same key is
-  safe.
+  the payment or answers unexpectedly, with the detail saying which; `503` when the wallet's database is
+  unavailable. Retrying a `502` or `503` with the same key is safe.
 - A `400` passed on from Payment Service leaves the key free, except the one for a payment Stripe itself
   refused: its detail says to correct the request and retry with a new key
   ([ADR 0022](adr/0022-stripe-charge-rules-checked-before-the-reservation.md)).
@@ -106,10 +106,11 @@ a transfer, and a replay has to match the first answer in status as well as body
   caller received, or a request that lost a race for the key at the ledger's unique index. Every cause gets
   the same answer, so it reveals nothing about someone else's transfer. Keys are global, though, so a `409`
   still tells any caller that a key was used for some transfer, which is one more reason to use random keys.
-- A refused transfer (`400`, `404`, `406`, `422`, `503`) writes nothing, so its key stays free and a later
-  request under it is judged from scratch. A transfer refused for low funds can therefore go through later
-  under the same key, after a top-up. Treat a 4xx as the final answer for that intent: a client that retries
-  a `422` automatically with the same key can move money long after the user stopped expecting it.
+- A refused transfer (`400`, `404`, `406`, `422`, or `503` for a lost lock) writes nothing, so its key stays
+  free and a later request under it is judged from scratch. A transfer refused for low funds can therefore go
+  through later under the same key, after a top-up. Treat a 4xx as the final answer for that intent: a
+  client that retries a `422` automatically with the same key can move money long after the user stopped
+  expecting it.
 - A key binds one kind of operation. The same key can name a deposit and a transfer, and each is still
   protected on its own: a payment is credited at most once and a key starts at most one transfer. The wallet
   can't refuse a key that a deposit uses, because an in-flight deposit's key exists only in `payment_db`
@@ -123,7 +124,9 @@ a transfer, and a replay has to match the first answer in status as well as body
   `422` for a recipient without a wallet in the currency.
 - Errors: `400` as above; `404` "No USD wallet", always about the caller's own wallet; `409` as above;
   `422` "Insufficient funds in the USD wallet" (no figures) or "The recipient holds no USD wallet"; `503`
-  when a lock or version check failed, in which case nothing moved and a retry with the same key is safe.
+  when a lock or version check failed, in which case nothing moved, or when the database is unavailable, in
+  which case the transfer may have committed. A retry with the same key is safe in both cases: it gets the
+  receipt or makes the transfer once.
 
 ### Provider webhook
 
@@ -242,8 +245,13 @@ The status mapping lives in one place, and each status stands for one remedy
   Retrying a deposit with the same key is safe.
 - `503`: a transfer that lost a lock or a version check (a deadlock, a lock wait that timed out, a version
   conflict), which the lock order is meant to rule out, or Payment Service's answer to a deposit whose twin
-  request with the same key is still starting the payment (the wallet turns that one into a `502`). Nothing
-  was moved, and retrying with the same key is safe.
+  request with the same key is still starting the payment (the wallet turns that one into a `502`). In these
+  cases nothing moved. On any endpoint of either service, `503` also means the database is unavailable: a
+  transaction that could not begin, a connection lost or ended by Postgres, a query timeout. The detail is
+  "Service temporarily unavailable; retry the request, with the same Idempotency-Key if it has one", and it
+  does not say whether anything moved, because a connection lost during the commit leaves that unknown.
+  Retrying with the same key is safe in every case
+  ([ADR 0025](adr/0025-unreachable-database-answers-503.md)).
 - `500`: a correctly signed webhook payload that can't be processed, a transfer that broke a database CHECK
   or overflowed a column, or anything unexpected. The detail stays generic; the specifics go to the logs and
   are never returned.

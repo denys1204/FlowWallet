@@ -34,6 +34,12 @@
             <scope>provided</scope>
         </dependency>
 
+        <!-- Spring TX — the data access and transaction exceptions GlobalExceptionHandler answers with 503 -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-tx</artifactId>
+        </dependency>
+
         <!-- Validation — ConstraintViolationException handled by GlobalExceptionHandler -->
         <dependency>
             <groupId>jakarta.validation</groupId>

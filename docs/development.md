@@ -169,7 +169,7 @@ webhooks.
 
 ## Testing
 
-There are 484 tests, all green: 239 in the payment service, 211 in the wallet service, 33 in platform and 1 in
+There are 495 tests, all green: 239 in the payment service, 212 in the wallet service, 43 in platform and 1 in
 the gateway (it binds the gateway's own `application.yml` into Spring Cloud Gateway's `HttpClientProperties`,
 so a YAML regression that drops the response or connect timeout fails here rather than in a live request left
 waiting). The rest go after the parts most likely to be wrong rather than the ones easiest to reach. That means
@@ -178,7 +178,8 @@ webhook state machine (a later failure must not undo an earlier success, but a l
 an earlier failure), the outbox's claim, retry and backoff boundaries, Stripe signature verification
 against payloads signed with a real secret (placeholder secrets and malformed headers refused, nothing parsed
 before the check), the webhook size cap, the check of a success against the stored amount and currency, the
-RFC 9457 status mapping, the minor-unit conversion that decides how much money actually leaves a card, the
+RFC 9457 status mapping (a database the service cannot reach answers `503`, any other data access failure
+`500`), the minor-unit conversion that decides how much money actually leaves a card, the
 currencies Stripe charges and its minimum charges checked before a row is reserved, a Stripe refusal told
 apart from a failure (400 against 502) and the wallet's three kinds of 502, a deposit that loses the
 reservation to its own twin, a second recording of the same Stripe answer, the Stripe call's timeouts and

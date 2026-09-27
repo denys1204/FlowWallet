@@ -316,6 +316,12 @@ transfer waits as long as another transaction holds one of its rows, and every t
 that holds a wallet row does only database work. The locking rules are in
 [ADR 0011](docs/adr/0011-wallet-row-locking.md).
 
+A database the service cannot reach also gets `503`, on the transfer path and on every other endpoint of both
+services: a transaction that could not begin, a connection lost or ended by Postgres, or a query timeout. The
+retry is the same, but the outcome is not known: a connection lost during the commit may follow a transfer that
+committed. The retry settles it, since the key is judged under the locks and a committed transfer answers with
+its receipt ([ADR 0025](docs/adr/0025-unreachable-database-answers-503.md)).
+
 ## Identity & security model
 
 - User identity travels between services in the `X-User-Id` HTTP header and reaches controllers through the

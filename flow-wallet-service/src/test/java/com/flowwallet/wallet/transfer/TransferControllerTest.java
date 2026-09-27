@@ -9,6 +9,7 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import org.springframework.transaction.CannotCreateTransactionException;
 
 import java.math.BigDecimal;
 
@@ -151,6 +152,23 @@ class TransferControllerTest {
 
         assertThat(answer).isEqualTo(406);
         verifyNoInteractions(transfers);
+    }
+
+    @Test
+    void aDatabaseThatCannotBeReachedAnswers503() throws Exception {
+        // Guards the platform mapping losing to the last-resort handler: a transaction that cannot begin because
+        // Postgres is down or the pool timed out must answer 503, whose remedy is a retry with the same key, and
+        // not a 500 that tells the client the fault is permanent.
+        when(transfers.transfer(anyString(), anyString(), anyString(), any())).thenThrow(
+                new CannotCreateTransactionException("Could not open JPA EntityManager for transaction")
+        );
+
+        mockMvc.perform(transfer(body(RECIPIENT, "25.00"))
+                        .header("X-User-Id", CALLER)
+                        .header("Idempotency-Key", KEY))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.detail").value("Service temporarily unavailable; retry the request, "
+                        + "with the same Idempotency-Key if it has one"));
     }
 
     @Test
