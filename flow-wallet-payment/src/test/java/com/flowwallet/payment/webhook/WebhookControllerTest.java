@@ -74,6 +74,8 @@ class WebhookControllerTest {
 
     @Test
     void aBadSignatureIsA400Problem() throws Exception {
+        // Guards a forged or stale delivery being answered as anything but a 400 that Stripe will not retry as a
+        // server fault.
         doThrow(new InvalidWebhookSignatureException("Invalid Stripe signature"))
                 .when(webhookService).processWebhook(anyString(), anyString(), anyMap());
 
@@ -85,6 +87,8 @@ class WebhookControllerTest {
 
     @Test
     void anUnknownProviderIsA400Problem() throws Exception {
+        // Guards an unknown provider path reaching a 500, which would invite retries of a request that can never
+        // succeed.
         doThrow(new UnsupportedPaymentProviderException("Unsupported payment provider"))
                 .when(webhookService).processWebhook(eq("paypal"), anyString(), anyMap());
 
@@ -94,6 +98,8 @@ class WebhookControllerTest {
 
     @Test
     void anEventThisSideCannotProcessIsA500Problem() throws Exception {
+        // Guards a processing defect being answered 2xx, which would make Stripe stop redelivering an event that
+        // was never applied.
         doThrow(new WebhookProcessingException("Failed to deserialize Stripe event data", new RuntimeException()))
                 .when(webhookService).processWebhook(anyString(), anyString(), anyMap());
 

@@ -33,7 +33,11 @@
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
-        <!-- Boot's auto-configured RestClient.Builder for the Payment Service client -->
+        <!--
+            Boot's auto-configured RestClient.Builder for the Payment Service client. The plain module is used on
+            purpose: it carries RestClientAutoConfiguration, and spring-boot-starter-restclient could not be
+            resolved in the offline build. Switch to the starter once it can be downloaded.
+        -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-restclient</artifactId>

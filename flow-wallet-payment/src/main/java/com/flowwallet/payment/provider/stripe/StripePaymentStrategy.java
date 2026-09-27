@@ -55,8 +55,8 @@ public class StripePaymentStrategy implements PaymentProviderStrategy {
             );
         } catch (StripeException e) {
             // GlobalExceptionHandler logs every ApiException (ERROR with the stack trace for 5xx, WARN for 4xx),
-            // so this logs only the status and code Stripe gave, which the wrapping exception's message does not
-            // carry, and never the exception itself: passing it here would print its stack trace a second time.
+            // so this logs at INFO and never passes the exception, which would print its stack trace a second
+            // time: a refusal logs Stripe's status and code, a failure its message.
             if (isRefusalOfTheRequest(e)) {
                 log.info(
                         "Stripe refused the payment for transaction {} with {} ({})",

@@ -48,6 +48,7 @@ class PaymentWebhookServiceTest {
 
     @Test
     void aFailureEventIsHandedToTheFailurePathOnly() {
+        // Guards a failure event reaching handleSuccess, which would mark an unpaid transaction as paid.
         WebhookResult result = result(WebhookEventType.PAYMENT_FAILURE);
         when(strategy.handleWebhook("payload", HEADERS)).thenReturn(result);
 

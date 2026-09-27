@@ -113,7 +113,6 @@ class StripePaymentStrategyTest {
                 .hasCause(stripeException);
         // Guards a second stack trace: GlobalExceptionHandler already logs this 502 at ERROR with the full
         // cause chain, so a log here at the same level would print the same trace twice for one failure.
-        // See docs/adr/0027-user-ids-stay-out-of-logs-and-provider-metadata.md.
         assertThat(logs.list).noneMatch(e -> e.getLevel().isGreaterOrEqual(Level.WARN));
     }
 

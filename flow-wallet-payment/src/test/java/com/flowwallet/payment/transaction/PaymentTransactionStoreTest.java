@@ -70,6 +70,7 @@ class PaymentTransactionStoreTest {
 
     @Test
     void recordInitiationLocksMarksAndSaves() {
+        // Guards recordInitiation reading the row without the lock: two answers for one key could then both mark it.
         PaymentTransaction tx = transaction("user-1");
         when(repository.lockById(5L)).thenReturn(Optional.of(tx));
         when(repository.save(tx)).thenReturn(tx);
