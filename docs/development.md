@@ -142,8 +142,8 @@ set real test values for both. `.env.example` has the full list with comments. T
 | `KAFKA_LISTENER_CONCURRENCY` | `3` | Wallet |
 | `WALLET_CONSUMER_RETRY_MAX_ATTEMPTS` | `3` | Wallet: retries before dead-lettering, with backoff from `WALLET_CONSUMER_RETRY_INITIAL_INTERVAL_MS` (`500`) up to `_MAX_INTERVAL_MS` (`10000`, at most `60000`) by `_MULTIPLIER` (`2.0`). The backoff sleeps on the consumer thread without polling, so the cap stays well below Kafka's `max.poll.interval.ms` (`300000`) |
 | `WALLET_PAYMENT_BASE_URL` | `http://localhost:${PAYMENT_SERVICE_PORT}` | Wallet (Payment Service's own address, not the gateway's) |
-| `WALLET_PAYMENT_CONNECT_TIMEOUT` / `_READ_TIMEOUT` | `2s` / `10s` | Wallet |
-| `WALLET_PAYMENT_PROVIDER` | `STRIPE` | Wallet |
+| `WALLET_PAYMENT_CONNECT_TIMEOUT` / `_READ_TIMEOUT` | `2s` / `10s` | Wallet; at least 1ms each |
+| `WALLET_PAYMENT_PROVIDER` | `STRIPE` | Wallet; `STRIPE` is the only accepted value |
 | `STRIPE_API_KEY` / `STRIPE_WEBHOOK_SECRET` | `sk_test_dummy` / none (webhooks disabled) | Payment |
 | `STRIPE_WEBHOOK_TOLERANCE_SECONDS` | `300` | Payment: how old a webhook's signed timestamp may be |
 | `STRIPE_API_CONNECT_TIMEOUT` / `_READ_TIMEOUT` | `2s` / `6s` | Payment: how long a Stripe API call may take to connect and to answer |
@@ -159,9 +159,9 @@ set real test values for both. `.env.example` has the full list with comments. T
 | `KAFKA_EXTERNAL_PORT` / `KAFKA_UI_PORT` | `9092` / `8090` | Docker Compose |
 
 The wallet service won't start with values that make no sense, such as a negative retry count, a retry
-multiplier below 1.0, an initial interval above the maximum, a maximum interval above 60000 ms, or a blank
-Payment Service URL. The payment service does the same for a
-deposit range that is inverted, not positive, or too wide for `NUMERIC(19,4)`, a Stripe timeout below 1ms or a
+multiplier below 1.0, an initial interval above the maximum, a maximum interval above 60000 ms, a blank
+Payment Service URL, a Payment Service timeout below 1ms, or a provider other than `STRIPE`. The payment service
+does the same for a deposit range that is inverted, not positive, or too wide for `NUMERIC(19,4)`, a Stripe timeout below 1ms or a
 negative Stripe retry count, a webhook tolerance that isn't positive, a webhook size limit outside 1B to 16MB, an
 outbox batch size, attempt count, backoff, retention or stuck-processing threshold below 1, an outbox backoff base above its maximum, and a `payment.events` topic with
 more in-sync replicas than replicas. A missing webhook secret doesn't stop it starting; it only disables
@@ -169,7 +169,7 @@ webhooks.
 
 ## Testing
 
-There are 470 tests, all green: 239 in the payment service, 197 in the wallet service, 33 in platform and 1 in
+There are 476 tests, all green: 239 in the payment service, 203 in the wallet service, 33 in platform and 1 in
 the gateway (it binds the gateway's own `application.yml` into Spring Cloud Gateway's `HttpClientProperties`,
 so a YAML regression that drops the response or connect timeout fails here rather than in a live request left
 waiting). The rest go after the parts most likely to be wrong rather than the ones easiest to reach. That means
