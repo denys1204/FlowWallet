@@ -15,7 +15,7 @@ decision unchanged, such as a renamed class, is edited in place.
 | [0005](0005-client-supplied-idempotency-keys.md) | A client-supplied Idempotency-Key binds the terms of one money operation | Accepted |
 | [0006](0006-short-transactions-across-bean-boundaries.md) | Transactions are short, database-only and entered across a bean boundary | Accepted |
 | [0007](0007-unique-constraints-decide.md) | Unique constraints decide uniqueness, and a violation is handled outside the aborted transaction | Accepted |
-| [0008](0008-transactional-outbox.md) | Payment events leave through a transactional outbox with at-least-once delivery | Accepted |
+| [0008](0008-transactional-outbox.md) | Payment events leave through a transactional outbox with at-least-once delivery | Accepted, extended by [0018](0018-outbox-sends-own-their-claim.md) |
 | [0009](0009-payment-event-contract.md) | Payment events evolve additively, are typed by header, deduplicated on eventId and need no ordering | Accepted |
 | [0010](0010-idempotent-payment-event-consumer.md) | The wallet consumer credits each payment once and sends every failure to a durable place | Accepted |
 | [0011](0011-wallet-row-locking.md) | Every balance write locks the wallet row, in a fixed order, with nothing read first | Accepted |
@@ -25,3 +25,4 @@ decision unchanged, such as a renamed class, is edited in place.
 | [0015](0015-currency-precision-and-no-rounding.md) | Amounts sit on an explicit per-currency grid and are refused, never rounded | Accepted |
 | [0016](0016-error-model-and-status-codes.md) | Errors are RFC 9457 problems whose status tells the client what to do | Accepted, extended by [0017](0017-webhooks-verified-before-they-are-read.md) |
 | [0017](0017-webhooks-verified-before-they-are-read.md) | Webhooks are bounded and verified before they are read, and refused without a signing secret | Accepted, extends [0016](0016-error-model-and-status-codes.md) |
+| [0018](0018-outbox-sends-own-their-claim.md) | An outbox send acts on its row only while it holds the claim, and only a failed send counts as an attempt | Accepted, extends [0008](0008-transactional-outbox.md) |

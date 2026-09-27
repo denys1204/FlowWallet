@@ -165,8 +165,15 @@ Delivery to Kafka goes two ways:
 
 How it stays reliable:
 
-- A sender claims a row with an atomic compare-and-swap, `UPDATE ... SET PROCESSING WHERE id=? AND status=PENDING`, without row locks.
-- A failed send increments a retry counter and backs off exponentially through `next_attempt_at`. After `max-retries` the row becomes `FAILED`.
+- A sender claims a row with an atomic compare-and-swap, `UPDATE ... SET PROCESSING, processing_started_at=? WHERE
+  id=? AND status=PENDING`, without row locks. That timestamp is the claim: completing, retrying, failing or
+  releasing the row matches on it as well, so a sender whose row was reset in the meantime changes nothing
+  ([ADR 0018](docs/adr/0018-outbox-sends-own-their-claim.md)).
+- Any exception from building or sending the record is a failed attempt. It increments the retry counter,
+  stores the exception's cause chain in `error_message` and backs off exponentially through `next_attempt_at`.
+  After `max-retries` attempts the row becomes `FAILED`. A database error after a delivered send is not an
+  attempt: the row stays in `PROCESSING` for the reaper. An interrupt during shutdown is not an attempt either:
+  the row goes back to `PENDING` and the poller stops claiming rows.
 - Rows stuck in `PROCESSING` are recovered at runtime. A scheduled reaper returns anything older than a
   threshold to `PENDING`, and the threshold sits well above the longest plausible send, because a shorter
   one could reset a row that a live instance is still publishing.

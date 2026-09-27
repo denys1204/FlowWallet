@@ -25,7 +25,7 @@ public class OutboxOperations {
      * @return the number of rows requeued
      */
     public int requeueFailed() {
-        int requeued = outboxEventRepository.requeueFailed(OutboxStatus.PENDING, OutboxStatus.FAILED);
+        int requeued = outboxEventRepository.requeueFailed();
         if (requeued > 0) {
             log.info("Requeued {} FAILED outbox events back to PENDING", requeued);
         }

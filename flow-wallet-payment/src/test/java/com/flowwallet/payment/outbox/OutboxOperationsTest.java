@@ -27,9 +27,9 @@ class OutboxOperationsTest {
 
     @Test
     void requeueFailedReturnsFailedEventsToPending() {
-        when(repository.requeueFailed(OutboxStatus.PENDING, OutboxStatus.FAILED)).thenReturn(2);
+        when(repository.requeueFailed()).thenReturn(2);
 
         assertThat(operations.requeueFailed()).isEqualTo(2);
-        verify(repository).requeueFailed(OutboxStatus.PENDING, OutboxStatus.FAILED);
+        verify(repository).requeueFailed();
     }
 }

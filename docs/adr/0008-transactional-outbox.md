@@ -1,6 +1,6 @@
 # 0008. Payment events leave through a transactional outbox with at-least-once delivery
 
-- Status: Accepted
+- Status: Accepted, extended by [0018](0018-outbox-sends-own-their-claim.md)
 - Date: 2026-07-03
 
 ## Context
@@ -25,13 +25,14 @@ transaction commits. `OutboxPoller.pollOutbox` runs every `outbox.poll-interval-
 most `outbox.batch-size` per run, the `PENDING` rows whose `next_attempt_at` is null or past: rows the fast path missed
 and rows due for a retry.
 
-`OutboxMessageSender.processEvent` claims a row with `lockForProcessing`, a conditional UPDATE from `PENDING` to
-`PROCESSING` that also sets `processing_started_at` and runs in its own `REQUIRES_NEW` transaction. The sender whose
-UPDATE hits the row owns it; any other sender sees 0 rows and skips. No row lock is held and no transaction is open
-during the send, and a successful send ends with `markAsCompleted`. A failed send goes to `incrementRetryOrFail`, which
-increments `retry_count`, stores the whole error in `error_message` (TEXT, never truncated) and sets `next_attempt_at`
+`OutboxMessageSender.processEvent` claims a row with `claim`, a conditional UPDATE from `PENDING` to `PROCESSING`
+that also sets `processing_started_at` and runs in its own `REQUIRES_NEW` transaction. The sender whose UPDATE hits
+the row owns it; any other sender sees 0 rows and skips. No row lock is held and no transaction is open during the
+send, and a successful send ends with `markCompleted`. A failed send goes to `scheduleRetry`, which increments
+`retry_count`, stores the error's cause chain in `error_message` (TEXT, never truncated) and sets `next_attempt_at`
 to now plus `retry-backoff-base-ms * 2^retryCount` (the count before this failure), capped at `retry-backoff-max-ms`
-with overflow clamped to the cap. When the count reaches `max-retries`, the same UPDATE marks the row `FAILED`.
+with overflow clamped to the cap. The failure that brings the count to `max-retries` goes to `markFailed` instead,
+which increments the count and marks the row `FAILED`.
 
 A sender that dies mid-send leaves its row in `PROCESSING`. On `ApplicationReadyEvent`, `resetStuckEvents` returns every
 such row to `PENDING` with no age threshold. At runtime `reapStuckProcessing` returns rows whose `processing_started_at`
@@ -70,7 +71,7 @@ idempotent; the wallet deduplicates on `eventId` ([0010](0010-idempotent-payment
 ## Consequences
 
 - A committed status change always has its event, and a rolled-back one never does.
-- Duplicates are expected. They come from a crash between the send and `markAsCompleted`, or a `markAsCompleted` that
+- Duplicates are expected. They come from a crash between the send and `markCompleted`, or a `markCompleted` that
   throws and leaves the row to the reaper; from a send the producer reports as failed after the broker already wrote
   the record; from the startup reset, which also returns rows still in flight, whether another instance is sending them
   in a rolling deploy or this instance started them before `ApplicationReadyEvent` (scheduling and the web server start

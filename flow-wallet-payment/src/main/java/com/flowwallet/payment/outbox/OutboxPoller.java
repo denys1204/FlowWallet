@@ -30,7 +30,7 @@ public class OutboxPoller {
      */
     @EventListener(ApplicationReadyEvent.class)
     public void resetStuckEvents() {
-        int resetCount = outboxEventRepository.resetStuckEvents(OutboxStatus.PENDING, OutboxStatus.PROCESSING);
+        int resetCount = outboxEventRepository.resetAllProcessingToPending();
 
         if (resetCount > 0) {
             log.info("Reset {} stuck outbox events from PROCESSING to PENDING on startup", resetCount);
@@ -45,11 +45,7 @@ public class OutboxPoller {
     public void reapStuckProcessing() {
         Instant threshold = Instant.now().minusMillis(outboxProperties.getStuckProcessingThresholdMs());
 
-        int reaped = outboxEventRepository.resetStuckProcessing(
-                OutboxStatus.PENDING,
-                OutboxStatus.PROCESSING,
-                threshold
-        );
+        int reaped = outboxEventRepository.resetProcessingClaimedBefore(threshold);
 
         if (reaped > 0) {
             log.warn(
@@ -63,7 +59,6 @@ public class OutboxPoller {
     @Scheduled(fixedDelayString = "${outbox.poll-interval-ms:10000}")
     public void pollOutbox() {
         List<OutboxEvent> events = outboxEventRepository.findDispatchable(
-                OutboxStatus.PENDING,
                 Instant.now(),
                 PageRequest.of(0, outboxProperties.getBatchSize())
         );
@@ -75,16 +70,17 @@ public class OutboxPoller {
         log.debug("Fallback Poller: Found {} unprocessed outbox events", events.size());
 
         for (OutboxEvent event : events) {
+            // An interrupt means shutdown. Claiming another row now would only start a send that cannot finish.
+            if (Thread.currentThread().isInterrupted()) {
+                log.info("Fallback Poller: interrupted, leaving the remaining outbox events for the next run");
+                return;
+            }
             try {
                 outboxMessageSender.processEvent(event.getId());
-            } catch (OutboxMessageProcessingException e) {
+            } catch (RuntimeException e) {
                 // Skip it, so one failing row cannot block other payments' events. Send order per reference is
                 // therefore not guaranteed. See docs/adr/0008-transactional-outbox.md.
-                log.error(
-                        "Fallback Poller: Failed to process outbox event {}. Skipping; it will be retried next poll.",
-                        event.getId(),
-                        e
-                );
+                log.error("Fallback Poller: outbox event {} was not sent; moving on to the next", event.getId(), e);
             }
         }
     }
@@ -95,10 +91,7 @@ public class OutboxPoller {
 
         // COMPLETED only. A FAILED row is the only record of an event that never reached Kafka (for a completed
         // payment, a credit that never happened), so it stays until an operator requeues it.
-        int deleted = outboxEventRepository.deleteOldEvents(
-                List.of(OutboxStatus.COMPLETED),
-                cutoff
-        );
+        int deleted = outboxEventRepository.deleteCompletedBefore(cutoff);
 
         if (deleted > 0) {
             log.info(
