@@ -18,6 +18,14 @@ import org.springframework.validation.annotation.Validated;
 @ConfigurationProperties(prefix = "wallet.consumer.retry")
 public class PaymentEventConsumerProperties {
     /**
+     * The backoff sleeps on the consumer thread, which does not poll meanwhile. Kafka's default
+     * {@code max.poll.interval.ms}, which this service keeps, is 300000; a pause near it makes the broker drop the
+     * consumer from its group mid-retry and hand the partition to another. A fifth of it leaves room for the
+     * records the same poll processed before the failure.
+     */
+    static final long MAX_INTERVAL_CEILING_MS = 60_000;
+
+    /**
      * Redeliveries after the first attempt, for failures a later attempt can resolve, such as a momentary
      * database outage. A record that fails every time exhausts them and is dead-lettered.
      */
@@ -40,5 +48,10 @@ public class PaymentEventConsumerProperties {
     @AssertTrue(message = "wallet.consumer.retry.initial-interval-ms must not exceed max-interval-ms")
     public boolean isIntervalRangeOrdered() {
         return initialIntervalMs <= maxIntervalMs;
+    }
+
+    @AssertTrue(message = "wallet.consumer.retry.max-interval-ms must not exceed 60000 (max.poll.interval.ms / 5)")
+    public boolean isMaxIntervalWellBelowPollInterval() {
+        return maxIntervalMs <= MAX_INTERVAL_CEILING_MS;
     }
 }

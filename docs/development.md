@@ -140,7 +140,7 @@ set real test values for both. `.env.example` has the full list with comments. T
 | `KAFKA_TOPIC_PAYMENT_EVENTS_DLT_PARTITIONS` / `_REPLICAS` | `3` / `1` | Wallet |
 | `KAFKA_CONSUMER_GROUP_ID` | `flow-wallet-service` | Wallet |
 | `KAFKA_LISTENER_CONCURRENCY` | `3` | Wallet |
-| `WALLET_CONSUMER_RETRY_MAX_ATTEMPTS` | `3` | Wallet: retries before dead-lettering, with backoff from `WALLET_CONSUMER_RETRY_INITIAL_INTERVAL_MS` (`500`) up to `_MAX_INTERVAL_MS` (`10000`) by `_MULTIPLIER` (`2.0`) |
+| `WALLET_CONSUMER_RETRY_MAX_ATTEMPTS` | `3` | Wallet: retries before dead-lettering, with backoff from `WALLET_CONSUMER_RETRY_INITIAL_INTERVAL_MS` (`500`) up to `_MAX_INTERVAL_MS` (`10000`, at most `60000`) by `_MULTIPLIER` (`2.0`). The backoff sleeps on the consumer thread without polling, so the cap stays well below Kafka's `max.poll.interval.ms` (`300000`) |
 | `WALLET_PAYMENT_BASE_URL` | `http://localhost:${PAYMENT_SERVICE_PORT}` | Wallet (Payment Service's own address, not the gateway's) |
 | `WALLET_PAYMENT_CONNECT_TIMEOUT` / `_READ_TIMEOUT` | `2s` / `10s` | Wallet |
 | `WALLET_PAYMENT_PROVIDER` | `STRIPE` | Wallet |
@@ -156,8 +156,9 @@ set real test values for both. `.env.example` has the full list with comments. T
 | `LOG_LEVEL` / `APP_LOG_LEVEL` | `INFO` / `DEBUG` | Payment, Wallet |
 | `KAFKA_EXTERNAL_PORT` / `KAFKA_UI_PORT` | `9092` / `8090` | Docker Compose |
 
-The wallet service won't start with values that make no sense, such as a retry multiplier below 1.0, an
-initial interval above the maximum, or a blank Payment Service URL. The payment service does the same for a
+The wallet service won't start with values that make no sense, such as a negative retry count, a retry
+multiplier below 1.0, an initial interval above the maximum, a maximum interval above 60000 ms, or a blank
+Payment Service URL. The payment service does the same for a
 deposit range that is inverted, not positive, or too wide for `NUMERIC(19,4)`, a webhook tolerance that isn't
 positive, a webhook size limit outside 1B to 16MB, an outbox batch size, attempt count, backoff, retention or
 stuck-processing threshold below 1, an outbox backoff base above its maximum, and a `payment.events` topic with
@@ -166,7 +167,7 @@ webhooks.
 
 ## Testing
 
-There are 387 tests, all green: 185 in the payment service, 168 in the wallet service, 33 in platform and 1 in
+There are 396 tests, all green: 185 in the payment service, 177 in the wallet service, 33 in platform and 1 in
 the gateway (it binds the gateway's own `application.yml` into Spring Cloud Gateway's `HttpClientProperties`,
 so a YAML regression that drops the response or connect timeout fails here rather than in a live request left
 waiting). The rest go after the parts most likely to be wrong rather than the ones easiest to reach. That means

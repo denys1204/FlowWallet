@@ -124,15 +124,25 @@ class KafkaConsumerConfigTest {
         assertThat(topic.configs()).containsEntry(TopicConfig.RETENTION_MS_CONFIG, "-1");
     }
 
+    private static String shipped(String key) throws Exception {
+        PropertySource<?> yaml = new YamlPropertySourceLoader()
+                .load("application", new ClassPathResource("application.yml"))
+                .getFirst();
+        return String.valueOf(yaml.getProperty(key));
+    }
+
     @Test
     void theShippedConfigurationCreatesTopicsOrFailsStartupAndUpdatesExistingOnes() throws Exception {
         // Without fail-fast, a start while the broker is down logs one error and never creates the dead-letter
         // topic. Without modify-topic-configs, a topic that already exists keeps the broker's retention.
-        PropertySource<?> yaml = new YamlPropertySourceLoader()
-                .load("application", new ClassPathResource("application.yml"))
-                .getFirst();
+        assertThat(shipped("spring.kafka.admin.fail-fast")).isEqualTo("true");
+        assertThat(shipped("spring.kafka.admin.modify-topic-configs")).isEqualTo("true");
+    }
 
-        assertThat(String.valueOf(yaml.getProperty("spring.kafka.admin.fail-fast"))).isEqualTo("true");
-        assertThat(String.valueOf(yaml.getProperty("spring.kafka.admin.modify-topic-configs"))).isEqualTo("true");
+    @Test
+    void aGroupWithoutCommittedOffsetsStartsFromTheOldestRecord() throws Exception {
+        // With latest, a new group id or one whose offsets expired would skip every payment published before it
+        // joined, and those payments would never be credited. The value is literal so no variable can change it.
+        assertThat(shipped("spring.kafka.consumer.auto-offset-reset")).isEqualTo("earliest");
     }
 }

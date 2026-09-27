@@ -40,7 +40,9 @@ spring:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     consumer:
       group-id: ${KAFKA_CONSUMER_GROUP_ID:flow-wallet-service}
-      auto-offset-reset: ${KAFKA_CONSUMER_AUTO_OFFSET_RESET:earliest}
+      # A group with no committed offset, such as a new group id or one whose offsets expired, starts from
+      # the oldest record. With latest it would skip every payment published before it joined.
+      auto-offset-reset: earliest
       max-poll-records: ${KAFKA_CONSUMER_MAX_POLL_RECORDS:500}
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
