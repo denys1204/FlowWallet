@@ -1,0 +1,11 @@
+databaseChangeLog:
+  - changeSet:
+      id: 006-drop-payment-transactions-provider-tx-id-index
+      author: flow-wallet
+      comment: >-
+        The unique constraint on provider_transaction_id already has an index that serves the webhook lookup,
+        so this plain index on the same column only costs a second write on every insert and update.
+      changes:
+        - dropIndex:
+            tableName: payment_transactions
+            indexName: idx_payment_transactions_provider_tx_id
