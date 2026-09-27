@@ -52,7 +52,8 @@ class OutboxEventListenerTest {
 
         assertThatCode(() -> listener.handleOutboxCreatedEvent(new OutboxCreatedEvent(7L))).doesNotThrowAnyException();
 
-        assertThat(logs.list).filteredOn(e -> e.getLevel().isGreaterOrEqual(Level.WARN))
+        assertThat(logs.list)
+                .filteredOn(e -> e.getLevel().isGreaterOrEqual(Level.WARN))
                 .singleElement()
                 .satisfies(e -> {
                     assertThat(e.getLevel()).isEqualTo(Level.WARN);
@@ -69,7 +70,8 @@ class OutboxEventListenerTest {
 
         assertThatCode(() -> listener.handleOutboxCreatedEvent(new OutboxCreatedEvent(7L))).doesNotThrowAnyException();
 
-        assertThat(logs.list).filteredOn(e -> e.getLevel().isGreaterOrEqual(Level.WARN))
+        assertThat(logs.list)
+                .filteredOn(e -> e.getLevel().isGreaterOrEqual(Level.WARN))
                 .singleElement()
                 .satisfies(e -> {
                     assertThat(e.getLevel()).isEqualTo(Level.ERROR);

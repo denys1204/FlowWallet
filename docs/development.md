@@ -158,13 +158,14 @@ set real test values for both. `.env.example` has the full list with comments. T
 The wallet service won't start with values that make no sense, such as a retry multiplier below 1.0, an
 initial interval above the maximum, or a blank Payment Service URL. The payment service does the same for a
 deposit range that is inverted, not positive, or too wide for `NUMERIC(19,4)`, a webhook tolerance that isn't
-positive, a webhook size limit outside 1B to 16MB, an outbox setting below 1, an outbox backoff base above
-its maximum, and a `payment.events` topic with more in-sync replicas than replicas. A missing webhook secret doesn't stop it starting; it
-only disables webhooks.
+positive, a webhook size limit outside 1B to 16MB, an outbox batch size, attempt count, backoff, retention or
+stuck-processing threshold below 1, an outbox backoff base above its maximum, and a `payment.events` topic with
+more in-sync replicas than replicas. A missing webhook secret doesn't stop it starting; it only disables
+webhooks.
 
 ## Testing
 
-There are 350 tests, all green: 184 in the payment service, 132 in the wallet service, 33 in platform and 1 in
+There are 351 tests, all green: 185 in the payment service, 132 in the wallet service, 33 in platform and 1 in
 the gateway (it binds the gateway's own `application.yml` into Spring Cloud Gateway's `HttpClientProperties`,
 so a YAML regression that drops the response or connect timeout fails here rather than in a live request left
 waiting). The rest go after the parts most likely to be wrong rather than the ones easiest to reach. That means

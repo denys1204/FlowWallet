@@ -64,12 +64,15 @@ class OutboxPropertiesTest {
     @Test
     @DisplayName("an attempt count below one fails startup")
     void zeroAttemptsFailsStartup() {
+        // With zero attempts allowed, the first failed send would already exceed the limit and every hiccup would
+        // dead-letter its event.
         runner.withPropertyValues("outbox.max-retries=0").run(context -> assertThat(context).hasFailed());
     }
 
     @Test
     @DisplayName("a backoff base above its maximum fails startup")
     void invertedBackoffRangeFailsStartup() {
+        // The cap would win on the first retry, so the configured base would silently never apply.
         runner.withPropertyValues(
                 "outbox.retry-backoff-base-ms=60000",
                 "outbox.retry-backoff-max-ms=1000"

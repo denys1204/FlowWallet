@@ -16,7 +16,8 @@ events that connect these two databases.
 - `outbox_events` holds `id`, `aggregate_type`, `aggregate_id`, `event_type`, `payload TEXT`, `status`,
   `retry_count`, `error_message` (the cause chain of the last failed send), `next_attempt_at` (backoff),
   `processing_started_at` (the claim time, set only while the row is `PROCESSING`; the reaper's age check and
-  the sender's ownership check), `created_at` and `processed_at`. It is indexed on (`status`, `created_at`) for the poller.
+  the sender's ownership check), `created_at` and `processed_at`. It is indexed on (`status`, `created_at`) for
+  the poller.
 
 `wallet_db` is managed by Liquibase in `flow-wallet-service`:
 

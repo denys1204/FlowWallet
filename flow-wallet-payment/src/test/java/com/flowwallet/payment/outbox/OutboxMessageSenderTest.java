@@ -20,6 +20,7 @@ import java.time.Instant;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -201,6 +202,31 @@ class OutboxMessageSenderTest {
 
         verify(repository).releaseClaim(eq(1L), any(Instant.class));
         verify(repository, never()).scheduleRetry(any(), any(), any(), any());
+        assertThat(Thread.currentThread().isInterrupted()).isTrue();
+    }
+
+    @Test
+    void anExceptionThrownWithTheInterruptFlagSetReleasesTheRowAndClearsTheFlagForTheUpdate() {
+        // KafkaTemplate turns an interrupted wait into its own KafkaException and sets the flag again, so the sender
+        // treats any exception thrown with the flag set as an interrupt. Without that check the failure would count
+        // as an attempt, and with the flag still set during the update the connection pool refuses a thread that
+        // has to wait for a connection, leaving the row to the reaper.
+        givenClaimedEvent(pendingEvent(0));
+        when(kafkaTemplate.send(any(ProducerRecord.class))).thenAnswer(invocation -> {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Interrupted", new InterruptedException());
+        });
+        AtomicBoolean interruptedDuringUpdate = new AtomicBoolean(true);
+        when(repository.releaseClaim(eq(1L), any())).thenAnswer(invocation -> {
+            interruptedDuringUpdate.set(Thread.currentThread().isInterrupted());
+            return 1;
+        });
+
+        sender.processEvent(1L);
+
+        assertThat(interruptedDuringUpdate).isFalse();
+        verify(repository, never()).scheduleRetry(any(), any(), any(), any());
+        verify(repository, never()).markFailed(any(), any(), any());
         assertThat(Thread.currentThread().isInterrupted()).isTrue();
     }
 
