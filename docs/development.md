@@ -135,6 +135,8 @@ set real test values for both. `.env.example` has the full list with comments. T
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` | `flowadmin` / `flowsecret` | Payment, Wallet and Docker Compose |
 | `PAYMENT_DB_NAME` / `WALLET_DB_NAME` | `payment_db` / `wallet_db` | Payment / Wallet (the init script always creates these two names) |
 | `DB_POOL_MAX_SIZE` / `DB_POOL_MIN_IDLE` | `10` / `2` | Payment, Wallet |
+| `DB_POOL_CONNECTION_TIMEOUT_MS` | `5000` | Payment, Wallet: how long a request waits for a pooled connection. It must stay below `GATEWAY_HTTPCLIENT_RESPONSE_TIMEOUT` and `WALLET_PAYMENT_READ_TIMEOUT`, so a database the service cannot reach answers the caller with the service's `503` rather than a timeout further up ([ADR 0025](adr/0025-unreachable-database-answers-503.md)) |
+| `DB_LOG_SERVER_ERROR_DETAIL` | `false` | Payment, Wallet: whether exception messages carry Postgres' DETAIL line. `true` puts user ids and balances into the logs (a duplicate key's values, a refused row), so set it only for local debugging ([ADR 0027](adr/0027-user-ids-stay-out-of-logs-and-provider-metadata.md)) |
 | `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` | Payment, Wallet |
 | `KAFKA_TOPIC_PAYMENT_EVENTS_PARTITIONS` / `_REPLICAS` / `_MIN_INSYNC_REPLICAS` | `3` / `1` / `1` | Payment: applied when the topic is created. A three-broker cluster uses `3` / `2` for the last two; see [events.md](events.md) |
 | `KAFKA_TOPIC_PAYMENT_EVENTS_DLT_PARTITIONS` / `_REPLICAS` | `3` / `1` | Wallet |
@@ -158,52 +160,51 @@ set real test values for both. `.env.example` has the full list with comments. T
 | `LOG_LEVEL` / `APP_LOG_LEVEL` | `INFO` / `DEBUG` | Payment, Wallet |
 | `KAFKA_EXTERNAL_PORT` / `KAFKA_UI_PORT` | `9092` / `8090` | Docker Compose |
 
-The wallet service won't start with values that make no sense, such as a negative retry count, a retry
-multiplier below 1.0, an initial interval above the maximum, a maximum interval above 60000 ms, a blank
-Payment Service URL, a Payment Service timeout below 1ms, or a provider other than `STRIPE`. The payment service
-does the same for a deposit range that is inverted, not positive, or too wide for `NUMERIC(19,4)`, a Stripe timeout below 1ms or a
-negative Stripe retry count, a webhook tolerance that isn't positive, a webhook size limit outside 1B to 16MB, an
-outbox batch size, attempt count, backoff, retention or stuck-processing threshold below 1, an outbox backoff base above its maximum, and a `payment.events` topic with
-more in-sync replicas than replicas. A missing webhook secret doesn't stop it starting; it only disables
-webhooks.
+The wallet service won't start with values that make no sense, such as a negative retry count, a retry multiplier below
+1.0, an initial interval above the maximum, a maximum interval above 60000 ms, a blank Payment Service URL, a Payment
+Service timeout below 1ms, or a provider other than `STRIPE`. The payment service does the same for a deposit range that
+is inverted, not positive, or too wide for `NUMERIC(19,4)`, a Stripe timeout below 1ms or a negative Stripe retry count,
+a webhook tolerance that isn't positive, a webhook size limit outside 1B to 16MB, an outbox batch size, attempt count,
+backoff, retention or stuck-processing threshold below 1, an outbox backoff base above its maximum, and a
+`payment.events` topic with more in-sync replicas than replicas. A missing webhook secret doesn't stop it starting; it
+only disables webhooks.
 
 ## Testing
 
-There are 514 tests, all green: 241 in the payment service, 228 in the wallet service, 44 in platform and 1 in
-the gateway (it binds the gateway's own `application.yml` into Spring Cloud Gateway's `HttpClientProperties`,
-so a YAML regression that drops the response or connect timeout fails here rather than in a live request left
-waiting). The rest go after the parts most likely to be wrong rather than the ones easiest to reach. That means
-the asymmetric webhook state machine (a later failure must not undo an earlier success, but a later success
-must override an earlier failure), the outbox's claim, retry and backoff boundaries, Stripe signature
-verification against payloads signed with a real secret (placeholder secrets and malformed headers refused,
-nothing parsed before the check), the webhook size cap, the check of a success against the stored amount and
-currency, the RFC 9457 status mapping (a database the service cannot reach answers `503`, any other data access
-failure `500`, and no detail quotes a rejected currency, provider or parameter value), the minor-unit
-conversion that decides how much money actually leaves a card, the currencies Stripe charges and its minimum
-charges checked before a row is reserved, a Stripe refusal told apart from a failure (400 against 502) and
-the wallet's three kinds of 502, a deposit that loses the reservation to its own twin, a second recording of
-the same Stripe answer, the Stripe call's timeouts and retries, the optimistic-lock retry on both webhook
-paths, the field names of the internal intent call on both sides of it, the identity and idempotency-key
-rules, and a log line never naming a user id or a Stripe refusal repeating its stack trace after the handler
-already logged it. For the wallet consumer they cover dispatch on the
-`eventType` header, dead-lettering of unreadable records, refusals (an event amount off its currency's grid
-among them), duplicate classification (by the `DEPOSIT` entry alone, since one reference can own one movement
-of each type), the barrier row being written before the wallet is loaded, failed payments never touching a wallet
-(a redelivered failure is acknowledged, any other violation is raised), and the error handler (an unreadable
-record dead-lettered at once, any other failure only after its retries, each dead letter counted, and the
-dead-letter topic created with unlimited retention).
+There are 520 tests, all green: 245 in the payment service, 230 in the wallet service, 44 in platform and 1 in the
+gateway (it binds the gateway's own `application.yml` into Spring Cloud Gateway's `HttpClientProperties`, so a YAML
+regression that drops the response or connect timeout fails here rather than in a live request left waiting). The rest
+go after the parts most likely to be wrong rather than the ones easiest to reach. That means the asymmetric webhook
+state machine (a later failure must not undo an earlier success, but a later success must override an earlier failure),
+the outbox's claim, retry and backoff boundaries, Stripe signature verification against payloads signed with a real
+secret (placeholder secrets and malformed headers refused, nothing parsed before the check), the webhook size cap, the
+check of a success against the stored amount and currency, the RFC 9457 status mapping (a database the service cannot
+reach answers `503`, any other data access failure `500`, and no detail quotes a rejected currency, provider,
+transaction reference or parameter value), the minor-unit conversion that decides how much money actually leaves a card,
+the currencies Stripe charges and its minimum charges checked before a row is reserved, a Stripe refusal told apart from
+a failure (400 against 502) and the wallet's three kinds of 502, a deposit that loses the reservation to its own twin, a
+second recording of the same Stripe answer, the Stripe call's timeouts and retries, the optimistic-lock retry on both
+webhook paths, the field names of the internal intent call on both sides of it, the identity and idempotency-key rules,
+and a log line never naming a user id or a Stripe refusal repeating its stack trace after the handler already logged it.
+Against each service's shipped `application.yml` they check that the datasource URL keeps Postgres' error detail out of
+exception messages and that a request waits at most five seconds for a pooled connection. For the wallet consumer they
+cover dispatch on the `eventType` header, dead-lettering of unreadable records, refusals (an event amount off its
+currency's grid among them), duplicate classification (by the `DEPOSIT` entry alone, since one reference can own one
+movement of each type), the barrier row being written before the wallet is loaded, failed payments never touching a
+wallet (a redelivered failure is acknowledged, any other violation is raised), and the error handler (an unreadable
+record dead-lettered at once, any other failure only after its retries, each dead letter counted, and the dead-letter
+topic created with unlimited retention).
 
-For transfers they cover the lock order in both directions, the key judged only after both locks, and no
-other wallet read in the transaction. With the sender sorting first and last, they cover a retry that still
-gets its receipt after the balance was spent, funds checked before the recipient, a recipient without a
-wallet, and both ledger legs with their counterparties and balances. A completed transfer and a refused
-recipient are each logged by wallet id, never by user id. They also cover every cause of a `409`,
-the status of each refusal, the receipt rendering to the same bytes on a replay, the amount grid (trailing
-zeros, zero-decimal currencies, the size bound), the recipient id and key rules (including a fifth dash and
-non-ASCII digits, on the deposit key as well), a `406` before the service runs (also for a deposit and a
-wallet opening), `401` coming before the header, body and parameter checks on every wallet endpoint,
-violations and lock failures leaving the handler unchanged, the explanation of a violation after the
-rollback, the `503` mapping, and the READ COMMITTED pin.
+For transfers they cover the lock order in both directions, the key judged only after both locks, and no other wallet
+read in the transaction. With the sender sorting first and last, they cover a retry that still gets its receipt after
+the balance was spent, funds checked before the recipient, a recipient without a wallet, and both ledger legs with their
+counterparties and balances. A completed transfer and a refused recipient are each logged by wallet id, never by user
+id. They also cover every cause of a `409`, the status of each refusal, the receipt rendering to the same bytes on a
+replay, the amount grid (trailing zeros, zero-decimal currencies, the size bound), the recipient id and key rules
+(including a fifth dash and non-ASCII digits, on the deposit key as well), a `406` before the service runs (also for a
+deposit and a wallet opening), `401` coming before the header, body and parameter checks on every wallet endpoint (and
+on Payment Service's intent endpoint), violations and lock failures leaving the handler unchanged, the explanation of a
+violation after the rollback, the `503` mapping, and the READ COMMITTED pin.
 
 For the ledger they cover entry numbers rising by one per wallet across credits and both transfer legs, a
 refused debit taking no number, history paged by entry number without skipping or repeating a movement while
@@ -214,14 +215,15 @@ field of the wallet and history responses through the real mapper.
 ./mvnw test
 ```
 
-All of these are unit tests with mocked collaborators, so they can't prove the real database barrier: the
-unique constraints on `processed_events.event_id` and `balance_history (transaction_reference, type)`, the
-classification by read-back, and the row lock. Those have been exercised by hand against real Postgres and
-Kafka (redelivery, duplicate references, forty concurrent credits to one wallet), but no automated test runs
-them yet. The hand check ran while the classification read any entry under the reference, and the lookup of
-the `DEPOSIT` entry alone has run only against mocks. The unique `balance_history (wallet_id, entry_no)`, the
-history queries and the migration that numbers existing ledger rows have not run against a real database
-yet.
+All of these are unit tests with mocked collaborators, so they can't prove the real database barrier: the unique
+constraints on `processed_events.event_id` and `balance_history (transaction_reference, type)`, the classification by
+read-back, and the row lock. Those have been exercised by hand against real Postgres and Kafka (redelivery, duplicate
+references, forty concurrent credits to one wallet), but no automated test runs them yet. The hand check ran while the
+classification read any entry under the reference, and the lookup of the `DEPOSIT` entry alone has run only against
+mocks. The unique `balance_history (wallet_id, entry_no)`, the entry-number history queries and the migration that
+numbers existing ledger rows were checked by hand on a scratch database seeded with interleaved ids: numbering follows
+id order within each wallet, `last_entry_no` equals each wallet's row count, history pages by entry number, and a later
+transfer takes the next number on both wallets. Payment changeset 006 ran by hand against a schema migrated through 005.
 
 For transfers the mocks pin the order of the calls and the decision after each one. What they can't show was
 checked by hand against real Postgres, through the running wallet service on a scratch database:

@@ -24,11 +24,25 @@ already identifies the row without it:
 - `WalletService.open`'s conflict logs nothing: the violation aborted the transaction before a wallet existed, so
   there is no wallet id to log by, and `GlobalExceptionHandler` already logs the currency from the exception's
   own message.
-- `TransferHandler.execute` logs the sending wallet's own id (`Wallet.getId()`), which no URL accepts
-  ([0004](0004-wallet-addressed-by-owner-and-currency.md)) and by itself lets nobody act as anyone. Its
+- `TransferHandler.execute` logs the wallet ids (`Wallet.getId()`) of both legs when a transfer completes, and
+  the sending wallet's id when the recipient holds no wallet; no URL accepts a wallet id
+  ([0004](0004-wallet-addressed-by-owner-and-currency.md)), so by itself it lets nobody act as anyone. The
   missing-recipient warning drops the recipient's id entirely, because no recipient wallet exists to hold one.
 - `StripeRequestMapper.toPaymentIntentParams` keeps `META_TRANSACTION_REF` in the intent's metadata and drops
   `META_USER_ID`; a payment is still traced back to this service's own record by the reference.
+- Both datasource URLs end in `logServerErrorDetail=${DB_LOG_SERVER_ERROR_DETAIL:false}`, which guards the messages
+  Postgres itself writes. By default pgjdbc builds a `PSQLException`'s message from the server's whole error, DETAIL
+  line included: a unique violation on `wallets_user_id_currency_key` quotes `Key (user_id, currency)=(<uuid>, EUR)`,
+  and a CHECK or NOT NULL violation quotes the whole failing row, which can hold `wallets.user_id`,
+  `balance_history.counterparty_user_id`, a balance or a `processed_events` payload. That message reaches three logs:
+  Hibernate's `org.hibernate.orm.jdbc.error` logger writes every SQL error at WARN, including the `409` the code expects
+  on a repeated wallet open; `GlobalExceptionHandler` logs a `500` with its cause chain; the consumer's
+  `PaymentEventRetryListener` prints the most specific cause on each failed attempt and each dead letter. With the
+  setting off, the message is the severity and the primary message, which keeps the constraint name. The full server
+  error stays on the exception (`PSQLException.getServerErrorMessage()`), and no code parses the message: an integrity
+  violation is classified by reading rows back ([0007](0007-unique-constraints-decide.md)).
+  `DB_LOG_SERVER_ERROR_DETAIL=true` turns the detail back on for local debugging, and puts user ids and balances into
+  the logs while it is set.
 
 This supersedes the logging detail of [0014](0014-transfers-in-one-local-transaction.md), whose Decision and
 Consequences describe the missing-recipient refusal as logged with both user ids; `TransferHandler.execute`
@@ -44,6 +58,9 @@ never through a logged id.
 - Truncating or masking the user id, such as its first eight characters. Rejected: a partial UUID still narrows
   the guess enough to matter for a value this sensitive, and the wallet id or the reference already identifies
   the row without it.
+- Raising `org.hibernate.orm.jdbc.error` to ERROR or OFF instead of changing the driver setting. It would
+  silence the `409` path, but the same message still reaches the `500` log in `GlobalExceptionHandler` and the
+  consumer's retry and dead-letter logs, and it would hide SQL errors that are worth a WARN.
 - Keeping the missing-recipient WARN with both ids, since it can also be read as evidence of one caller probing
   for others' wallets. Rejected by the owner: user ids stay out of every log line without exception, and the
   probe itself is still visible from the wallet id, the currency and the attempt count.
@@ -58,3 +75,7 @@ never through a logged id.
   that [0014](0014-transfers-in-one-local-transaction.md) described.
 - A future log statement that would otherwise carry a user id string routes through the wallet id or the
   `transactionReference` instead.
+- A constraint violation in the logs names the constraint but not the refused values. Finding the row takes the
+  surrounding log lines (the wallet id or the reference) or a local run with `DB_LOG_SERVER_ERROR_DETAIL=true`.
+- The Postgres server's own log still records the DETAIL line under its default error verbosity; that log sits
+  with the database, outside the services' logs.

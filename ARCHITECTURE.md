@@ -306,8 +306,9 @@ under the key from another wallet gives `409`. The caller's own identical transf
 because a `409` would send the client to a new key and move the money twice. No `TRANSFER_OUT` under the key
 means either a CHECK fired (the code let through something it should have refused) or a value overflowed its
 column, such as a recipient's balance growing past what `NUMERIC(19,4)` holds. That violation is rethrown as
-a `500` with its stack trace in the log and is never reported as a conflict or a success. The log includes
-the Postgres driver's error detail, which for a CHECK violation prints the refused row with its balances.
+a `500` with its stack trace in the log and is never reported as a conflict or a success. The log names the
+constraint but not the refused row: the datasource URL turns off Postgres' error detail, which would print the
+row with its user ids and balances ([ADR 0027](docs/adr/0027-user-ids-stay-out-of-logs-and-provider-metadata.md)).
 
 The lock order should rule out deadlocks, and while the row lock is held the wallet's `@Version` check has
 nothing to catch. If a deadlock, a lock wait that timed out or a version conflict happens anyway, nothing
@@ -320,7 +321,9 @@ A database the service cannot reach also gets `503`, on the transfer path and on
 services: a transaction that could not begin, a connection lost or ended by Postgres, or a query timeout. The
 retry is the same, but the outcome is not known: a connection lost during the commit may follow a transfer that
 committed. The retry settles it, since the key is judged under the locks and a committed transfer answers with
-its receipt ([ADR 0025](docs/adr/0025-unreachable-database-answers-503.md)).
+its receipt. A request waits at most `DB_POOL_CONNECTION_TIMEOUT_MS` (5 s) for a pooled connection, so the `503`
+comes back before the gateway's 20 s response timeout would answer `504`
+([ADR 0025](docs/adr/0025-unreachable-database-answers-503.md)).
 
 ## Identity & security model
 
@@ -362,7 +365,9 @@ its receipt ([ADR 0025](docs/adr/0025-unreachable-database-answers-503.md)).
 - No log line names a user id anywhere in the wallet or payment services: a wallet-scoped line names the
   wallet id instead, which no URL accepts, and a payment-scoped line names the `transactionReference`. The
   Stripe PaymentIntent's metadata carries the reference and not the user id either, because the id is the
-  only credential a caller has and neither a log reader nor Stripe needs it to do their job
+  only credential a caller has and neither a log reader nor Stripe needs it to do their job. Both datasource
+  URLs set `logServerErrorDetail=false` (`DB_LOG_SERVER_ERROR_DETAIL`), so an exception message carries no
+  Postgres DETAIL line, which would quote a duplicate key's user id or a refused row
   ([ADR 0027](docs/adr/0027-user-ids-stay-out-of-logs-and-provider-metadata.md)).
 - Stripe webhooks are verified cryptographically (HMAC signature with a replay window). That check doesn't
   depend on user identity and stays enforced. The body is capped at 256KB by default and its signature is

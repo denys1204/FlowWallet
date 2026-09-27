@@ -114,6 +114,9 @@ lock order and the idempotency checks are specified there, not here.
   forwards the client's header unchanged, so knowing a user's id is enough to spend their balance. Every
   `TRANSFER_IN` shows the recipient the sender's id and key, and there is no user search endpoint by design
   ([ADR 0003](docs/adr/0003-caller-identity-and-trust-boundary.md)).
+- A user id never appears in a log line, an exception message or Stripe metadata: a wallet-scoped line names the
+  wallet id, a payment-scoped line the `transactionReference`, and the JDBC URLs turn off Postgres error detail,
+  which would quote key values ([ADR 0027](docs/adr/0027-user-ids-stay-out-of-logs-and-provider-metadata.md)).
 - Amounts moved inside the wallet sit on `AmountPrecision`'s grid, a copy of `StripeCurrencyRules`'
   zero-decimal list, its whole-unit ISK entry and its two-decimal cap, and at most 15 integer digits. They are
   refused, never rounded. The lists point at each other; change both sides together

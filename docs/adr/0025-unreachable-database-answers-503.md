@@ -69,3 +69,7 @@ spring-boot-starter-data-jpa, and the reactive gateway does not depend on the pl
 - A Stripe webhook that meets an unreachable database gets `503`, and Stripe redelivers it as it would after a `500`.
 - A lock failure or a version conflict outside the transfer path, such as an optimistic-lock retry that ran out on a
   webhook, answers `503` too.
+- The `503` reaches a caller only if the service gives up on the database before the caller gives up on the service.
+  Both services therefore cap HikariCP's wait for a connection at `DB_POOL_CONNECTION_TIMEOUT_MS` (5000 ms), below
+  the gateway's `GATEWAY_HTTPCLIENT_RESPONSE_TIMEOUT` (20 s) and the wallet's `WALLET_PAYMENT_READ_TIMEOUT` (10 s);
+  with HikariCP's own 30 s a dead database reached a client as the gateway's `504`.
