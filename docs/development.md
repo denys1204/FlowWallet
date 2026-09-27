@@ -163,8 +163,11 @@ only disables webhooks.
 
 ## Testing
 
-There are 324 tests, all green: 159 in the payment service, 132 in the wallet service and 33 in platform. They
-go after the parts most likely to be wrong rather than the ones easiest to reach. That means the asymmetric
+There are 326 tests, all green: 160 in the payment service, 132 in the wallet service, 33 in platform and 1 in
+the gateway (it binds the gateway's own `application.yml` into Spring Cloud Gateway's `HttpClientProperties`,
+so a YAML regression that drops the response or connect timeout fails here rather than in a live request left
+waiting). The rest go after the parts most likely to be wrong rather than the ones easiest to reach. That means
+the asymmetric
 webhook state machine (a later failure must not undo an earlier success, but a later success must override
 an earlier failure), the outbox's claim, retry and backoff boundaries, Stripe signature verification
 against payloads signed with a real secret (placeholder secrets and malformed headers refused, nothing parsed
