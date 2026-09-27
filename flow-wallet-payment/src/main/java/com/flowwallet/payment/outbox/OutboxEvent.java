@@ -8,7 +8,6 @@ import java.time.Instant;
 
 @Entity
 @Getter
-@Setter
 @Builder
 @AllArgsConstructor
 @Table(name = "outbox_events")
@@ -55,4 +54,17 @@ public class OutboxEvent {
 
     @Column(name = "processing_started_at")
     private Instant processingStartedAt;
+
+    /**
+     * A row waiting for its first send. Every later change of state is a conditional UPDATE in
+     * {@link OutboxEventRepository}, so the entity has no mutators.
+     */
+    public static OutboxEvent pending(String aggregateType, String aggregateId, String eventType, String payload) {
+        return OutboxEvent.builder()
+                .aggregateType(aggregateType)
+                .aggregateId(aggregateId)
+                .eventType(eventType)
+                .payload(payload)
+                .build();
+    }
 }

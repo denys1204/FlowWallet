@@ -1,12 +1,11 @@
 package com.flowwallet.payment.transaction.mapper;
 
 import com.flowwallet.contract.constant.KafkaConstants;
-import com.flowwallet.payment.dto.PaymentIntentResponse;
 import com.flowwallet.contract.event.PaymentCompletedEvent;
 import com.flowwallet.contract.event.PaymentFailedEvent;
-import com.flowwallet.payment.outbox.OutboxEvent;
-import com.flowwallet.payment.transaction.PaymentTransaction;
+import com.flowwallet.payment.dto.PaymentIntentResponse;
 import com.flowwallet.payment.provider.dto.PaymentRequestContext;
+import com.flowwallet.payment.transaction.PaymentTransaction;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 
@@ -15,11 +14,6 @@ import java.util.UUID;
 
 @Mapper(componentModel = "spring", imports = {UUID.class, KafkaConstants.class})
 public interface PaymentEventMapper {
-    /**
-     * Never reaches the wire, so it stays out of flow-wallet-contract. See docs/adr/0002-module-boundaries.md.
-     */
-    String AGGREGATE_TYPE_PAYMENT_TRANSACTION = "PaymentTransaction";
-
     @Mapping(target = "eventId", expression = "java(UUID.randomUUID().toString())")
     @Mapping(target = "schemaVersion", expression = "java(KafkaConstants.PAYMENT_EVENT_SCHEMA_VERSION)")
     PaymentCompletedEvent toPaymentCompletedEvent(PaymentTransaction transaction, Instant completedAt);
@@ -31,30 +25,6 @@ public interface PaymentEventMapper {
     @Mapping(target = "providerData", source = "providerMetadata")
     @Mapping(target = "paymentIntentId", source = "providerTransactionId")
     PaymentIntentResponse toResponse(PaymentTransaction transaction);
-
-    @Mapping(target = "aggregateType", constant = AGGREGATE_TYPE_PAYMENT_TRANSACTION)
-    @Mapping(target = "aggregateId", source = "transaction.transactionReference")
-    @Mapping(target = "eventType", constant = KafkaConstants.EVENT_TYPE_PAYMENT_COMPLETED)
-    @Mapping(target = "payload", source = "payload")
-    @Mapping(target = "id", ignore = true)
-    @Mapping(target = "createdAt", ignore = true)
-    @Mapping(target = "processedAt", ignore = true)
-    @Mapping(target = "status", ignore = true)
-    @Mapping(target = "retryCount", ignore = true)
-    @Mapping(target = "errorMessage", ignore = true)
-    OutboxEvent toOutboxEvent(PaymentTransaction transaction, String payload);
-
-    @Mapping(target = "aggregateType", constant = AGGREGATE_TYPE_PAYMENT_TRANSACTION)
-    @Mapping(target = "aggregateId", source = "transaction.transactionReference")
-    @Mapping(target = "eventType", constant = KafkaConstants.EVENT_TYPE_PAYMENT_FAILED)
-    @Mapping(target = "payload", source = "payload")
-    @Mapping(target = "id", ignore = true)
-    @Mapping(target = "createdAt", ignore = true)
-    @Mapping(target = "processedAt", ignore = true)
-    @Mapping(target = "status", ignore = true)
-    @Mapping(target = "retryCount", ignore = true)
-    @Mapping(target = "errorMessage", ignore = true)
-    OutboxEvent toFailedOutboxEvent(PaymentTransaction transaction, String payload);
 
     PaymentRequestContext toRequestContext(PaymentTransaction transaction);
 }

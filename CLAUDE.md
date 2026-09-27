@@ -139,9 +139,8 @@ lock order and the idempotency checks are specified there, not here.
 - Entities follow `PaymentTransaction`: `@Entity @Getter @Builder @AllArgsConstructor @Table
   @NoArgsConstructor(access = PROTECTED)`, `SEQUENCE` ids with a named generator and an explicit
   `allocationSize = 50` matching the Liquibase `incrementBy: 50`, an explicit `@Column(name = ...)` on every
-  non-id field, `@Enumerated(STRING)`, and static factories plus intent-named mutators instead of setters
-  (`OutboxEvent`'s `@Setter` is an older exception). Hibernate runs `ddl-auto: validate`, so an entity change
-  and its migration land in the same commit.
+  non-id field, `@Enumerated(STRING)`, and static factories plus intent-named mutators instead of setters.
+  Hibernate runs `ddl-auto: validate`, so an entity change and its migration land in the same commit.
 - A comment gives the local why in a few lines: what a reader at that spot cannot get from the code and needs in
   order to change it safely (a local invariant, a trap, a non-obvious ordering). Delete comments that restate the
   code. A decision that spans files, with its rejected alternatives, lives in an ADR under `docs/adr/`, and the

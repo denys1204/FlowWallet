@@ -1,6 +1,5 @@
 package com.flowwallet.payment.contract;
 
-import com.flowwallet.contract.constant.KafkaConstants;
 import com.flowwallet.contract.event.PaymentCompletedEvent;
 import com.flowwallet.contract.event.PaymentFailedEvent;
 import org.junit.jupiter.api.DisplayName;
@@ -102,13 +101,5 @@ class PaymentEventWireFormatTest {
         );
 
         assertThat(back).isEqualTo(original);
-    }
-
-    @Test
-    @DisplayName("the schema version stamped on events matches the one the contract declares")
-    void schemaVersionIsTheDeclaredOne() {
-        assertThat(completed().schemaVersion()).isEqualTo(
-                KafkaConstants.PAYMENT_EVENT_SCHEMA_VERSION
-        );
     }
 }

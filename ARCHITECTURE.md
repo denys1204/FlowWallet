@@ -153,7 +153,10 @@ sequenceDiagram
 
 Payment Service never publishes to Kafka straight from business logic. In the same database transaction
 that changes a transaction's status, it also writes a row to `outbox_events`, so the event exists if and
-only if the state change commits. The reasoning is in [ADR 0008](docs/adr/0008-transactional-outbox.md).
+only if the state change commits. `PaymentOutboxService`, which writes the row, requires that transaction
+(`Propagation.MANDATORY`) and fails when called without one. It also chooses the `eventType` header from the
+type of the event it serialises, in one place for both events. The reasoning is in
+[ADR 0008](docs/adr/0008-transactional-outbox.md).
 
 Delivery to Kafka goes two ways:
 

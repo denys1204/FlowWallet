@@ -37,8 +37,8 @@ The reactor has five modules: `flow-wallet-contract`, `flow-wallet-platform`, `f
   so a service can replace it by declaring its own `GlobalExceptionHandler` bean.
 - Each service owns its database, `payment_db` or `wallet_db`, and never touches the other's.
 - A type or constant that belongs to one service stays in that service, even when it looks shareable. The outbox row's
-  aggregate type, `PaymentEventMapper.AGGREGATE_TYPE_PAYMENT_TRANSACTION`, labels a row in Payment Service's own table
-  and never reaches the wire, so it lives next to the mapper that writes it.
+  aggregate type, `PaymentOutboxService.AGGREGATE_TYPE_PAYMENT_TRANSACTION`, labels a row in Payment Service's own
+  table and never reaches the wire, so it lives next to the service that writes it.
 
 ## Alternatives considered
 

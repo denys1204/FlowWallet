@@ -163,7 +163,7 @@ only disables webhooks.
 
 ## Testing
 
-There are 326 tests, all green: 160 in the payment service, 132 in the wallet service, 33 in platform and 1 in
+There are 331 tests, all green: 165 in the payment service, 132 in the wallet service, 33 in platform and 1 in
 the gateway (it binds the gateway's own `application.yml` into Spring Cloud Gateway's `HttpClientProperties`,
 so a YAML regression that drops the response or connect timeout fails here rather than in a live request left
 waiting). The rest go after the parts most likely to be wrong rather than the ones easiest to reach. That means
