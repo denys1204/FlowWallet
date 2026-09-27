@@ -21,7 +21,15 @@ class ProcessedEventTest {
 
     private PaymentFailedEvent failed(String amount) {
         return new PaymentFailedEvent(
-                "evt-1", 1, "ref-1", "pi_1", new BigDecimal(amount), "USD", "alice", "card_declined", AT
+                "evt-1",
+                1,
+                "ref-1",
+                "pi_1",
+                new BigDecimal(amount),
+                "USD",
+                "alice",
+                "card_declined",
+                AT
         );
     }
 

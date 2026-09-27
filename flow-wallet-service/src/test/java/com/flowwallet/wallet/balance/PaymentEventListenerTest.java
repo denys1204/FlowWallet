@@ -187,8 +187,9 @@ class PaymentEventListenerTest {
 
     @Test
     void aPaymentForAWalletThatDoesNotExistIsRecordedRatherThanDeadLettered() {
-        // The payload is kept so the event can be replayed once the wallet exists. Dead-lettering it would
-        // tie recovery to Kafka retention instead.
+        // The payload is kept so the event can be republished under a fresh id once the wallet exists.
+        // Dead-lettering it would put a refusal the wallet understood among the records it could not read or
+        // settle, without the reason that says what to fix.
         doThrow(new UnknownWalletException("alice", "USD")).when(handler).credit(any());
 
         listener.onPaymentEvent(completed("evt-1", "50.00", "USD", "alice"));

@@ -72,8 +72,7 @@ public final class AmountPrecision {
      */
     public static boolean isOnGrid(BigDecimal amount, String currency) {
         BigDecimal stripped = amount.stripTrailingZeros();
-        return fitsIntegerDigits(stripped)
-                && stripped.scale() <= acceptedScale(currency.toUpperCase(Locale.ROOT));
+        return fitsIntegerDigits(stripped) && stripped.scale() <= acceptedScale(currency.toUpperCase(Locale.ROOT));
     }
 
     /**
