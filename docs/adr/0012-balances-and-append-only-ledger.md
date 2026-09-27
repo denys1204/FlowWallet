@@ -28,8 +28,10 @@ reference has to be able to name a payment or both legs of a transfer without an
   reconciled against `Wallet.getBalance()` without recomputing history.
 - Amounts are always positive, and `TransactionType` carries both direction and source: `DEPOSIT`,
   `TRANSFER_IN`, `TRANSFER_OUT`. `WITHDRAWAL` is declared, and nothing writes it yet. The CHECK
-  `balance_history_amount_positive` (`amount > 0`) also refuses a value finer than four decimal places, such as
-  `0.00001`, which Postgres would otherwise round to `0.0000` and store.
+  `balance_history_amount_positive` (`amount > 0`) also refuses a positive value too small for four decimal
+  places, such as `0.00001`, which Postgres would otherwise round to `0.0000` and store. A finer value that
+  rounds to a non-zero amount is still rounded and stored, so precision is refused in code
+  ([0015](0015-currency-precision-and-no-rounding.md)).
 - The ledger is unique on `(transaction_reference, type)` (`balance_history_reference_type_key`). A reference owns
   at most one movement of each type, so a payment is credited at most once, both legs of a transfer share the
   sender's key, and a key starts at most one transfer. `transaction_reference` is NOT NULL: Postgres treats NULLs

@@ -21,16 +21,17 @@ string: the `eventId` is fixed when the row is written, and every send of the ro
 `transactionReference`, which becomes the record key.
 
 `OutboxEventListener` is `@Async @TransactionalEventListener(phase = AFTER_COMMIT)` and sends the row as soon as the
-transaction commits. `OutboxPoller.pollOutbox` runs every `outbox.poll-interval-ms` and sends, oldest first, every
-`PENDING` row whose `next_attempt_at` is null or past: rows the fast path missed and rows due for a retry.
+transaction commits. `OutboxPoller.pollOutbox` runs every `outbox.poll-interval-ms` and sends, oldest first and at
+most `outbox.batch-size` per run, the `PENDING` rows whose `next_attempt_at` is null or past: rows the fast path missed
+and rows due for a retry.
 
 `OutboxMessageSender.processEvent` claims a row with `lockForProcessing`, a conditional UPDATE from `PENDING` to
 `PROCESSING` that also sets `processing_started_at` and runs in its own `REQUIRES_NEW` transaction. The sender whose
 UPDATE hits the row owns it; any other sender sees 0 rows and skips. No row lock is held and no transaction is open
 during the send, and a successful send ends with `markAsCompleted`. A failed send goes to `incrementRetryOrFail`, which
 increments `retry_count`, stores the whole error in `error_message` (TEXT, never truncated) and sets `next_attempt_at`
-to `retry-backoff-base-ms * 2^retryCount`, capped at `retry-backoff-max-ms` with overflow clamped to the cap. When the
-count reaches `max-retries`, the same UPDATE marks the row `FAILED`.
+to now plus `retry-backoff-base-ms * 2^retryCount` (the count before this failure), capped at `retry-backoff-max-ms`
+with overflow clamped to the cap. When the count reaches `max-retries`, the same UPDATE marks the row `FAILED`.
 
 A sender that dies mid-send leaves its row in `PROCESSING`. On `ApplicationReadyEvent`, `resetStuckEvents` returns every
 such row to `PENDING` with no age threshold. At runtime `reapStuckProcessing` returns rows whose `processing_started_at`
@@ -53,7 +54,7 @@ idempotent; the wallet deduplicates on `eventId` ([0010](0010-idempotent-payment
   across the Kafka send or still need a status marker after the lock is released. The status column is that marker,
   and one conditional UPDATE sets it.
 - Reaping at startup with the runtime threshold. Every recovery after a crash would wait out that threshold, while the
-  unconditional reset costs one extra copy of a row that another instance is still sending.
+  unconditional reset costs one extra copy of a row that is still in flight.
 - A short stuck-processing threshold. The reaper would reset rows a live instance is still publishing, and those rows
   would go out twice as a matter of routine.
 - Stopping the batch, or the key, at the first failure to keep per-key order. One failing event would block delivery
@@ -69,8 +70,11 @@ idempotent; the wallet deduplicates on `eventId` ([0010](0010-idempotent-payment
 ## Consequences
 
 - A committed status change always has its event, and a rolled-back one never does.
-- Duplicates are expected. They come from a crash between the send and `markAsCompleted`, from the startup reset while
-  instances overlap in a rolling deploy, and from a reaper threshold set too low. Every copy carries the same `eventId`.
+- Duplicates are expected. They come from a crash between the send and `markAsCompleted`, or a `markAsCompleted` that
+  throws and leaves the row to the reaper; from a send the producer reports as failed after the broker already wrote
+  the record; from the startup reset, which also returns rows still in flight, whether another instance is sending them
+  in a rolling deploy or this instance started them before `ApplicationReadyEvent` (scheduling and the web server start
+  earlier); and from a reaper threshold set too low. Every copy carries the same `eventId`.
 - A broker outage that outlasts `max-retries` attempts leaves rows `FAILED`, and nothing retries them until an operator
   requeues. The requeue clears `error_message`, so the cause has to be read from `outbox_events` first.
 - The table keeps `COMPLETED` rows for the retention window and every `FAILED` row, and the `FAILED` rows grow only as

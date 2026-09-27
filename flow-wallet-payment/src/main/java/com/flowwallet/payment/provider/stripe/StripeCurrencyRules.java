@@ -15,8 +15,8 @@ public final class StripeCurrencyRules {
     }
 
     /**
-     * Charged as whole units. {@code com.flowwallet.wallet.api.AmountPrecision} keeps a copy of this list and of
-     * {@link #MAX_ACCEPTED_SCALE}, so a change here must be made there too.
+     * Charged as whole units. {@code com.flowwallet.wallet.api.AmountPrecision} keeps a copy of this list, and of
+     * {@link #MAX_ACCEPTED_SCALE} as its {@code DEFAULT_ACCEPTED_SCALE}, so a change here must be made there too.
      */
     private static final Set<String> ZERO_DECIMAL = Set.of(
             "BIF", "CLP", "DJF", "GNF", "JPY", "KMF", "KRW", "MGA",

@@ -4,6 +4,10 @@ paths:
   - "**/application*.yml"
   - "**/*Properties.java"
   - "**/.env.example"
+  - "**/OutboxPoller.java"
+  - "**/PaymentTransactionHandler.java"
+  - "**/KafkaConfig.java"
+  - "**/KafkaConsumerConfig.java"
 ---
 
 # Migrations and configuration

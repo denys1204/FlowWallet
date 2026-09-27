@@ -51,8 +51,9 @@ public class KafkaConsumerConfig {
             KafkaTemplate<String, String> kafkaTemplate,
             PaymentEventConsumerProperties retry
     ) {
-        // Partition -1 lets the broker choose: the dead-letter topic need not have the same partition count
-        // as the source, and pinning the original partition would fail whenever it has fewer.
+        // Partition -1 leaves the choice to the producer's partitioner: the dead-letter topic need not have the
+        // same partition count as the source. Pinning the original partition would add a partition lookup to
+        // every publish, only to fall back to the producer's choice whenever the topic has fewer.
         var recoverer = new DeadLetterPublishingRecoverer(
                 kafkaTemplate,
                 (record, exception) -> new TopicPartition(DEAD_LETTER_TOPIC, -1)

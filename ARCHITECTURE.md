@@ -165,9 +165,10 @@ How it stays reliable:
   threshold to `PENDING`, and the threshold sits well above the longest plausible send, because a shorter
   one could reset a row that a live instance is still publishing.
 - On startup the service also returns every `PROCESSING` row to `PENDING`, with no age threshold, so rows a
-  crashed sender left behind go out immediately instead of waiting for the reaper. With several instances
-  (a rolling deploy overlaps old and new), a starting instance can reset a row another instance is still
-  sending, and that event reaches Kafka twice. This is accepted on purpose: both copies carry the same
+  crashed sender left behind go out immediately instead of waiting for the reaper. The reset also catches
+  rows still in flight: one another instance is still sending (a rolling deploy overlaps old and new), or
+  one this instance claimed before startup finished, because the poller and the web server start before the
+  reset runs. Such an event reaches Kafka twice. This is accepted on purpose: both copies carry the same
   `eventId`, and the wallet's barrier discards the second.
 - A failing row is skipped so it doesn't block the batch. Messages are keyed by `transactionReference`, but
   the outbox does not guarantee per-key send order. While an earlier event waits out its backoff, a later
@@ -259,9 +260,8 @@ under the key from another wallet gives `409`. The caller's own identical transf
 because a `409` would send the client to a new key and move the money twice. No `TRANSFER_OUT` under the key
 means either a CHECK fired (the code let through something it should have refused) or a value overflowed its
 column, such as a recipient's balance growing past what `NUMERIC(19,4)` holds. That violation is rethrown as
-a `500` with its stack trace in the log and is never reported as a conflict or a success. The log names the
-constraint but not the refused row, because the wallet's datasource turns off the Postgres driver's error
-detail, which would print the row with its balances.
+a `500` with its stack trace in the log and is never reported as a conflict or a success. The log includes
+the Postgres driver's error detail, which for a CHECK violation prints the refused row with its balances.
 
 The lock order should rule out deadlocks, and while the row lock is held the wallet's `@Version` check has
 nothing to catch. If a deadlock, a lock wait that timed out or a version conflict happens anyway, nothing

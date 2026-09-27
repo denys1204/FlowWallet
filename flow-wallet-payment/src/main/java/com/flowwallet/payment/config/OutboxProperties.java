@@ -16,7 +16,8 @@ public class OutboxProperties {
     private int batchSize = 50;
 
     /**
-     * Maximum number of retries before marking an event as FAILED.
+     * Maximum number of send attempts, the first send included, before the event is marked FAILED; 3 means one
+     * send and two retries.
      */
     private int maxRetries = 3;
 

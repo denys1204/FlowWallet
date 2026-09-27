@@ -23,8 +23,9 @@ import org.springframework.web.bind.annotation.*;
 public class TransferController {
     /**
      * Any UUID: versions 1 to 8 of variants 0 to 2, in either case, never nil (its version digit is 0). These
-     * are the keys the deposit's {@code @UUID} accepts, written as a pattern because that validator throws on a
-     * 36-character key with a fifth dash, which the platform handler answers with a 500 instead of a 400.
+     * are the versions and variants the deposit's {@code @UUID} accepts, in ASCII only. It is a pattern because
+     * that validator throws on a 36-character key with a fifth dash, which the platform handler answers with a
+     * 500 instead of a 400, and it accepts non-ASCII digits.
      * See docs/adr/0005-client-supplied-idempotency-keys.md.
      */
     private static final String ANY_UUID =

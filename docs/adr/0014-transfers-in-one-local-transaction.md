@@ -59,9 +59,9 @@ the transaction ([0007](0007-unique-constraints-decide.md)). A `TRANSFER_OUT` un
 reached the index first: 409. If `isRepeatOf` matches that row against the caller's own wallet
 (`findByUserIdAndCurrency`), the answer is a replay, logged at WARN because the wallet lock should have kept that
 request from reaching the index. No `TRANSFER_OUT` under the key means a CHECK fired or a value overflowed its column,
-such as a recipient's balance growing past `NUMERIC(19,4)`. That violation is rethrown and `GlobalExceptionHandler`
-answers 500 with the stack trace. A `ConcurrencyFailureException` becomes the 503 of `TransferBusyException`
-([0011](0011-wallet-row-locking.md)).
+such as a recipient's balance growing past `NUMERIC(19,4)`. That violation is rethrown, and `GlobalExceptionHandler`
+logs it with the stack trace and answers a plain 500. A `ConcurrencyFailureException` becomes the 503 of
+`TransferBusyException` ([0011](0011-wallet-row-locking.md)).
 
 Only `TransferResponse.of` builds the receipt, from the `TRANSFER_OUT` leg: the one in memory for the first answer, the
 stored one for a replay. Both hold the amount and balance at the ledger's scale, so they render alike, and `of` throws

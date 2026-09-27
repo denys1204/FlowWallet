@@ -14,9 +14,10 @@ an idempotency key of its own, and every ledger movement needs a reference, so o
 ## Decision
 
 Both endpoints require an `Idempotency-Key` header, and the server never generates one. The key is a UUID of any
-version from 1 to 8, not nil, in either case: `@UUID` with every version listed on the deposit, and the equivalent
-`ANY_UUID` pattern on the transfer, for a reason given at that constant. A key has to be unique, not unguessable.
-The rules for user ids are in [0003](0003-caller-identity-and-trust-boundary.md).
+version from 1 to 8, not nil, in either case: `@UUID` with every version listed on the deposit, and on the transfer
+the ASCII `ANY_UUID` pattern, which accepts the same versions and variants, for a reason given at that constant. The
+deposit's `@UUID` also lets non-ASCII digits through. A key has to be unique, not unguessable. The rules for user
+ids, and the limits of `@UUID`, are in [0003](0003-caller-identity-and-trust-boundary.md).
 
 `DepositService.start` and `TransferService.transfer` lower-case the key once, with `Locale.ROOT`, and after that it
 is used verbatim as the `transactionReference`. The same string is the reference in `CreatePaymentIntentCommand`,

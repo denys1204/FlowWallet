@@ -43,6 +43,7 @@ Each kind of text has one home:
 - ARCHITECTURE.md and the reference docs under `docs/` describe behaviour for users and operators, and link the
   relevant ADR instead of arguing the decision. README.md is the front page and points to them.
 - CLAUDE.md holds commands, conventions, framework traps, and each invariant as a one-line rule with an ADR pointer.
+- `.claude/rules/` holds a convention or framework trap scoped to one kind of file, matched by a `paths:` glob.
 
 Javadoc always uses the multi-line form, never a one-line `/** ... */`. Lines stay within 120 columns. Comments and
 ADRs use plain present-tense English, with no ticket numbers and no wording tied to a diff ("now", "new",

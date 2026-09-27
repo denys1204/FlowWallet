@@ -104,7 +104,9 @@ public class PaymentEventListener {
 
     /**
      * Everything the credit depends on. The event records carry no validation and {@link Wallet#credit} takes
-     * its amount on trust, so this is the only place a negative amount, which would debit the wallet, is caught.
+     * its amount on trust, so this is the only place a zero or negative amount is refused as
+     * {@code INVALID_AMOUNT} and stored with its payload. Without it, {@code balance_history_amount_positive}
+     * would refuse the ledger row, and the record would be retried and dead-lettered instead.
      */
     private Optional<RejectionReason> refusalFor(String transactionReference, String currency, String userId,
                                                  BigDecimal amount) {
@@ -119,7 +121,8 @@ public class PaymentEventListener {
 
     /**
      * Recording a refusal meets the event-id barrier too. A redelivered refusal is acknowledged here, so it
-     * does not reach the dead-letter topic, which is for records the wallet could not read.
+     * does not reach the dead-letter topic, which is for records the wallet could not read or could not settle
+     * after its retries.
      */
     private void reject(String eventId, String eventType, String transactionReference, BigDecimal amount,
                         RejectionReason reason, String payload) {

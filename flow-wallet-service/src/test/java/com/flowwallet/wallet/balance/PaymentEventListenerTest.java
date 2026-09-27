@@ -83,8 +83,9 @@ class PaymentEventListenerTest {
 
     @Test
     void aNegativeAmountIsRefusedBeforeAnyTransactionOpens() {
-        // The event records carry no validation annotations, so this is the only thing standing between a
-        // negative amount and a wallet quietly being debited with a self-consistent ledger row behind it.
+        // The event records carry no validation annotations, so this is the only check that refuses a negative
+        // amount as INVALID_AMOUNT with its payload kept. Without it the credit would reach
+        // balance_history_amount_positive, roll back, and be retried and dead-lettered instead.
         listener.onPaymentEvent(completed("evt-1", "-500.00", "USD", "alice"));
 
         verify(outcomes).recordRejection(eq("evt-1"), eq(COMPLETED), eq("ref-1"), any(),
@@ -147,7 +148,7 @@ class PaymentEventListenerTest {
     void aRedeliveredRefusalIsNotDeadLettered() {
         // Recording a refusal meets the same event-id barrier as a credit. Without a guard the redelivery of
         // an event the wallet already refused would be dead-lettered, filling the topic meant for records the
-        // wallet could not read with ones it read fine and deliberately declined.
+        // wallet could not read or settle with ones it read fine and deliberately declined.
         doThrow(new DataIntegrityViolationException("event_id"))
                 .when(outcomes).recordRejection(any(), any(), any(), any(), any(), any());
         when(outcomes.classify("evt-1", "ref-1")).thenReturn(DuplicateVerdict.EVENT_ALREADY_PROCESSED);

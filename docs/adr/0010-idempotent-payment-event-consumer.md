@@ -44,8 +44,8 @@ record that blocks its partition holds up about a third of all credits.
   (`wallet.consumer.retry.*`; by default 3 retries from 500 ms, doubling, capped at 10,000 ms), then a
   `DeadLetterPublishingRecoverer` publishes it to `payment.events.wallet.DLT`. It is the wallet's only retry mechanism.
 - `KafkaConsumerConfig` declares the dead-letter topic as a `NewTopic` bean. The recoverer publishes with partition
-  -1 so the broker picks one, and the producer uses `acks=all` with idempotence. The topic is the wallet's own, apart
-  from Payment Service's dead-letter store, the `FAILED` outbox rows.
+  -1, so the producer's partitioner picks one, and the producer uses `acks=all` with idempotence. The topic is the
+  wallet's own, apart from Payment Service's dead-letter store, the `FAILED` outbox rows.
 - `balance_history.event_id` is nullable and records which event made a credit. Classification does not read it.
 
 ## Alternatives considered
@@ -65,22 +65,24 @@ record that blocks its partition holds up about a third of all credits.
   ([0002](0002-module-boundaries.md)), and `ObjectMapper.readValue` would not apply them.
 - The container's default recoverer: it logs the record and moves on, so a payment silently does not arrive.
 - Pausing or deferring a failed record: one poison record stalls its partition.
-- Dead-lettering refusals, including a redelivered one: the topic for records the wallet could not read would fill
-  with records it read and declined on purpose.
+- Dead-lettering refusals, including a redelivered one: the topic for records the wallet could not read or settle
+  would fill with records it read and declined on purpose.
 - Refusals without the payload: replay would depend on Kafka retention or on Payment Service reissuing the event.
 - Sharing Payment Service's dead-letter store or topic: it holds outbox rows under a different contract, the wallet's
   holds failed consumer records, and mixing the two makes both unreadable.
 - Broker auto-creation of the dead-letter topic: it is off on production brokers, so the publish fails and the
   record is redelivered without end.
-- Publishing to the record's original partition: the publish fails when the dead-letter topic has fewer partitions.
+- Publishing to the record's original partition: the recoverer then checks before every publish that the partition
+  exists and falls back to the producer's choice when the dead-letter topic has fewer partitions, so pinning buys
+  nothing.
 - Retrying unreadable records: every attempt fails the same way, so retries only delay the dead-letter.
 - Spring Retry in the wallet: two retry budgets would disagree about how many attempts remain.
 
 ## Consequences
 
 - A redelivery, including one of a refused or failed event, is acknowledged and changes nothing.
-- Every readable event has a `processed_events` row. `REJECTED` rows keep their payload, and nothing replays them
-  automatically. A second event for a credited reference is also logged at error level.
+- Every readable event the listener settles has a `processed_events` row. `REJECTED` rows keep their payload, and
+  nothing replays them automatically. A second event for a credited reference is also logged at error level.
 - `payment.events.wallet.DLT` has no consumer; its records are inspected and replayed by hand. Unreadable and
   exhausted records leave no `processed_events` row.
 - A failure the retries cannot fix holds its partition only for the length of the backoff.

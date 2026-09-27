@@ -12,10 +12,10 @@ events that connect these two databases.
 - `payment_transactions` holds `id`, `transaction_reference` (unique idempotency key), `provider_name`,
   `provider_transaction_id` (unique), `user_id`, `amount NUMERIC(19,4)`, `currency`,
   `status` (`PENDING`/`SUCCESS`/`FAILED`), `provider_event_id` (unique), `version` (optimistic lock),
-  `provider_metadata JSONB` and timestamps.
+  `provider_metadata JSONB` and timestamps. `provider_transaction_id` also has a separate non-unique index.
 - `outbox_events` holds `id`, `aggregate_type`, `aggregate_id`, `event_type`, `payload TEXT`, `status`,
   `retry_count`, `error_message`, `next_attempt_at` (backoff), `processing_started_at` (stuck-row
-  detection), `created_at` and `processed_at`.
+  detection), `created_at` and `processed_at`. It is indexed on (`status`, `created_at`) for the poller.
 
 `wallet_db` is managed by Liquibase in `flow-wallet-service`:
 
@@ -41,6 +41,9 @@ events that connect these two databases.
   `transaction_reference`, `amount`, `outcome` (`CREDITED`/`FAILURE_RECORDED`/`REJECTED`),
   `rejection_reason`, `payload TEXT` (kept for `FAILURE_RECORDED` and `REJECTED`, NULL for `CREDITED`) and
   `processed_at`. It is indexed on (`outcome`, `processed_at`).
+
+Every table's `id` comes from a `<table>_seq` sequence with an increment of 50, matching the entities'
+`allocationSize = 50`.
 
 The rules behind `wallets` and `balance_history` (a balance that never goes negative, positive amounts, the
 (`transaction_reference`, `type`) key and the counterparty) are in

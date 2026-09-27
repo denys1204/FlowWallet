@@ -240,7 +240,8 @@ class TransferHandlerTest {
     })
     void aRecipientWithoutAWalletIsRefusedAndNothingIsCreatedOrWritten(String sender, String recipient) {
         // Guards a wallet opened as a side effect of a transfer, and money debited with nowhere to go. The
-        // debit made in memory is discarded by the rollback, which works only because nothing was flushed.
+        // debit is made in memory only, and no statement runs before the refusal, so the rollback discards it
+        // with nothing written.
         // Run both ways, because taking the recipient from the wrong lock would find the sender's own wallet
         // when the recipient sorts first. The status must be 422: a 404 on this path means the caller's own
         // wallet is missing.

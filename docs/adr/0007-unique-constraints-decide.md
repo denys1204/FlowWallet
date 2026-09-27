@@ -5,8 +5,8 @@
 
 ## Context
 
-Four rules of the form "at most one" hold across both databases: one wallet per user and currency (the unique
-`(user_id, currency)` on `wallets`), one payment per reference (the unique
+Rules of the form "at most one" hold across both databases, among them one wallet per user and currency (the
+unique `(user_id, currency)` on `wallets`), one payment per reference (the unique
 `payment_transactions.transaction_reference`), one `processed_events` row per `event_id`, and one ledger movement
 per reference and type (`balance_history_reference_type_key` on `(transaction_reference, type)`). The requests that
 test them arrive concurrently: two first requests to open the same wallet, a client retrying a deposit, Kafka

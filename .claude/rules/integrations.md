@@ -5,6 +5,11 @@ paths:
   - "**/flow-wallet-contract/**"
   - "**/*Listener.java"
   - "**/*Mapper.java"
+  - "**/wallet/dto/*Response.java"
+  - "**/wallet/balance/Wallet.java"
+  - "**/wallet/balance/BalanceHistory.java"
+  - "**/WalletServiceTest.java"
+  - "**/KafkaConsumerConfig.java"
 ---
 
 # The Maven build, Kafka, MapStruct and Stripe

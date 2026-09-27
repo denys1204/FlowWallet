@@ -1,10 +1,10 @@
 # FlowWallet HTTP API
 
 This file lists the HTTP endpoints FlowWallet exposes: the wallet endpoints behind the gateway, the Stripe
-webhook, and the internal Payment Service call that starts a deposit. It also covers the error format all
-three services share. For how the services fit together, see [ARCHITECTURE.md](../ARCHITECTURE.md); for the
-database tables behind these endpoints, see [the data model](data-model.md); for running the services
-locally, see [development](development.md).
+webhook, and the internal Payment Service call that starts a deposit. It also covers the error format the
+wallet and payment services share. For how the services fit together, see
+[ARCHITECTURE.md](../ARCHITECTURE.md); for the database tables behind these endpoints, see
+[the data model](data-model.md); for running the services locally, see [development](development.md).
 
 ## API reference
 

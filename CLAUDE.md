@@ -19,7 +19,7 @@ Stripe).
 
 ```bash
 ./mvnw clean install                 # build all five modules and run every test
-./mvnw test                          # tests only (JUnit 5 + Mockito; no integration tests yet)
+./mvnw test                          # tests only (JUnit 6 + Mockito; no integration tests yet)
 ./mvnw install -DskipTests           # install modules so -pl builds can resolve siblings
 
 # one module / one class / one method (after an install, or add -am)
@@ -77,7 +77,8 @@ lock order and the idempotency checks are specified there, not here.
 
 ## Invariants
 
-- Money is `BigDecimal` / `NUMERIC(19,4)`, never floating point.
+- Money is `BigDecimal` / `NUMERIC(19,4)`, never floating point
+  ([ADR 0012](docs/adr/0012-balances-and-append-only-ledger.md)).
 - A balance is never negative. `Wallet.debit` refuses an overdraft with a 422 before anything is written, and
   the schema holds the rule for any writer that skips it (`wallets_balance_not_negative`). Ledger amounts are
   always positive and `type` carries the direction (`balance_history_amount_positive`)
@@ -90,15 +91,15 @@ lock order and the idempotency checks are specified there, not here.
   ([ADR 0011](docs/adr/0011-wallet-row-locking.md)).
 - No unlocked read of a wallet before its lock in the same transaction: the locking query would return the
   managed instance, and Hibernate throws `StaleObjectStateException` (a 503 on a transfer) whenever another
-  writer committed in between.
+  writer committed in between ([ADR 0011](docs/adr/0011-wallet-row-locking.md)).
 - A wallet is addressed by `(userId, currency)`, never by a client-supplied id, and is **never created as a side
   effect of a payment event or a transfer**. The wallet id is deliberately absent from the events, the payment
   request and every API response ([ADR 0004](docs/adr/0004-wallet-addressed-by-owner-and-currency.md)).
 - `Idempotency-Key` is a client-supplied UUID of any version, lower-cased and used verbatim as
   `transactionReference`, which is also Stripe's idempotency key; the server never generates it
   ([ADR 0005](docs/adr/0005-client-supplied-idempotency-keys.md)). Refusals write nothing, so they consume no
-  key. One reference can own several rows, so every lookup by reference names its type
-  ([ADR 0012](docs/adr/0012-balances-and-append-only-ledger.md)).
+  key. In the wallet ledger one reference can own several rows, so every `balance_history` lookup by reference
+  names its type ([ADR 0012](docs/adr/0012-balances-and-append-only-ledger.md)).
 - `X-User-Id` must be a UUID version 4 or 7 (enforced in `CurrentUserIdResolver`) and is case-folded; a
   transfer's `to` is checked with the same expression (`CurrentUserIdResolver.RANDOM_UUID_REGEX` in
   `TransferRequest`). Services take it on trust and it is unauthenticated: the gateway has no filters and
@@ -110,15 +111,16 @@ lock order and the idempotency checks are specified there, not here.
   two lists point at each other; change both together
   ([ADR 0015](docs/adr/0015-currency-precision-and-no-rounding.md)).
 - Problem responses carry no `type`, so on the transfer path each status points to a different kind of fix:
-  400 fix the request, 404 open your wallet (only ever the caller's), 409 use a new key (only key reuse), 422
-  lower the amount or top up (insufficient funds) or pick another recipient (no recipient wallet), with the
-  detail saying which, 503 retry with the same key ([ADR 0016](docs/adr/0016-error-model-and-status-codes.md)).
+  401 fix the identity header, 400 fix the request, 404 open your wallet (only ever the caller's), 406 accept
+  JSON, 409 use a new key (only key reuse), 422 lower the amount or top up (insufficient funds) or pick another
+  recipient (no recipient wallet), with the detail saying which, 503 retry with the same key; a 500 is a server
+  defect the caller cannot fix ([ADR 0016](docs/adr/0016-error-model-and-status-codes.md)).
 - The consumer's `DefaultErrorHandler` is the only retry mechanism in the wallet; do not add Spring Retry there.
   Refusals the wallet understands (invalid amount or envelope, unknown wallet, duplicate reference) are stored
   as acknowledged `REJECTED` rows with the payload; unreadable records and exhausted retries go to
   `payment.events.wallet.DLT` ([ADR 0010](docs/adr/0010-idempotent-payment-event-consumer.md)).
 - A webhook's status reports delivery, not the business outcome: an event for an intent this service never
-  created gets 200, not 404.
+  created gets 200, not 404 ([ADR 0016](docs/adr/0016-error-model-and-status-codes.md)).
 - `FAILED` outbox rows are never deleted automatically; they are the dead-letter store
   ([ADR 0008](docs/adr/0008-transactional-outbox.md)).
 - A `PaymentFailedEvent` moves no money, which is why the consumer does not depend on event order

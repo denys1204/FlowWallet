@@ -22,8 +22,10 @@ public class OutboxPoller {
     private final OutboxProperties outboxProperties;
 
     /**
-     * Returns every PROCESSING row to PENDING at startup, with no age threshold. In a rolling deploy this can
-     * resend a row another instance is still sending; both copies carry the same eventId.
+     * Returns every PROCESSING row to PENDING at startup, with no age threshold. This can resend a row that is
+     * still in flight: one another instance is sending in a rolling deploy, or one this instance's poller or fast
+     * path claimed, since scheduling and the web server start before ApplicationReadyEvent. Every copy carries the
+     * same eventId.
      * See docs/adr/0008-transactional-outbox.md.
      */
     @EventListener(ApplicationReadyEvent.class)

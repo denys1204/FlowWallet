@@ -13,10 +13,10 @@
 FlowWallet is a backend platform that lets a user deposit into a digital wallet through an external
 payment provider (Stripe), have the balance credited reliably and asynchronously through events, and send
 money to another user's wallet in the same currency. It is built to demonstrate production-grade patterns on
-a modern stack: a Transactional Outbox, so an event is published if and only if the change behind it
-commits; an idempotent event consumer that credits a balance once however often an event arrives; a
-pluggable payment-provider abstraction (Strategy + Factory); database-per-service isolation; and clean
-module boundaries.
+a modern stack: a Transactional Outbox, so an event is written if and only if the change behind it commits,
+and a failed send is retried rather than lost; an idempotent event consumer that credits a balance once
+however often an event arrives; a pluggable payment-provider abstraction (Strategy + Factory);
+database-per-service isolation; and clean module boundaries.
 
 > **Project status:** work in progress. The deposit loop works end to end. A client asks its wallet to
 > start a deposit, the wallet checks that the wallet exists and belongs to the caller, Payment Service
