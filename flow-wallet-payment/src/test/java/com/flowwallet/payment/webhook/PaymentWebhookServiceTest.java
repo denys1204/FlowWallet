@@ -10,6 +10,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -79,6 +80,13 @@ class PaymentWebhookServiceTest {
     }
 
     private static WebhookResult result(WebhookEventType type) {
-        return new WebhookResult("pi_1", "evt_1", type, new BigDecimal("50.00"), "USD");
+        return new WebhookResult(
+                "pi_1",
+                "evt_1",
+                type,
+                new BigDecimal("50.00"),
+                "USD",
+                Instant.parse("2026-01-01T00:00:00Z")
+        );
     }
 }

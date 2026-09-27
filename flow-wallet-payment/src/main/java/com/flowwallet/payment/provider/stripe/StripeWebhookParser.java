@@ -12,6 +12,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
 
@@ -71,7 +72,14 @@ public class StripeWebhookParser {
             throw new WebhookProcessingException("Signed Stripe webhook is not a readable event", e);
         }
         StripeObject dataObject = matchingVersionObject.orElseGet(() -> deserializeUnsafe(event, deserializer));
-        return new ParsedStripeEvent(event.getId(), event.getType(), dataObject);
+        return new ParsedStripeEvent(event.getId(), event.getType(), createdAt(event), dataObject);
+    }
+
+    /**
+     * Stripe sets {@code created} on every event; the processing time stands in for a payload without it.
+     */
+    private Instant createdAt(Event event) {
+        return event.getCreated() == null ? Instant.now() : Instant.ofEpochSecond(event.getCreated());
     }
 
     private StripeObject deserializeUnsafe(Event event, EventDataObjectDeserializer deserializer) {

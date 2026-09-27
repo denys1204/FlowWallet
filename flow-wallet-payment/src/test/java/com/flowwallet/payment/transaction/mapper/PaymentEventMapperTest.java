@@ -8,34 +8,45 @@ import com.flowwallet.payment.transaction.PaymentTransaction;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class PaymentEventMapperTest {
+    private static final Instant SETTLED_AT = Instant.parse("2026-01-01T00:00:00Z");
+
     private final PaymentEventMapper mapper = new PaymentEventMapperImpl();
 
     @Test
     void completedEventCarriesAmountAndCurrency() {
-        PaymentCompletedEvent event = mapper.toPaymentCompletedEvent(transaction());
+        PaymentCompletedEvent event = mapper.toPaymentCompletedEvent(transaction(), SETTLED_AT);
 
         assertThat(event.transactionReference()).isEqualTo("ref-1");
         assertThat(event.amount()).isEqualByComparingTo("50.00");
         assertThat(event.currency()).isEqualTo("USD");
         assertThat(event.userId()).isEqualTo("user-1");
-        assertThat(event.completedAt()).isNotNull();
+    }
+
+    @Test
+    void completedEventCarriesTheProvidersSettlementTimeRatherThanTheProcessingTime() {
+        // The contract promises when the provider confirmed the payment. The build ignores unmapped targets, so
+        // a renamed parameter would silently leave completedAt null; this pins it.
+        PaymentCompletedEvent event = mapper.toPaymentCompletedEvent(transaction(), SETTLED_AT);
+
+        assertThat(event.completedAt()).isEqualTo(SETTLED_AT);
     }
 
     @Test
     void failedEventCarriesAmountCurrencyAndReason() {
-        PaymentFailedEvent event = mapper.toPaymentFailedEvent(transaction(), "card declined");
+        PaymentFailedEvent event = mapper.toPaymentFailedEvent(transaction(), "card declined", SETTLED_AT);
 
         assertThat(event.transactionReference()).isEqualTo("ref-1");
         assertThat(event.amount()).isEqualByComparingTo("50.00");
         assertThat(event.currency()).isEqualTo("USD");
         assertThat(event.userId()).isEqualTo("user-1");
         assertThat(event.reason()).isEqualTo("card declined");
-        assertThat(event.failedAt()).isNotNull();
+        assertThat(event.failedAt()).isEqualTo(SETTLED_AT);
     }
 
     @Test

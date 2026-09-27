@@ -11,6 +11,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -20,25 +22,31 @@ public class PaymentOutboxService {
     private final PaymentEventMapper eventMapper;
     private final ObjectMapper objectMapper;
 
-    public void publishPaymentCompleted(PaymentTransaction tx) {
+    public void publishPaymentCompleted(PaymentTransaction tx, Instant completedAt) {
         try {
-            PaymentCompletedEvent event = eventMapper.toPaymentCompletedEvent(tx);
+            PaymentCompletedEvent event = eventMapper.toPaymentCompletedEvent(tx, completedAt);
             OutboxEvent outboxEvent = eventMapper.toOutboxEvent(tx, objectMapper.writeValueAsString(event));
             outboxEventRepository.save(outboxEvent);
             eventPublisher.publishEvent(new OutboxCreatedEvent(outboxEvent.getId()));
         } catch (JacksonException e) {
-            throw new EventSerializationException("Failed to serialize PaymentCompletedEvent for tx: " + tx.getTransactionReference(), e);
+            throw new EventSerializationException(
+                    "Failed to serialize PaymentCompletedEvent for tx: " + tx.getTransactionReference(),
+                    e
+            );
         }
     }
 
-    public void publishPaymentFailed(PaymentTransaction tx, String reason) {
+    public void publishPaymentFailed(PaymentTransaction tx, String reason, Instant failedAt) {
         try {
-            PaymentFailedEvent event = eventMapper.toPaymentFailedEvent(tx, reason);
+            PaymentFailedEvent event = eventMapper.toPaymentFailedEvent(tx, reason, failedAt);
             OutboxEvent outboxEvent = eventMapper.toFailedOutboxEvent(tx, objectMapper.writeValueAsString(event));
             outboxEventRepository.save(outboxEvent);
             eventPublisher.publishEvent(new OutboxCreatedEvent(outboxEvent.getId()));
         } catch (JacksonException e) {
-            throw new EventSerializationException("Failed to serialize PaymentFailedEvent for tx: " + tx.getTransactionReference(), e);
+            throw new EventSerializationException(
+                    "Failed to serialize PaymentFailedEvent for tx: " + tx.getTransactionReference(),
+                    e
+            );
         }
     }
 }

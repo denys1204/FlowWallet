@@ -48,7 +48,7 @@ public class PaymentTransactionHandler {
                     }
                     if (tx.markAsSuccess(result.providerEventId())) {
                         transactionRepository.save(tx);
-                        outboxService.publishPaymentCompleted(tx);
+                        outboxService.publishPaymentCompleted(tx, result.occurredAt());
                         log.info("Successfully processed payment success for tx: {}", tx.getTransactionReference());
                     }
                 }
@@ -68,7 +68,7 @@ public class PaymentTransactionHandler {
                 result, tx -> {
                     if (tx.markAsFailed(result.providerEventId())) {
                         transactionRepository.save(tx);
-                        outboxService.publishPaymentFailed(tx, "Payment failed via webhook");
+                        outboxService.publishPaymentFailed(tx, "Payment failed via webhook", result.occurredAt());
                         log.info("Successfully processed payment failure for tx: {}", tx.getTransactionReference());
                     } else {
                         log.info(

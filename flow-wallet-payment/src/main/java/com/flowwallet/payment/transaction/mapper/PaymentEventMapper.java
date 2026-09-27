@@ -13,7 +13,7 @@ import org.mapstruct.Mapping;
 import java.time.Instant;
 import java.util.UUID;
 
-@Mapper(componentModel = "spring", imports = {Instant.class, UUID.class, KafkaConstants.class})
+@Mapper(componentModel = "spring", imports = {UUID.class, KafkaConstants.class})
 public interface PaymentEventMapper {
     /**
      * Never reaches the wire, so it stays out of flow-wallet-contract. See docs/adr/0002-module-boundaries.md.
@@ -22,13 +22,11 @@ public interface PaymentEventMapper {
 
     @Mapping(target = "eventId", expression = "java(UUID.randomUUID().toString())")
     @Mapping(target = "schemaVersion", expression = "java(KafkaConstants.PAYMENT_EVENT_SCHEMA_VERSION)")
-    @Mapping(target = "completedAt", expression = "java(Instant.now())")
-    PaymentCompletedEvent toPaymentCompletedEvent(PaymentTransaction transaction);
+    PaymentCompletedEvent toPaymentCompletedEvent(PaymentTransaction transaction, Instant completedAt);
 
     @Mapping(target = "eventId", expression = "java(UUID.randomUUID().toString())")
     @Mapping(target = "schemaVersion", expression = "java(KafkaConstants.PAYMENT_EVENT_SCHEMA_VERSION)")
-    @Mapping(target = "failedAt", expression = "java(Instant.now())")
-    PaymentFailedEvent toPaymentFailedEvent(PaymentTransaction transaction, String reason);
+    PaymentFailedEvent toPaymentFailedEvent(PaymentTransaction transaction, String reason, Instant failedAt);
 
     @Mapping(target = "providerData", source = "providerMetadata")
     @Mapping(target = "paymentIntentId", source = "providerTransactionId")

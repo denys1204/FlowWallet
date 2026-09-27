@@ -15,6 +15,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
 
@@ -43,6 +44,7 @@ class StripeWebhookParserTest {
 
         assertThat(result.eventId()).isEqualTo("evt_1");
         assertThat(result.eventType()).isEqualTo("payment_intent.succeeded");
+        assertThat(result.created()).isEqualTo(Instant.ofEpochSecond(CREATED));
         assertThat(result.dataObject()).isInstanceOfSatisfying(PaymentIntent.class, intent -> {
             assertThat(intent.getId()).isEqualTo("pi_1");
             assertThat(intent.getAmount()).isEqualTo(5000L);

@@ -17,6 +17,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -24,6 +25,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
 
 class StripePaymentStrategyTest {
+    private static final Instant CREATED = Instant.parse("2026-01-01T00:00:00Z");
+
     private final StripeRequestMapper requestMapper = mock(StripeRequestMapper.class);
     private final StripeClient stripeClient = mock(StripeClient.class);
     private final StripeWebhookParser webhookParser = mock(StripeWebhookParser.class);
@@ -77,7 +80,7 @@ class StripePaymentStrategyTest {
     void mapsSucceededWebhookToPaymentSuccessResult() {
         PaymentIntent paymentIntent = paymentIntent("succeeded", 5000L, "usd");
         when(webhookParser.parse("payload", Map.of())).thenReturn(
-                new ParsedStripeEvent("evt_1", "payment_intent.succeeded", paymentIntent)
+                new ParsedStripeEvent("evt_1", "payment_intent.succeeded", CREATED, paymentIntent)
         );
 
         WebhookResult result = strategy.handleWebhook("payload", Map.of());
@@ -87,6 +90,7 @@ class StripePaymentStrategyTest {
         assertThat(result.providerEventId()).isEqualTo("evt_1");
         assertThat(result.amount()).isEqualByComparingTo("50.00");
         assertThat(result.currency()).isEqualTo("USD");
+        assertThat(result.occurredAt()).isEqualTo(CREATED);
     }
 
     @ParameterizedTest(name = "{1} {2} is {0} in major units")
@@ -100,7 +104,7 @@ class StripePaymentStrategyTest {
         // different exponent than the request used would refuse every genuine JPY or KWD payment.
         PaymentIntent intent = paymentIntent("succeeded", minor, currency);
         when(webhookParser.parse("payload", Map.of())).thenReturn(
-                new ParsedStripeEvent("evt_1", "payment_intent.succeeded", intent)
+                new ParsedStripeEvent("evt_1", "payment_intent.succeeded", CREATED, intent)
         );
 
         WebhookResult result = strategy.handleWebhook("payload", Map.of());
@@ -113,7 +117,7 @@ class StripePaymentStrategyTest {
         // A success event must describe a settled intent; one that does not must never credit a wallet.
         PaymentIntent intent = paymentIntent("requires_payment_method", 5000L, "usd");
         when(webhookParser.parse("payload", Map.of())).thenReturn(
-                new ParsedStripeEvent("evt_1", "payment_intent.succeeded", intent)
+                new ParsedStripeEvent("evt_1", "payment_intent.succeeded", CREATED, intent)
         );
 
         WebhookResult result = strategy.handleWebhook("payload", Map.of());
@@ -126,7 +130,7 @@ class StripePaymentStrategyTest {
         // A null amount reaches the handler as a difference, so it can never match a stored transaction.
         PaymentIntent intent = paymentIntent("succeeded", null, null);
         when(webhookParser.parse("payload", Map.of())).thenReturn(
-                new ParsedStripeEvent("evt_1", "payment_intent.succeeded", intent)
+                new ParsedStripeEvent("evt_1", "payment_intent.succeeded", CREATED, intent)
         );
 
         WebhookResult result = strategy.handleWebhook("payload", Map.of());
@@ -140,7 +144,7 @@ class StripePaymentStrategyTest {
     void returnsUnknownForNonPaymentIntentObject() {
         StripeObject other = mock(StripeObject.class);
         when(webhookParser.parse("payload", Map.of())).thenReturn(
-                new ParsedStripeEvent("evt_2", "charge.refunded", other)
+                new ParsedStripeEvent("evt_2", "charge.refunded", CREATED, other)
         );
 
         WebhookResult result = strategy.handleWebhook("payload", Map.of());
@@ -153,7 +157,7 @@ class StripePaymentStrategyTest {
         PaymentIntent paymentIntent = mock(PaymentIntent.class);
 
         when(webhookParser.parse("payload", Map.of())).thenReturn(
-                new ParsedStripeEvent("evt_3", "payment_intent.created", paymentIntent)
+                new ParsedStripeEvent("evt_3", "payment_intent.created", CREATED, paymentIntent)
         );
 
         WebhookResult result = strategy.handleWebhook("payload", Map.of());

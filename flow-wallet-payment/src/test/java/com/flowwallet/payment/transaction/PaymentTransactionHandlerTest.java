@@ -10,6 +10,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -26,6 +27,8 @@ import static org.mockito.Mockito.when;
  * terminal, a late failure must not overwrite it, and a retry may still promote FAILED -> SUCCESS.
  */
 class PaymentTransactionHandlerTest {
+    private static final Instant OCCURRED_AT = Instant.parse("2026-01-01T00:00:00Z");
+
     private PaymentTransactionRepository repository;
     private PaymentOutboxService outboxService;
     private PaymentTransactionHandler handler;
@@ -47,7 +50,7 @@ class PaymentTransactionHandlerTest {
 
         assertThat(tx.getStatus()).isEqualTo(TransactionStatus.SUCCESS);
         verify(repository, never()).save(any());
-        verify(outboxService, never()).publishPaymentFailed(any(), anyString());
+        verify(outboxService, never()).publishPaymentFailed(any(), anyString(), any());
     }
 
     @Test
@@ -60,7 +63,7 @@ class PaymentTransactionHandlerTest {
 
         assertThat(tx.getStatus()).isEqualTo(TransactionStatus.FAILED);
         verify(repository, never()).save(any());
-        verify(outboxService, never()).publishPaymentFailed(any(), anyString());
+        verify(outboxService, never()).publishPaymentFailed(any(), anyString(), any());
     }
 
     @Test
@@ -73,7 +76,7 @@ class PaymentTransactionHandlerTest {
 
         assertThat(tx.getStatus()).isEqualTo(TransactionStatus.FAILED);
         verify(repository).save(tx);
-        verify(outboxService).publishPaymentFailed(tx, "Payment failed via webhook");
+        verify(outboxService).publishPaymentFailed(tx, "Payment failed via webhook", OCCURRED_AT);
     }
 
     @Test
@@ -86,7 +89,7 @@ class PaymentTransactionHandlerTest {
 
         assertThat(tx.getStatus()).isEqualTo(TransactionStatus.SUCCESS);
         verify(repository).save(tx);
-        verify(outboxService).publishPaymentCompleted(tx);
+        verify(outboxService).publishPaymentCompleted(tx, OCCURRED_AT);
     }
 
     @Test
@@ -99,7 +102,7 @@ class PaymentTransactionHandlerTest {
 
         assertThat(tx.getStatus()).isEqualTo(TransactionStatus.SUCCESS);
         verify(repository, never()).save(any());
-        verify(outboxService, never()).publishPaymentCompleted(any());
+        verify(outboxService, never()).publishPaymentCompleted(any(), any());
     }
 
     @Test
@@ -109,7 +112,7 @@ class PaymentTransactionHandlerTest {
         handler.handleSuccess(success("pi_123", "evt_dup"));
 
         verify(repository, never()).findByProviderTransactionId(anyString());
-        verify(outboxService, never()).publishPaymentCompleted(any());
+        verify(outboxService, never()).publishPaymentCompleted(any(), any());
     }
 
     @Test
@@ -122,7 +125,7 @@ class PaymentTransactionHandlerTest {
 
         assertThat(tx.getStatus()).isEqualTo(TransactionStatus.SUCCESS);
         verify(repository).save(tx);
-        verify(outboxService).publishPaymentCompleted(tx);
+        verify(outboxService).publishPaymentCompleted(tx, OCCURRED_AT);
     }
 
     @Test
@@ -135,7 +138,7 @@ class PaymentTransactionHandlerTest {
 
         assertThatCode(() -> handler.handleSuccess(success("pi_missing", "evt_ok"))).doesNotThrowAnyException();
         verify(repository, never()).save(any());
-        verify(outboxService, never()).publishPaymentCompleted(any());
+        verify(outboxService, never()).publishPaymentCompleted(any(), any());
     }
 
     @Test
@@ -145,7 +148,7 @@ class PaymentTransactionHandlerTest {
 
         assertThatCode(() -> handler.handleFailure(failure("pi_missing", "evt_fail"))).doesNotThrowAnyException();
         verify(repository, never()).save(any());
-        verify(outboxService, never()).publishPaymentFailed(any(), anyString());
+        verify(outboxService, never()).publishPaymentFailed(any(), anyString(), any());
     }
 
     @ParameterizedTest(name = "a success reporting {0} {1} leaves a 50.00 USD transaction unchanged")
@@ -171,7 +174,8 @@ class PaymentTransactionHandlerTest {
                 "evt_ok",
                 WebhookEventType.PAYMENT_SUCCESS,
                 amount == null ? null : new BigDecimal(amount),
-                currency
+                currency,
+                OCCURRED_AT
         );
 
         assertThatCode(() -> handler.handleSuccess(result)).doesNotThrowAnyException();
@@ -179,7 +183,7 @@ class PaymentTransactionHandlerTest {
         assertThat(tx.getStatus()).isEqualTo(TransactionStatus.PENDING);
         assertThat(tx.getProviderEventId()).isNull();
         verify(repository, never()).save(any());
-        verify(outboxService, never()).publishPaymentCompleted(any());
+        verify(outboxService, never()).publishPaymentCompleted(any(), any());
     }
 
     @Test
@@ -195,11 +199,12 @@ class PaymentTransactionHandlerTest {
                 "evt_ok",
                 WebhookEventType.PAYMENT_SUCCESS,
                 new BigDecimal("50"),
-                "usd"
+                "usd",
+                OCCURRED_AT
         ));
 
         assertThat(tx.getStatus()).isEqualTo(TransactionStatus.SUCCESS);
-        verify(outboxService).publishPaymentCompleted(tx);
+        verify(outboxService).publishPaymentCompleted(tx, OCCURRED_AT);
     }
 
     private static WebhookResult success(String providerTransactionId, String providerEventId) {
@@ -208,7 +213,8 @@ class PaymentTransactionHandlerTest {
                 providerEventId,
                 WebhookEventType.PAYMENT_SUCCESS,
                 new BigDecimal("50.00"),
-                "USD"
+                "USD",
+                OCCURRED_AT
         );
     }
 
@@ -218,7 +224,8 @@ class PaymentTransactionHandlerTest {
                 providerEventId,
                 WebhookEventType.PAYMENT_FAILURE,
                 new BigDecimal("50.00"),
-                "USD"
+                "USD",
+                OCCURRED_AT
         );
     }
 

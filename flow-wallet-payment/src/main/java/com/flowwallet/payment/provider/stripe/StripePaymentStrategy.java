@@ -88,7 +88,8 @@ public class StripePaymentStrategy implements PaymentProviderStrategy {
                 event.eventId(),
                 eventType,
                 majorUnitAmount(paymentIntent),
-                paymentIntent.getCurrency() == null ? null : paymentIntent.getCurrency().toUpperCase(Locale.ROOT)
+                paymentIntent.getCurrency() == null ? null : paymentIntent.getCurrency().toUpperCase(Locale.ROOT),
+                event.created()
         );
     }
 

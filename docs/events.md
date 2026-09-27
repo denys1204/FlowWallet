@@ -28,6 +28,10 @@ can't be made additively. The contract's rules are in [ADR 0009](adr/0009-paymen
 - `PaymentCompletedEvent` carries `eventId`, `schemaVersion`, `transactionReference`, `providerTransactionId`, `amount`, `currency`, `userId`, `completedAt`.
 - `PaymentFailedEvent` carries `eventId`, `schemaVersion`, `transactionReference`, `providerTransactionId`, `amount`, `currency`, `userId`, `reason`, `failedAt`.
 
+`completedAt` and `failedAt` are the `created` time of the Stripe event that settled the payment, not the
+time Payment Service processed the webhook, so a delivery that Stripe retried hours later still carries the
+original time.
+
 Neither event names a wallet. A wallet is identified by its owner and its currency, which the events already
 carry ([ADR 0004](adr/0004-wallet-addressed-by-owner-and-currency.md)).
 
