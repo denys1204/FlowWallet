@@ -9,16 +9,21 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.springframework.core.MethodParameter;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.InvalidDataAccessResourceUsageException;
 import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.dao.QueryTimeoutException;
 import org.springframework.dao.UncategorizedDataAccessException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.transaction.CannotCreateTransactionException;
+import org.springframework.web.context.request.ServletWebRequest;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.net.URI;
 import java.sql.SQLException;
@@ -166,6 +171,45 @@ class GlobalExceptionHandlerTest {
 
         assertThat(body.getStatus()).isEqualTo(500);
         assertThat(body.getDetail()).isEqualTo("Internal server error");
+    }
+
+    @Test
+    void aParameterOfTheWrongTypeIsNamedButItsValueIsNotQuoted() throws NoSuchMethodException {
+        // Guards the framework's default detail, "Failed to convert 'before' with value: '...'", which copies a
+        // value of the caller's choosing, line breaks and all, into the response.
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/wallets/USD/history");
+        MethodParameter parameter = new MethodParameter(Endpoint.class.getDeclaredMethod("history", Long.class), 0);
+        MethodArgumentTypeMismatchException ex = new MethodArgumentTypeMismatchException(
+                "abc\nERROR forged line",
+                Long.class,
+                "before",
+                parameter,
+                new NumberFormatException("For input string: \"abc\"")
+        );
+
+        ResponseEntity<Object> response = handler.handleTypeMismatch(
+                ex,
+                new HttpHeaders(),
+                HttpStatus.BAD_REQUEST,
+                new ServletWebRequest(request)
+        );
+
+        assertThat(response).isNotNull();
+        ProblemDetail body = (ProblemDetail) response.getBody();
+        assertThat(body).isNotNull();
+        assertThat(body.getStatus()).isEqualTo(400);
+        assertThat(body.getDetail()).isEqualTo("Invalid value for parameter 'before'");
+        assertThat(body.getInstance()).isEqualTo(URI.create("/api/wallets/USD/history"));
+        assertThat(body.getProperties()).containsKey("timestamp");
+    }
+
+    /**
+     * A handler method to take a {@link MethodParameter} from.
+     */
+    private static final class Endpoint {
+        @SuppressWarnings("unused")
+        void history(Long before) {
+        }
     }
 
     /**

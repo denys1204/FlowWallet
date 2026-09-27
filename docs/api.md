@@ -21,7 +21,7 @@ path and in the body.
 | Method & path | Request | Response |
 |---------------|---------|----------|
 | `GET /api/wallets` | (none) | `200` `[{balance, currency, createdAt, updatedAt}]`, ordered by currency; an empty list if none, never `404` |
-| `POST /api/wallets` | `{"currency": "USD"}` | `201` the wallet; `400` not an ISO 4217 code, or a code with no minor unit (XAU, XTS, XXX and the like); `409` a wallet in that currency already exists |
+| `POST /api/wallets` | `{"currency": "USD"}` | `201` the wallet; `400` not three letters (listed in `errors`), not an ISO 4217 code, or a code with no minor unit (XAU, XTS, XXX and the like); `409` a wallet in that currency already exists |
 | `GET /api/wallets/{currency}` | (none) | `200` the wallet; `400` invalid code; `404` the caller holds no such wallet (never `403`) |
 | `GET /api/wallets/{currency}/history?before={entryNo}&limit={n}` | (none) | `200` `{items, nextBefore}`, newest first |
 | `POST /api/wallets/{currency}/deposits` | `{"amount": 50.00}` + `Idempotency-Key` header | `200` `{reference, provider, providerData}` |
@@ -214,7 +214,10 @@ handler in `flow-wallet-platform`:
 ```
 
 Validation failures include an `errors` array for body fields and for query and header parameters. A
-currency in the path is checked by the service instead and comes back with a `detail` only. The `type`
+currency in the path is checked by the service instead and comes back with a `detail` only. No detail quotes
+the value it refuses: an unknown currency gets "Not an ISO 4217 currency code", and a query parameter of the
+wrong type gets "Invalid value for parameter 'before'"
+([ADR 0026](adr/0026-problem-details-never-quote-rejected-input.md)). The `type`
 field is left out: nothing sets it, and a null field isn't serialised.
 The gateway is reactive and doesn't use this handler. Errors it raises itself (`404` for an unrouted path,
 `5xx` when a downstream service is unreachable) come in Spring Boot's default WebFlux format.

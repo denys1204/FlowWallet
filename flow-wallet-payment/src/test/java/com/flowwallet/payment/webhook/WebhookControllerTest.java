@@ -85,7 +85,7 @@ class WebhookControllerTest {
 
     @Test
     void anUnknownProviderIsA400Problem() throws Exception {
-        doThrow(new UnsupportedPaymentProviderException("Unsupported payment provider: paypal"))
+        doThrow(new UnsupportedPaymentProviderException("Unsupported payment provider"))
                 .when(webhookService).processWebhook(eq("paypal"), anyString(), anyMap());
 
         mockMvc.perform(post("/api/payments/webhooks/paypal").contentType(MediaType.APPLICATION_JSON).content(PAYLOAD))

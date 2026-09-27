@@ -20,6 +20,10 @@ paths:
   with an ASCII `@Pattern` instead (`TransferController`, `TransferRequest`). `DepositController` uses `@UUID`
   for its key and so answers such a key with a 500. Where `@UUID` stays, it defaults to versions 1 to 5, so set
   `version` explicitly.
+- A problem detail never quotes the value it refuses: `GlobalExceptionHandler` logs every 4xx detail, so a
+  quoted value with line breaks forges log lines. Name the field and the rule; a request `String` that reaches
+  a detail is bounded first with `@Pattern`, like `CreateWalletRequest.currency`
+  ([ADR 0026](../../docs/adr/0026-problem-details-never-quote-rejected-input.md)).
 - Hibernate Validator's `@Digits` measures a `BigDecimal` as it is, trailing zeros included (it strips them
   only from other `Number` types), so `@Digits(fraction = 2)` refuses `25.100`. Precision is checked in code
   (`AmountPrecision`).

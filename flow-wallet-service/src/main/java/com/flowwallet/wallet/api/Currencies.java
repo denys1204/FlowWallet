@@ -17,13 +17,13 @@ public final class Currencies {
      */
     public static String normalise(String currency) {
         if (currency == null || currency.isBlank()) {
-            throw new InvalidCurrencyException(currency);
+            throw new InvalidCurrencyException();
         }
         String code = currency.toUpperCase(Locale.ROOT);
         try {
             Currency.getInstance(code);
         } catch (IllegalArgumentException e) {
-            throw new InvalidCurrencyException(currency);
+            throw new InvalidCurrencyException();
         }
         return code;
     }

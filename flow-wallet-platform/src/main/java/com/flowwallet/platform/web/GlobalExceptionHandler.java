@@ -5,6 +5,9 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
+import org.springframework.beans.ConversionNotSupportedException;
+import org.springframework.beans.TypeMismatchException;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.dao.TransientDataAccessException;
@@ -106,6 +109,41 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         body.setProperty("errors", ex.getBindingResult().getFieldErrors().stream()
                 .map(fe -> fe.getField() + " " + fe.getDefaultMessage())
                 .toList());
+        return handleExceptionInternal(ex, body, headers, status, request);
+    }
+
+    /**
+     * A path, query or header value that does not convert to the parameter's type. The base class quotes the value,
+     * whose content and length the caller chooses; this detail names only the parameter, as the handler method
+     * declares it. See docs/adr/0026-problem-details-never-quote-rejected-input.md.
+     */
+    @Override
+    protected @Nullable ResponseEntity<Object> handleTypeMismatch(
+            TypeMismatchException ex,
+            @NonNull HttpHeaders headers,
+            @NonNull HttpStatusCode status,
+            @NonNull WebRequest request
+    ) {
+        ProblemDetail body = ProblemDetail.forStatusAndDetail(
+                status,
+                "Invalid value for parameter '%s'".formatted(ex.getPropertyName())
+        );
+        return handleExceptionInternal(ex, body, headers, status, request);
+    }
+
+    /**
+     * No converter exists for the parameter's type, a defect of the service. The base class would answer 500 with
+     * the rejected value in the detail; this answers like {@link #handleUnexpected}.
+     */
+    @Override
+    protected @Nullable ResponseEntity<Object> handleConversionNotSupported(
+            ConversionNotSupportedException ex,
+            @NonNull HttpHeaders headers,
+            @NonNull HttpStatusCode status,
+            @NonNull WebRequest request
+    ) {
+        log.error("Unhandled exception at {}", path(request), ex);
+        ProblemDetail body = ProblemDetail.forStatusAndDetail(status, INTERNAL_ERROR);
         return handleExceptionInternal(ex, body, headers, status, request);
     }
 

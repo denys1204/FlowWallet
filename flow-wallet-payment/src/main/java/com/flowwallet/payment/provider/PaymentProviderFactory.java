@@ -28,12 +28,15 @@ public class PaymentProviderFactory {
     /**
      * Matches the name case-insensitively. {@code Locale.ROOT} keeps the match independent of the host's locale:
      * under a Turkish default, {@code "stripe".toUpperCase()} is {@code "STRİPE"}, which names no provider.
+     * <p>
+     * The refusal does not quote the name. On the webhook it is a public path segment of any content, and the
+     * handler logs every 4xx detail.
      */
     public PaymentProvider resolve(String providerName) {
         try {
             return PaymentProvider.valueOf(providerName.toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
-            throw new UnsupportedPaymentProviderException("Unsupported payment provider: " + providerName);
+            throw new UnsupportedPaymentProviderException("Unsupported payment provider");
         }
     }
 }

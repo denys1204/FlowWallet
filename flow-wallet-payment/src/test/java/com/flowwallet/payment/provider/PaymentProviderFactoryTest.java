@@ -45,6 +45,16 @@ class PaymentProviderFactoryTest {
         // Guards an IllegalArgumentException from Enum.valueOf escaping as a 500.
         assertThatThrownBy(() -> factory.resolve("paypal"))
                 .isInstanceOf(UnsupportedPaymentProviderException.class)
-                .hasMessageContaining("paypal");
+                .hasMessage("Unsupported payment provider");
+    }
+
+    @Test
+    void theRefusalDoesNotQuoteTheProviderName() {
+        // Guards log forging through the public webhook path: the handler logs every 4xx detail, so a quoted
+        // name with a line break would write a line of the caller's choosing, and a long one would be copied
+        // into the log and the response.
+        assertThatThrownBy(() -> factory.resolve("paypal\nERROR forged line"))
+                .isInstanceOf(UnsupportedPaymentProviderException.class)
+                .hasMessage("Unsupported payment provider");
     }
 }

@@ -56,6 +56,22 @@ class WalletControllerTest {
         verifyNoInteractions(wallets);
     }
 
+    @ParameterizedTest(name = "\"{0}\" is refused as a new wallet's currency")
+    @ValueSource(strings = {"US", "USDX", "U$D", "US\nD", "ＵＳＤ", "   "})
+    void aBodyCurrencyThatIsNotThreeAsciiLettersIsRefusedWithoutBeingQuoted(String currency) throws Exception {
+        // Guards the body currency's shape: without the pattern a value with line breaks or of any length (Jackson
+        // reads strings of up to 100 million characters) reached the service and came back, and into the log,
+        // inside the detail. Fullwidth letters are refused like any other non-ASCII character.
+        mockMvc.perform(post("/api/wallets")
+                        .header("X-User-Id", CALLER)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"currency\": \"" + currency.replace("\n", "\\n") + "\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0]").value("currency Currency must be a three-letter ISO 4217 code"));
+
+        verifyNoInteractions(wallets);
+    }
+
     @ParameterizedTest(name = "limit={0} is refused")
     @ValueSource(strings = {"0", "101", "-1"})
     void aHistoryLimitOutsideOneToAHundredIsRefused(String limit) throws Exception {
@@ -85,12 +101,14 @@ class WalletControllerTest {
     }
 
     @Test
-    void aNonNumericHistoryCursorIsRefused() throws Exception {
-        // Guards the cursor's type: before is an entry number, and anything else is a bad request, not a 500.
+    void aNonNumericHistoryCursorIsRefusedWithoutBeingQuoted() throws Exception {
+        // Guards the cursor's type, since before is an entry number, and the framework's default detail, which
+        // quoted the rejected value back to the caller ("Failed to convert 'before' with value: 'abc'").
         mockMvc.perform(get("/api/wallets/USD/history")
                         .header("X-User-Id", CALLER)
                         .param("before", "abc"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("Invalid value for parameter 'before'"));
 
         verifyNoInteractions(wallets);
     }

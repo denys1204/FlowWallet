@@ -52,8 +52,21 @@ class WalletServiceTest {
     @ParameterizedTest(name = "{0} is refused as a currency")
     @ValueSource(strings = {"ZZZ", "US", "dollars", "1"})
     void anythingThatIsNotAnIsoCodeIsRefused(String written) {
+        // Guards an unknown code reaching the query, and the refusal quoting what the caller wrote.
         assertThatThrownBy(() -> service.read("erin", written))
-                .isInstanceOf(InvalidCurrencyException.class);
+                .isInstanceOf(InvalidCurrencyException.class)
+                .hasMessage("Not an ISO 4217 currency code");
+
+        verifyNoInteractions(wallets);
+    }
+
+    @Test
+    void theRefusalOfAPathCurrencyDoesNotQuoteIt() {
+        // Guards log forging through the path: the handler logs every 4xx detail, so a quoted currency with a
+        // line break would write a log line of the caller's choosing.
+        assertThatThrownBy(() -> service.history("erin", "usd\nERROR forged line", null, 20))
+                .isInstanceOf(InvalidCurrencyException.class)
+                .hasMessage("Not an ISO 4217 currency code");
 
         verifyNoInteractions(wallets);
     }

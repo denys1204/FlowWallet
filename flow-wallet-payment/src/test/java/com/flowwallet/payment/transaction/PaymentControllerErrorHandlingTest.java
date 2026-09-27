@@ -117,7 +117,7 @@ class PaymentControllerErrorHandlingTest {
     @Test
     void unsupportedProviderReturns400AsProblemJson() throws Exception {
         when(paymentService.initiatePayment(any(), anyString())).thenThrow(
-                new UnsupportedPaymentProviderException("Unsupported payment provider: FOO")
+                new UnsupportedPaymentProviderException("Unsupported payment provider")
         );
 
         mockMvc.perform(post("/api/payments/intent")
@@ -127,6 +127,6 @@ class PaymentControllerErrorHandlingTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
                 .andExpect(jsonPath("$.status").value(400))
-                .andExpect(jsonPath("$.detail").value("Unsupported payment provider: FOO"));
+                .andExpect(jsonPath("$.detail").value("Unsupported payment provider"));
     }
 }

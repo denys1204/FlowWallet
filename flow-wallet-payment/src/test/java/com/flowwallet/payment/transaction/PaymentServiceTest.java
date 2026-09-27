@@ -189,7 +189,7 @@ class PaymentServiceTest {
     void unknownProviderFailsFastWithoutReserving() {
         when(store.findOwnedBy("ref-1", "user-1")).thenReturn(Optional.empty());
         when(factory.resolve("FOO")).thenThrow(
-                new UnsupportedPaymentProviderException("Unsupported payment provider: FOO")
+                new UnsupportedPaymentProviderException("Unsupported payment provider")
         );
 
         assertThatThrownBy(
