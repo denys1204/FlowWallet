@@ -142,6 +142,24 @@ public class PaymentTransaction {
         return differences.isEmpty() ? Optional.empty() : Optional.of(String.join(", ", differences));
     }
 
+    /**
+     * Compares the provider's report of a settled payment with the stored terms: the amount by {@code compareTo}
+     * and the currency ignoring case. A term the provider did not report counts as different.
+     * See docs/adr/0017-webhooks-verified-before-they-are-read.md.
+     *
+     * @return the names of the terms that differ, or empty if none do
+     */
+    public Optional<String> differencesFromConfirmed(BigDecimal confirmedAmount, String confirmedCurrency) {
+        List<String> differences = new ArrayList<>();
+        if (confirmedAmount == null || amount.compareTo(confirmedAmount) != 0) {
+            differences.add("amount");
+        }
+        if (confirmedCurrency == null || !currency.equalsIgnoreCase(confirmedCurrency)) {
+            differences.add("currency");
+        }
+        return differences.isEmpty() ? Optional.empty() : Optional.of(String.join(", ", differences));
+    }
+
     public static PaymentTransaction create(
             CreatePaymentIntentRequest request,
             String userId

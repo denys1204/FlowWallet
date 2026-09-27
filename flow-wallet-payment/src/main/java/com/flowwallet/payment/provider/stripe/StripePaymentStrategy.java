@@ -15,6 +15,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
+import java.util.Locale;
 import java.util.Map;
 
 import static com.flowwallet.payment.provider.stripe.StripeConstants.*;
@@ -69,7 +71,37 @@ public class StripePaymentStrategy implements PaymentProviderStrategy {
             return WebhookResult.unknown();
         }
 
-        return new WebhookResult(paymentIntent.getId(), event.eventId(), eventType);
+        // A success event must describe a settled intent. Anything else is acknowledged and applied to no row.
+        // See docs/adr/0017-webhooks-verified-before-they-are-read.md.
+        if (eventType == WebhookEventType.PAYMENT_SUCCESS && !STATUS_SUCCEEDED.equals(paymentIntent.getStatus())) {
+            log.error(
+                    "Ignoring success event {} for provider tx {}: the PaymentIntent's status is {}",
+                    event.eventId(),
+                    paymentIntent.getId(),
+                    paymentIntent.getStatus()
+            );
+            return WebhookResult.unknown();
+        }
+
+        return new WebhookResult(
+                paymentIntent.getId(),
+                event.eventId(),
+                eventType,
+                majorUnitAmount(paymentIntent),
+                paymentIntent.getCurrency() == null ? null : paymentIntent.getCurrency().toUpperCase(Locale.ROOT)
+        );
+    }
+
+    /**
+     * The inverse of the conversion in {@link StripeRequestMapper}, through the same transmit exponent, so a
+     * stored 12.34 KWD matches Stripe's 12340. Null when the intent carries no amount or currency.
+     */
+    private BigDecimal majorUnitAmount(PaymentIntent paymentIntent) {
+        if (paymentIntent.getAmount() == null || paymentIntent.getCurrency() == null) {
+            return null;
+        }
+        int exponent = StripeCurrencyRules.of(paymentIntent.getCurrency()).transmitExponent();
+        return BigDecimal.valueOf(paymentIntent.getAmount()).movePointLeft(exponent);
     }
 
     private WebhookEventType resolveEventType(String stripeEventType) {

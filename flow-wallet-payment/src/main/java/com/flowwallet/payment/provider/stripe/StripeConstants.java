@@ -13,6 +13,8 @@ public final class StripeConstants {
 
     public static final String EVENT_PAYMENT_FAILED = "payment_intent.payment_failed";
 
+    public static final String STATUS_SUCCEEDED = "succeeded";
+
     public static final String HEADER_SIGNATURE = "stripe-signature";
 
     public static final String RESPONSE_CLIENT_SECRET = "clientSecret";

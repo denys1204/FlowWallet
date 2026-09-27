@@ -13,6 +13,8 @@ import com.stripe.model.PaymentIntent;
 import com.stripe.model.StripeObject;
 import com.stripe.param.PaymentIntentCreateParams;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import java.math.BigDecimal;
 import java.util.Map;
@@ -73,8 +75,7 @@ class StripePaymentStrategyTest {
 
     @Test
     void mapsSucceededWebhookToPaymentSuccessResult() {
-        PaymentIntent paymentIntent = mock(PaymentIntent.class);
-        when(paymentIntent.getId()).thenReturn("pi_1");
+        PaymentIntent paymentIntent = paymentIntent("succeeded", 5000L, "usd");
         when(webhookParser.parse("payload", Map.of())).thenReturn(
                 new ParsedStripeEvent("evt_1", "payment_intent.succeeded", paymentIntent)
         );
@@ -84,6 +85,55 @@ class StripePaymentStrategyTest {
         assertThat(result.eventType()).isEqualTo(WebhookEventType.PAYMENT_SUCCESS);
         assertThat(result.providerTransactionId()).isEqualTo("pi_1");
         assertThat(result.providerEventId()).isEqualTo("evt_1");
+        assertThat(result.amount()).isEqualByComparingTo("50.00");
+        assertThat(result.currency()).isEqualTo("USD");
+    }
+
+    @ParameterizedTest(name = "{1} {2} is {0} in major units")
+    @CsvSource({
+            "50.00, 5000, usd",
+            "500, 500, jpy",
+            "12.34, 12340, kwd",
+    })
+    void convertsStripesMinorUnitsWithTheSameExponentAsTheRequest(String expected, long minor, String currency) {
+        // The amount is compared with the stored transaction before a success is applied. Converting with a
+        // different exponent than the request used would refuse every genuine JPY or KWD payment.
+        PaymentIntent intent = paymentIntent("succeeded", minor, currency);
+        when(webhookParser.parse("payload", Map.of())).thenReturn(
+                new ParsedStripeEvent("evt_1", "payment_intent.succeeded", intent)
+        );
+
+        WebhookResult result = strategy.handleWebhook("payload", Map.of());
+
+        assertThat(result.amount()).isEqualByComparingTo(expected);
+    }
+
+    @Test
+    void aSuccessEventWhoseIntentHasNotSucceededIsIgnored() {
+        // A success event must describe a settled intent; one that does not must never credit a wallet.
+        PaymentIntent intent = paymentIntent("requires_payment_method", 5000L, "usd");
+        when(webhookParser.parse("payload", Map.of())).thenReturn(
+                new ParsedStripeEvent("evt_1", "payment_intent.succeeded", intent)
+        );
+
+        WebhookResult result = strategy.handleWebhook("payload", Map.of());
+
+        assertThat(result.eventType()).isEqualTo(WebhookEventType.UNKNOWN);
+    }
+
+    @Test
+    void aSuccessEventWithoutAnAmountCarriesNone() {
+        // A null amount reaches the handler as a difference, so it can never match a stored transaction.
+        PaymentIntent intent = paymentIntent("succeeded", null, null);
+        when(webhookParser.parse("payload", Map.of())).thenReturn(
+                new ParsedStripeEvent("evt_1", "payment_intent.succeeded", intent)
+        );
+
+        WebhookResult result = strategy.handleWebhook("payload", Map.of());
+
+        assertThat(result.eventType()).isEqualTo(WebhookEventType.PAYMENT_SUCCESS);
+        assertThat(result.amount()).isNull();
+        assertThat(result.currency()).isNull();
     }
 
     @Test
@@ -109,5 +159,14 @@ class StripePaymentStrategyTest {
         WebhookResult result = strategy.handleWebhook("payload", Map.of());
 
         assertThat(result.eventType()).isEqualTo(WebhookEventType.UNKNOWN);
+    }
+
+    private static PaymentIntent paymentIntent(String status, Long amount, String currency) {
+        PaymentIntent paymentIntent = new PaymentIntent();
+        paymentIntent.setId("pi_1");
+        paymentIntent.setStatus(status);
+        paymentIntent.setAmount(amount);
+        paymentIntent.setCurrency(currency);
+        return paymentIntent;
     }
 }

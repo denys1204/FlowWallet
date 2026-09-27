@@ -121,16 +121,24 @@ a transfer, and a replay has to match the first answer in status as well as body
 POST /api/payments/webhooks/{provider}      e.g. /api/payments/webhooks/stripe
 ```
 
-The endpoint reads the raw request body plus the provider's signature headers. Subscribe it to
+The endpoint reads the raw request body, up to `PAYMENT_WEBHOOK_MAX_PAYLOAD_SIZE` (256KB by default), plus
+the provider's signature headers, and checks the signature before it parses the body. Subscribe it to
 `payment_intent.succeeded`, which marks the transaction `SUCCESS` and emits `PaymentCompletedEvent`, and to
 `payment_intent.payment_failed`, which marks a still-`PENDING` transaction `FAILED` and emits
-`PaymentFailedEvent`. A failure that arrives after a success changes nothing.
+`PaymentFailedEvent`. A failure that arrives after a success changes nothing. A success is applied only when
+the PaymentIntent's status is `succeeded` and its amount and currency match the transaction; otherwise the
+transaction is left as it is and Payment Service logs an ERROR.
+
+Until `STRIPE_WEBHOOK_SECRET` holds a real signing secret (`whsec_...`, not a placeholder), webhooks are
+disabled: every delivery gets `400` and nothing is credited.
 
 The status code of a webhook response is about delivery, not about the business outcome. `200` means
-received: the event was applied, was already processed, is of another type, or concerns a PaymentIntent
-this service never created (from `stripe trigger` or the dashboard). A retry couldn't change any of those.
-`400` means the signature is missing or invalid, or the provider is unknown. `500` means the payload
-couldn't be processed.
+received: the event was applied, was already processed, is of another type, concerns a PaymentIntent this
+service never created (from `stripe trigger` or the dashboard), or disagrees with the stored transaction. A
+retry couldn't change any of those. `400` means the signature is missing, malformed or invalid, webhooks are
+disabled, or the provider is unknown. `413` means the body is larger than the limit. `500` means a correctly
+signed payload couldn't be processed. The reasoning is in
+[ADR 0017](adr/0017-webhooks-verified-before-they-are-read.md).
 
 ### Internal: Payment Service (`:8082` directly)
 
@@ -194,14 +202,16 @@ The status mapping lives in one place, and each status stands for one remedy
 - `401`: missing or malformed `X-User-Id` (blank, over 64 characters, not a version 4 or 7 UUID).
 - `400`: invalid request, unknown provider, non-ISO-4217 currency, missing or non-UUID `Idempotency-Key`, a
   deposit amount Payment Service rejects (its message passed on), a transfer `to` that isn't a version 4 or 7
-  UUID, a transfer amount off its currency's grid or too large for a balance, a transfer to oneself, missing
-  or invalid webhook signature.
+  UUID, a transfer amount off its currency's grid or too large for a balance, a transfer to oneself, a
+  missing, malformed or invalid webhook signature, or any webhook while no signing secret is configured.
 - `404`: wallet not found. Wallet lookups are scoped to the caller, so it is never `403`. On a transfer it
   always means the caller's own wallet; a recipient without a wallet gets `422`.
 - `406`: a transfer whose `Accept` header rules out JSON. It is refused before anything runs.
 - `409`: transaction reference already in use (another user, a concurrent request, different terms, or
   already paid), wallet already exists, `Idempotency-Key` reused for a different or completed deposit or for
   a different transfer.
+- `413`: a webhook body larger than `PAYMENT_WEBHOOK_MAX_PAYLOAD_SIZE`, refused before its signature is
+  checked ([ADR 0017](adr/0017-webhooks-verified-before-they-are-read.md)).
 - `422`: a transfer the caller's balance doesn't cover, or a recipient without a wallet in the currency. The
   request is well-formed and its key unspent, and the remedy is a smaller amount, a top-up or another
   recipient. On a transfer it is kept apart from `409`, whose remedy there is a new key, because without a
@@ -211,6 +221,6 @@ The status mapping lives in one place, and each status stands for one remedy
 - `503`: a transfer lost a lock or a version check (a deadlock, a lock wait that timed out, a version
   conflict). The lock order is meant to rule these out. Nothing was moved, and retrying with the same key is
   safe.
-- `500`: a webhook payload that can't be processed, a transfer that broke a database CHECK or overflowed a
+- `500`: a correctly signed webhook payload that can't be processed, a transfer that broke a database CHECK or overflowed a
   column, or anything unexpected. The detail stays generic; the specifics go to the logs and are never
   returned.

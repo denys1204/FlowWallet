@@ -121,6 +121,10 @@ lock order and the idempotency checks are specified there, not here.
   `payment.events.wallet.DLT` ([ADR 0010](docs/adr/0010-idempotent-payment-event-consumer.md)).
 - A webhook's status reports delivery, not the business outcome: an event for an intent this service never
   created gets 200, not 404 ([ADR 0016](docs/adr/0016-error-model-and-status-codes.md)).
+- A webhook body is size-capped and its signature verified before it is parsed; never call
+  `Webhook.constructEvent` first. `stripe.webhook.secret` has no default, and without a real `whsec_` value every
+  webhook is refused. A success is applied only if the intent's amount and currency match the row
+  ([ADR 0017](docs/adr/0017-webhooks-verified-before-they-are-read.md)).
 - `FAILED` outbox rows are never deleted automatically; they are the dead-letter store
   ([ADR 0008](docs/adr/0008-transactional-outbox.md)).
 - A `PaymentFailedEvent` moves no money, which is why the consumer does not depend on event order

@@ -6,20 +6,21 @@ import com.flowwallet.payment.provider.stripe.client.StripeClient;
 import com.stripe.exception.EventDataObjectDeserializationException;
 import com.stripe.exception.SignatureVerificationException;
 import com.stripe.model.Event;
+import com.stripe.model.EventDataObjectDeserializer;
 import com.stripe.model.StripeObject;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
+import java.util.Optional;
 
 import static com.flowwallet.payment.provider.stripe.StripeConstants.HEADER_SIGNATURE;
 
 /**
- * Verifies and parses a raw Stripe webhook request into a {@link ParsedStripeEvent}. The SDK reads the body
- * before it checks the signature, so a body that is not a readable event becomes a
- * {@link WebhookProcessingException} without its signature being checked.
- * See docs/adr/0016-error-model-and-status-codes.md.
+ * Verifies and parses a raw Stripe webhook request into a {@link ParsedStripeEvent}. The signature is checked
+ * before the body is parsed, so an unauthenticated body is never read as JSON, and every refusal is an
+ * {@link InvalidWebhookSignatureException}. See docs/adr/0017-webhooks-verified-before-they-are-read.md.
  */
 @Slf4j
 @Component
@@ -28,10 +29,12 @@ public class StripeWebhookParser {
     private final StripeClient stripeClient;
 
     public ParsedStripeEvent parse(String payload, Map<String, String> headers) {
+        if (!stripeClient.isWebhookVerificationEnabled()) {
+            throw new InvalidWebhookSignatureException("Webhook signing secret is not configured");
+        }
         String signature = extractSignature(headers);
-        Event event = parseEventOrThrow(payload, signature);
-        StripeObject dataObject = deserializeEventData(event);
-        return new ParsedStripeEvent(event.getId(), event.getType(), dataObject);
+        verifySignature(payload, signature);
+        return read(payload, signature);
     }
 
     private String extractSignature(Map<String, String> headers) {
@@ -42,25 +45,36 @@ public class StripeWebhookParser {
                 .orElseThrow(() -> new InvalidWebhookSignatureException("Missing Stripe signature header"));
     }
 
-    private Event parseEventOrThrow(String payload, String signature) {
+    /**
+     * A malformed header ({@code t=abc}, a bare {@code t}) makes the SDK throw a {@code RuntimeException} while it
+     * splits the header, so that counts as a bad signature too.
+     */
+    private void verifySignature(String payload, String signature) {
         try {
-            return stripeClient.constructEvent(payload, signature);
-        } catch (SignatureVerificationException e) {
-            log.error("Invalid Stripe signature", e);
+            stripeClient.verifyWebhookSignature(payload, signature);
+        } catch (SignatureVerificationException | RuntimeException e) {
             throw new InvalidWebhookSignatureException("Invalid Stripe signature", e);
-        } catch (RuntimeException e) {
-            log.error("Error processing Stripe webhook payload", e);
-            throw new WebhookProcessingException("Error processing webhook", e);
         }
     }
 
-    private StripeObject deserializeEventData(Event event) {
-        return event.getDataObjectDeserializer().getObject().orElseGet(
-                () -> deserializeUnsafe(event)
-        );
+    private ParsedStripeEvent read(String payload, String signature) {
+        Event event;
+        EventDataObjectDeserializer deserializer;
+        Optional<StripeObject> matchingVersionObject;
+        try {
+            event = stripeClient.constructVerifiedEvent(payload, signature);
+            deserializer = event.getDataObjectDeserializer();
+            matchingVersionObject = deserializer.getObject();
+        } catch (SignatureVerificationException e) {
+            throw new InvalidWebhookSignatureException("Invalid Stripe signature", e);
+        } catch (RuntimeException e) {
+            throw new WebhookProcessingException("Signed Stripe webhook is not a readable event", e);
+        }
+        StripeObject dataObject = matchingVersionObject.orElseGet(() -> deserializeUnsafe(event, deserializer));
+        return new ParsedStripeEvent(event.getId(), event.getType(), dataObject);
     }
 
-    private StripeObject deserializeUnsafe(Event event) {
+    private StripeObject deserializeUnsafe(Event event, EventDataObjectDeserializer deserializer) {
         log.warn(
                 "Stripe API version mismatch! Using deserializeUnsafe(). "
                         + "Please update the Stripe Java SDK to match the dashboard version. Event ID: {}",
@@ -68,7 +82,7 @@ public class StripeWebhookParser {
         );
 
         try {
-            return event.getDataObjectDeserializer().deserializeUnsafe();
+            return deserializer.deserializeUnsafe();
         } catch (EventDataObjectDeserializationException e) {
             throw new WebhookProcessingException("Failed to deserialize Stripe event data", e);
         }

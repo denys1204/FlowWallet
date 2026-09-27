@@ -7,6 +7,7 @@ import com.flowwallet.payment.provider.exception.UnsupportedPaymentProviderExcep
 import com.flowwallet.payment.provider.exception.WebhookProcessingException;
 import com.flowwallet.payment.transaction.DuplicateTransactionReferenceException;
 import com.flowwallet.payment.transaction.TransactionNotFoundException;
+import com.flowwallet.payment.webhook.WebhookPayloadTooLargeException;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 
@@ -33,5 +34,7 @@ class DomainExceptionStatusTest {
                 .isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
         assertThat(DuplicateTransactionReferenceException.forReference("ref-1").getStatus())
                 .isEqualTo(HttpStatus.CONFLICT);
+        assertThat(new WebhookPayloadTooLargeException(1024).getStatus())
+                .isEqualTo(HttpStatus.CONTENT_TOO_LARGE);
     }
 }

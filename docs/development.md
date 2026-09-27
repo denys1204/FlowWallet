@@ -75,8 +75,10 @@ stripe listen --forward-to localhost:8080/api/payments/webhooks/stripe
 ```
 
 When it starts, `stripe listen` prints a webhook signing secret (`whsec_...`) and signs every event it
-forwards with it. Put that value in `STRIPE_WEBHOOK_SECRET` and restart Payment Service. If you skip this,
-every webhook is refused with `400` and nothing gets credited.
+forwards with it. Put that value in `STRIPE_WEBHOOK_SECRET` and restart Payment Service. Until then webhooks
+are disabled: Payment Service logs a WARN at startup, refuses every webhook with `400` without checking it,
+and nothing gets credited. An empty value, a placeholder such as `whsec_dummy`, or anything that doesn't start
+with `whsec_` counts as unset ([ADR 0017](adr/0017-webhooks-verified-before-they-are-read.md)).
 
 ### 6. Try a deposit
 
@@ -112,9 +114,10 @@ curl localhost:8080/api/wallets/USD/history -H "X-User-Id: $USER"
 
 ## Configuration
 
-Every setting has a local default and can be overridden in `.env` or with an environment variable. The
-Stripe defaults (`sk_test_dummy`, `whsec_dummy`) only let the services start: no payment works until you set
-real test keys. `.env.example` has the full list with comments. The main ones:
+Every setting except the webhook signing secret has a local default and can be overridden in `.env` or with
+an environment variable. The Stripe API key default (`sk_test_dummy`) only lets the services start, and
+`STRIPE_WEBHOOK_SECRET` has no default, so webhooks stay disabled until it is set: no payment works until you
+set real test values for both. `.env.example` has the full list with comments. The main ones:
 
 | Variable | Default | Used by |
 |----------|---------|---------|
@@ -134,7 +137,9 @@ real test keys. `.env.example` has the full list with comments. The main ones:
 | `WALLET_PAYMENT_BASE_URL` | `http://localhost:${PAYMENT_SERVICE_PORT}` | Wallet (Payment Service's own address, not the gateway's) |
 | `WALLET_PAYMENT_CONNECT_TIMEOUT` / `_READ_TIMEOUT` | `2s` / `10s` | Wallet |
 | `WALLET_PAYMENT_PROVIDER` | `STRIPE` | Wallet |
-| `STRIPE_API_KEY` / `STRIPE_WEBHOOK_SECRET` | `sk_test_dummy` / `whsec_dummy` | Payment |
+| `STRIPE_API_KEY` / `STRIPE_WEBHOOK_SECRET` | `sk_test_dummy` / none (webhooks disabled) | Payment |
+| `STRIPE_WEBHOOK_TOLERANCE_SECONDS` | `300` | Payment: how old a webhook's signed timestamp may be |
+| `PAYMENT_WEBHOOK_MAX_PAYLOAD_SIZE` | `256KB` | Payment: a larger webhook body gets `413` |
 | `PAYMENT_MIN_DEPOSIT_AMOUNT` / `PAYMENT_MAX_DEPOSIT_AMOUNT` | `1.00` / `10000.00` | Payment |
 | `OUTBOX_POLL_INTERVAL_MS` / `OUTBOX_BATCH_SIZE` | `10000` / `50` | Payment |
 | `OUTBOX_MAX_RETRIES` | `3` | Payment (backoff from `OUTBOX_RETRY_BACKOFF_BASE_MS`, `1000`, up to `_MAX_MS`, `60000`) |
@@ -146,15 +151,19 @@ real test keys. `.env.example` has the full list with comments. The main ones:
 
 The wallet service won't start with values that make no sense, such as a retry multiplier below 1.0, an
 initial interval above the maximum, or a blank Payment Service URL. The payment service does the same for a
-deposit range that is inverted, not positive, or too wide for `NUMERIC(19,4)`.
+deposit range that is inverted, not positive, or too wide for `NUMERIC(19,4)`, a webhook tolerance that isn't
+positive, and a webhook size limit outside 1B to 16MB. A missing webhook secret doesn't stop it starting; it
+only disables webhooks.
 
 ## Testing
 
-There are 263 tests, all green: 98 in the payment service, 132 in the wallet service and 33 in platform. They
+There are 321 tests, all green: 156 in the payment service, 132 in the wallet service and 33 in platform. They
 go after the parts most likely to be wrong rather than the ones easiest to reach. That means the asymmetric
 webhook state machine (a later failure must not undo an earlier success, but a later success must override
-an earlier failure), the outbox's claim, retry and backoff boundaries, Stripe signature parsing, the RFC
-9457 status mapping, the minor-unit conversion that decides how much money actually leaves a card, and the
+an earlier failure), the outbox's claim, retry and backoff boundaries, Stripe signature verification
+against payloads signed with a real secret (placeholder secrets and malformed headers refused, nothing parsed
+before the check), the webhook size cap, the check of a success against the stored amount and currency, the
+RFC 9457 status mapping, the minor-unit conversion that decides how much money actually leaves a card, and the
 identity and idempotency-key rules. For the wallet consumer they cover dispatch on the `eventType` header,
 dead-lettering of unreadable records, refusals, duplicate classification (by the `DEPOSIT` entry alone, since
 one reference can own one movement of each type), the barrier row being written before the wallet is loaded,

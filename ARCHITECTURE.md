@@ -133,7 +133,7 @@ sequenceDiagram
 
     S->>G: POST /api/payments/webhooks/stripe (signed)
     G->>P: proxy
-    P->>P: verify signature, dedupe on provider_event_id
+    P->>P: size cap, verify signature, dedupe on provider_event_id
     alt payment_intent.succeeded
       P->>DB: mark tx SUCCESS + insert OutboxEvent (same TX)
       P->>K: publish PaymentCompletedEvent (outbox)
@@ -307,4 +307,8 @@ that holds a wallet row does only database work. The locking rules are in
   money and leaves the sender's id in the recipient's history. Each refused recipient is logged at WARN with
   both user ids ([ADR 0014](docs/adr/0014-transfers-in-one-local-transaction.md)).
 - Stripe webhooks are verified cryptographically (HMAC signature with a replay window). That check doesn't
-  depend on user identity and stays enforced.
+  depend on user identity and stays enforced. The body is capped at 256KB by default and its signature is
+  checked before it is parsed. Without a real signing secret (`whsec_...`, not a placeholder) webhooks are
+  disabled and every delivery is refused. A verified success is applied only when the PaymentIntent has
+  succeeded and its amount and currency match the stored transaction
+  ([ADR 0017](docs/adr/0017-webhooks-verified-before-they-are-read.md)).

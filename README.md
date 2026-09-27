@@ -115,8 +115,8 @@ Configure the environment:
 cp .env.example .env
 ```
 
-Set `STRIPE_API_KEY` and `POSTGRES_PASSWORD` in `.env`. Leave `STRIPE_WEBHOOK_SECRET` on its placeholder for
-now; the next step gives you the real value.
+Set `STRIPE_API_KEY` and `POSTGRES_PASSWORD` in `.env`. Leave `STRIPE_WEBHOOK_SECRET` empty for now; a later
+step gives you the real value. Until it is set, Payment Service starts but refuses every webhook.
 
 Start infrastructure:
 
@@ -145,7 +145,7 @@ stripe listen --forward-to localhost:8080/api/payments/webhooks/stripe
 ```
 
 `stripe listen` prints a webhook signing secret (`whsec_...`). Put it in `STRIPE_WEBHOOK_SECRET` and restart
-Payment Service, or every webhook comes back `400` and nothing gets credited.
+Payment Service. Until you do, every webhook comes back `400` and nothing gets credited.
 
 See [docs/development.md](docs/development.md) for the full guide, configuration and testing.
 

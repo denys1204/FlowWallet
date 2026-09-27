@@ -1,6 +1,6 @@
 # 0016. Errors are RFC 9457 problems whose status tells the client what to do
 
-- Status: Accepted
+- Status: Accepted, extended by [0017](0017-webhooks-verified-before-they-are-read.md)
 - Date: 2026-07-25
 
 ## Context
@@ -104,7 +104,7 @@ and the `Idempotency-Key` constraints refuse a value without quoting it.
   changes this decision.
 - A controller that validates parameters carries `@Validated`. Without it, Spring MVC's built-in method validation
   raises `HandlerMethodValidationException`, and the problem comes back without `errors`.
-- stripe-java's `Webhook.constructEvent` deserializes the body before it checks the signature, and
-  `StripeWebhookParser.parseEventOrThrow` turns any other `RuntimeException` into `WebhookProcessingException`. A
-  body with a `Stripe-Signature` header that is not a readable event therefore gets `500` without its signature ever
-  being checked.
+- `StripeWebhookParser` checks the signature before it parses the body, and any exception from the check, a
+  malformed `Stripe-Signature` header included, becomes `InvalidWebhookSignatureException`. A body that is not a
+  readable event therefore gets `400` unless its signature is valid, and `500` only when it is
+  ([0017](0017-webhooks-verified-before-they-are-read.md)).

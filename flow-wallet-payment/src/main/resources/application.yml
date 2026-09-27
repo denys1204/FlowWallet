@@ -53,7 +53,8 @@ stripe:
   api:
     key: ${STRIPE_API_KEY:sk_test_dummy}
   webhook:
-    secret: ${STRIPE_WEBHOOK_SECRET:whsec_dummy}
+    # No working default: while this is empty or a placeholder, every webhook is refused with 400.
+    secret: ${STRIPE_WEBHOOK_SECRET:}
     tolerance-seconds: ${STRIPE_WEBHOOK_TOLERANCE_SECONDS:300}
 
 payment:
@@ -64,6 +65,8 @@ payment:
   deposit:
     min-amount: ${PAYMENT_MIN_DEPOSIT_AMOUNT:1.00}
     max-amount: ${PAYMENT_MAX_DEPOSIT_AMOUNT:10000.00}
+  webhook:
+    max-payload-size: ${PAYMENT_WEBHOOK_MAX_PAYLOAD_SIZE:256KB}
 
 outbox:
   poll-interval-ms: ${OUTBOX_POLL_INTERVAL_MS:10000}

@@ -23,4 +23,5 @@ decision unchanged, such as a renamed class, is edited in place.
 | [0013](0013-deposit-initiation.md) | A deposit starts in Wallet Service and is reserved in Payment Service before Stripe is called | Accepted |
 | [0014](0014-transfers-in-one-local-transaction.md) | A transfer is one local transaction in wallet_db with a fixed decision order | Accepted |
 | [0015](0015-currency-precision-and-no-rounding.md) | Amounts sit on an explicit per-currency grid and are refused, never rounded | Accepted |
-| [0016](0016-error-model-and-status-codes.md) | Errors are RFC 9457 problems whose status tells the client what to do | Accepted |
+| [0016](0016-error-model-and-status-codes.md) | Errors are RFC 9457 problems whose status tells the client what to do | Accepted, extended by [0017](0017-webhooks-verified-before-they-are-read.md) |
+| [0017](0017-webhooks-verified-before-they-are-read.md) | Webhooks are bounded and verified before they are read, and refused without a signing secret | Accepted, extends [0016](0016-error-model-and-status-codes.md) |

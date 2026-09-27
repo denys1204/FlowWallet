@@ -2,8 +2,12 @@ package com.flowwallet.payment.transaction;
 
 import com.flowwallet.payment.dto.CreatePaymentIntentRequest;
 import com.flowwallet.payment.outbox.PaymentOutboxService;
+import com.flowwallet.payment.provider.dto.WebhookEventType;
+import com.flowwallet.payment.provider.dto.WebhookResult;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import java.math.BigDecimal;
 import java.util.Optional;
@@ -39,7 +43,7 @@ class PaymentTransactionHandlerTest {
         when(repository.existsByProviderEventId("evt_fail")).thenReturn(false);
         when(repository.findByProviderTransactionId("pi_123")).thenReturn(Optional.of(tx));
 
-        handler.handleFailure("pi_123", "evt_fail");
+        handler.handleFailure(failure("pi_123", "evt_fail"));
 
         assertThat(tx.getStatus()).isEqualTo(TransactionStatus.SUCCESS);
         verify(repository, never()).save(any());
@@ -52,7 +56,7 @@ class PaymentTransactionHandlerTest {
         when(repository.existsByProviderEventId("evt_fail_2")).thenReturn(false);
         when(repository.findByProviderTransactionId("pi_123")).thenReturn(Optional.of(tx));
 
-        handler.handleFailure("pi_123", "evt_fail_2");
+        handler.handleFailure(failure("pi_123", "evt_fail_2"));
 
         assertThat(tx.getStatus()).isEqualTo(TransactionStatus.FAILED);
         verify(repository, never()).save(any());
@@ -65,7 +69,7 @@ class PaymentTransactionHandlerTest {
         when(repository.existsByProviderEventId("evt_fail")).thenReturn(false);
         when(repository.findByProviderTransactionId("pi_123")).thenReturn(Optional.of(tx));
 
-        handler.handleFailure("pi_123", "evt_fail");
+        handler.handleFailure(failure("pi_123", "evt_fail"));
 
         assertThat(tx.getStatus()).isEqualTo(TransactionStatus.FAILED);
         verify(repository).save(tx);
@@ -78,7 +82,7 @@ class PaymentTransactionHandlerTest {
         when(repository.existsByProviderEventId("evt_ok")).thenReturn(false);
         when(repository.findByProviderTransactionId("pi_123")).thenReturn(Optional.of(tx));
 
-        handler.handleSuccess("pi_123", "evt_ok");
+        handler.handleSuccess(success("pi_123", "evt_ok"));
 
         assertThat(tx.getStatus()).isEqualTo(TransactionStatus.SUCCESS);
         verify(repository).save(tx);
@@ -91,7 +95,7 @@ class PaymentTransactionHandlerTest {
         when(repository.existsByProviderEventId("evt_ok_2")).thenReturn(false);
         when(repository.findByProviderTransactionId("pi_123")).thenReturn(Optional.of(tx));
 
-        handler.handleSuccess("pi_123", "evt_ok_2");
+        handler.handleSuccess(success("pi_123", "evt_ok_2"));
 
         assertThat(tx.getStatus()).isEqualTo(TransactionStatus.SUCCESS);
         verify(repository, never()).save(any());
@@ -102,7 +106,7 @@ class PaymentTransactionHandlerTest {
     void skipsWhenProviderEventAlreadyProcessed() {
         when(repository.existsByProviderEventId("evt_dup")).thenReturn(true);
 
-        handler.handleSuccess("pi_123", "evt_dup");
+        handler.handleSuccess(success("pi_123", "evt_dup"));
 
         verify(repository, never()).findByProviderTransactionId(anyString());
         verify(outboxService, never()).publishPaymentCompleted(any());
@@ -114,7 +118,7 @@ class PaymentTransactionHandlerTest {
         when(repository.existsByProviderEventId("evt_ok")).thenReturn(false);
         when(repository.findByProviderTransactionId("pi_123")).thenReturn(Optional.of(tx));
 
-        handler.handleSuccess("pi_123", "evt_ok");
+        handler.handleSuccess(success("pi_123", "evt_ok"));
 
         assertThat(tx.getStatus()).isEqualTo(TransactionStatus.SUCCESS);
         verify(repository).save(tx);
@@ -129,7 +133,7 @@ class PaymentTransactionHandlerTest {
         when(repository.existsByProviderEventId("evt_ok")).thenReturn(false);
         when(repository.findByProviderTransactionId("pi_missing")).thenReturn(Optional.empty());
 
-        assertThatCode(() -> handler.handleSuccess("pi_missing", "evt_ok")).doesNotThrowAnyException();
+        assertThatCode(() -> handler.handleSuccess(success("pi_missing", "evt_ok"))).doesNotThrowAnyException();
         verify(repository, never()).save(any());
         verify(outboxService, never()).publishPaymentCompleted(any());
     }
@@ -139,9 +143,83 @@ class PaymentTransactionHandlerTest {
         when(repository.existsByProviderEventId("evt_fail")).thenReturn(false);
         when(repository.findByProviderTransactionId("pi_missing")).thenReturn(Optional.empty());
 
-        assertThatCode(() -> handler.handleFailure("pi_missing", "evt_fail")).doesNotThrowAnyException();
+        assertThatCode(() -> handler.handleFailure(failure("pi_missing", "evt_fail"))).doesNotThrowAnyException();
         verify(repository, never()).save(any());
         verify(outboxService, never()).publishPaymentFailed(any(), anyString());
+    }
+
+    @ParameterizedTest(name = "a success reporting {0} {1} leaves a 50.00 USD transaction unchanged")
+    @CsvSource(
+            value = {
+                    "49.99, USD",
+                    "5000, USD",
+                    "50.00, EUR",
+                    "NULL, USD",
+                    "50.00, NULL",
+            },
+            nullValues = "NULL"
+    )
+    void aSuccessWhoseAmountOrCurrencyDiffersFromTheTransactionChangesNothing(String amount, String currency) {
+        // The last check before a wallet is credited: a signed event for this intent that reports other terms
+        // (a minor-unit amount taken as major, another currency, an event without either) must not settle the
+        // payment. The webhook is still acknowledged, so nothing throws.
+        PaymentTransaction tx = transactionWith(TransactionStatus.PENDING);
+        when(repository.existsByProviderEventId("evt_ok")).thenReturn(false);
+        when(repository.findByProviderTransactionId("pi_123")).thenReturn(Optional.of(tx));
+        WebhookResult result = new WebhookResult(
+                "pi_123",
+                "evt_ok",
+                WebhookEventType.PAYMENT_SUCCESS,
+                amount == null ? null : new BigDecimal(amount),
+                currency
+        );
+
+        assertThatCode(() -> handler.handleSuccess(result)).doesNotThrowAnyException();
+
+        assertThat(tx.getStatus()).isEqualTo(TransactionStatus.PENDING);
+        assertThat(tx.getProviderEventId()).isNull();
+        verify(repository, never()).save(any());
+        verify(outboxService, never()).publishPaymentCompleted(any());
+    }
+
+    @Test
+    void aSuccessMatchesTheTransactionIgnoringTrailingZerosAndCurrencyCase() {
+        // Stripe reports lower-case currencies and the converted amount carries its own scale; neither is a
+        // difference, or every genuine payment would be refused.
+        PaymentTransaction tx = transactionWith(TransactionStatus.PENDING);
+        when(repository.existsByProviderEventId("evt_ok")).thenReturn(false);
+        when(repository.findByProviderTransactionId("pi_123")).thenReturn(Optional.of(tx));
+
+        handler.handleSuccess(new WebhookResult(
+                "pi_123",
+                "evt_ok",
+                WebhookEventType.PAYMENT_SUCCESS,
+                new BigDecimal("50"),
+                "usd"
+        ));
+
+        assertThat(tx.getStatus()).isEqualTo(TransactionStatus.SUCCESS);
+        verify(outboxService).publishPaymentCompleted(tx);
+    }
+
+    private static WebhookResult success(String providerTransactionId, String providerEventId) {
+        return new WebhookResult(
+                providerTransactionId,
+                providerEventId,
+                WebhookEventType.PAYMENT_SUCCESS,
+                new BigDecimal("50.00"),
+                "USD"
+        );
+    }
+
+    private static WebhookResult failure(String providerTransactionId, String providerEventId) {
+        return new WebhookResult(
+                providerTransactionId,
+                providerEventId,
+                WebhookEventType.PAYMENT_FAILURE,
+                new BigDecimal("50.00"),
+                "USD"
+        );
     }
 
     private PaymentTransaction transactionWith(TransactionStatus status) {
