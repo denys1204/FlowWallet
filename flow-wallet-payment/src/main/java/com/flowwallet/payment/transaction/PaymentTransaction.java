@@ -22,7 +22,11 @@ import java.util.Optional;
 public class PaymentTransaction {
     @Id
     @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "payment_transactions_seq_gen")
-    @SequenceGenerator(name = "payment_transactions_seq_gen", sequenceName = "payment_transactions_seq")
+    @SequenceGenerator(
+            name = "payment_transactions_seq_gen",
+            sequenceName = "payment_transactions_seq",
+            allocationSize = 50
+    )
     private Long id;
 
     @Column(name = "transaction_reference", nullable = false, unique = true, length = 64)
