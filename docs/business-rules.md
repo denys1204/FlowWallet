@@ -35,10 +35,11 @@ Details: [API reference](api.md#wallet-service). Reasoning:
 
 - Every amount that moves money is positive.
 - An amount sits on its currency's grid: whole units for the 16 zero-decimal currencies (JPY and KRW among
-  them) and at most two decimals for every other currency. An amount off the grid is refused rather than rounded.
+  them) and for the Icelandic króna (ISK), and at most two decimals for every other currency. An amount off the
+  grid is refused rather than rounded.
 
 Details: [API reference](api.md#wallet-service). Reasoning:
-[ADR 0015](adr/0015-currency-precision-and-no-rounding.md).
+[ADR 0015](adr/0015-currency-precision-and-no-rounding.md), [ADR 0023](adr/0023-isk-charged-in-whole-units.md).
 
 ## Deposits
 

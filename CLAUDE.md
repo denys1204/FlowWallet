@@ -115,9 +115,10 @@ lock order and the idempotency checks are specified there, not here.
   `TRANSFER_IN` shows the recipient the sender's id and key, and there is no user search endpoint by design
   ([ADR 0003](docs/adr/0003-caller-identity-and-trust-boundary.md)).
 - Amounts moved inside the wallet sit on `AmountPrecision`'s grid, a copy of `StripeCurrencyRules`'
-  zero-decimal list and two-decimal cap, and at most 15 integer digits. They are refused, never rounded. The
-  two lists point at each other; change both together
-  ([ADR 0015](docs/adr/0015-currency-precision-and-no-rounding.md)). A payment event's amount is held to the
+  zero-decimal list, its whole-unit ISK entry and its two-decimal cap, and at most 15 integer digits. They are
+  refused, never rounded. The lists point at each other; change both sides together
+  ([ADR 0015](docs/adr/0015-currency-precision-and-no-rounding.md),
+  [ADR 0023](docs/adr/0023-isk-charged-in-whole-units.md)). A payment event's amount is held to the
   same grid and refused as `INVALID_AMOUNT` ([ADR 0019](docs/adr/0019-payment-event-amounts-on-the-grid.md)).
 - Problem responses carry no `type`, so on the transfer path each status points to a different kind of fix:
   401 fix the identity header, 400 fix the request, 404 open your wallet (only ever the caller's), 406 accept

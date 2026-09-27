@@ -16,13 +16,15 @@ class AmountPrecisionTest {
             "10.001,  USD, USD amounts carry at most 2 decimal places",
             "0.00001, USD, USD amounts carry at most 2 decimal places",
             "1.5,     JPY, JPY amounts must be whole units",
-            "0.5,     MGA, MGA amounts must be whole units"
+            "0.5,     MGA, MGA amounts must be whole units",
+            "10.50,   ISK, ISK amounts must be whole units"
     })
     void anAmountFinerThanTheCurrencyAllowsIsRefusedRatherThanRounded(String amount, String currency, String detail) {
         // Guards dust and movements of nothing. Rounding 10.001 would move a sum nobody asked for, and Postgres
         // would store 0.00001 as 0.0000. Fractional yen or ariary could never be paid out, because deposits
         // move whole units in those currencies. MGA is here because ISO gives it two decimals and the wallet
-        // must not follow ISO.
+        // must not follow ISO. ISK is here because Stripe takes it in hundredths yet charges only whole krónur, so
+        // a fractional ISK could never arrive by deposit.
         assertThatThrownBy(() -> AmountPrecision.canonical(new BigDecimal(amount), currency))
                 .isInstanceOf(InvalidAmountException.class)
                 .hasMessage(detail);
@@ -33,12 +35,11 @@ class AmountPrecisionTest {
             "10.5000, USD, 10.5",
             "100.00,  JPY, 100",
             "1E+2,    JPY, 100",
-            "10.50,   ISK, 10.5"
+            "10.00,   ISK, 10"
     })
     void trailingZerosDoNotCountAsPrecision(String amount, String currency, String value) {
         // Guards refusing a correctly written amount: 10.5000 is 10.5, and 1E+2 is a whole number of yen. ISK
-        // is here because ISO gives it no decimals while deposits give it two, so following ISO would strand
-        // the 0.50 of a deposited 10.50.
+        // is here because Stripe writes it with two decimals, always 00, and 10.00 is a whole number of krónur.
         assertThat(AmountPrecision.canonical(new BigDecimal(amount), currency)).isEqualByComparingTo(value);
     }
 
@@ -82,6 +83,7 @@ class AmountPrecisionTest {
             "10.123,       USD, false",
             "0.00001,      USD, false",
             "10.5,         JPY, false",
+            "10.5,         isk, false",
             "1E+15,        USD, false",
             "1E+2147483647, USD, false"
     })

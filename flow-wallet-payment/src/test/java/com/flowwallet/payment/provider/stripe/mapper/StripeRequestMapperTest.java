@@ -59,6 +59,8 @@ class StripeRequestMapperTest {
             // three-decimal currencies are capped at two places, so every amount we accept converts to a
             // minor value ending in zero, which is what Stripe requires of them
             "50.001, KWD",
+            // Stripe takes ISK in hundredths but charges whole krónur: 1050 would ask for 10.50, which it refuses
+            "10.50,  ISK",
     })
     void refusesAmountsFinerThanTheCurrencyAccepts(String amount, String currency) {
         assertThatThrownBy(() -> amountSentToStripe(amount, currency))

@@ -85,9 +85,10 @@ a transfer, and a replay has to match the first answer in status as well as body
   case. Unlike the header, surrounding whitespace is refused rather than stripped. A `to` equal to the
   caller's own id, compared after case folding, gets `400` "A transfer must go to another user".
 - `amount` must be positive and sit on the grid deposits use for its currency: whole units for the 16
-  zero-decimal currencies in Payment Service's `StripeCurrencyRules` (JPY and KRW among them), two decimals
-  for every other. The wallet keeps its own copy of that list in `AmountPrecision`, because a transfer never
-  passes through Payment Service ([ADR 0015](adr/0015-currency-precision-and-no-rounding.md)).
+  zero-decimal currencies in Payment Service's `StripeCurrencyRules` (JPY and KRW among them) and for ISK, two
+  decimals for every other. The wallet keeps its own copy of those lists in `AmountPrecision`, because a
+  transfer never passes through Payment Service ([ADR 0015](adr/0015-currency-precision-and-no-rounding.md),
+  [ADR 0023](adr/0023-isk-charged-in-whole-units.md)).
   Trailing zeros don't count, so `10.5000` USD and `100.00` JPY are fine. An amount off the grid, such as
   `10.001` USD or `1.5` JPY, gets a `400` and is never rounded. So does an amount with more than 15 integer
   digits, the room a `NUMERIC(19,4)` balance has. Nothing else limits the amount: the deposit range belongs
@@ -184,7 +185,8 @@ Stripe.
   `providerName` at most 32 (case-insensitive).
 - `amount` must be between `1.00` and `10000.00` inclusive by default (`PAYMENT_MIN_DEPOSIT_AMOUNT` /
   `PAYMENT_MAX_DEPOSIT_AMOUNT`). For Stripe it can have at most two decimal places, and none for
-  zero-decimal currencies such as JPY; trailing zeros don't count. Three-decimal currencies such as KWD are
+  zero-decimal currencies such as JPY or for ISK, which Stripe takes in hundredths but charges in whole units;
+  trailing zeros don't count. Three-decimal currencies such as KWD are
   limited to two as well. The currency must be one Stripe charges, and the amount must reach Stripe's minimum
   charge for the currencies Stripe lists one for (50 JPY, 175.00 HUF, 0.50 USD), both taken from a dated copy
   of Stripe's currency page in `StripeChargeLimits`. Breaking any of these gives a `400` before a transaction

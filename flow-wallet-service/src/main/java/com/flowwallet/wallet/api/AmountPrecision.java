@@ -9,8 +9,8 @@ import java.util.Set;
  * The grid an amount moved inside the wallet must sit on, and the single form it is stored and compared in.
  * <p>
  * The grid copies the accepted scale in Payment Service's {@code StripeCurrencyRules}: whole units for its
- * zero-decimal currencies, two decimals for every other. An amount off the grid is refused, never rounded.
- * See docs/adr/0015-currency-precision-and-no-rounding.md.
+ * zero-decimal currencies and for ISK, two decimals for every other. An amount off the grid is refused, never
+ * rounded. See docs/adr/0015-currency-precision-and-no-rounding.md and docs/adr/0023-isk-charged-in-whole-units.md.
  */
 public final class AmountPrecision {
     /**
@@ -34,6 +34,12 @@ public final class AmountPrecision {
             "BIF", "CLP", "DJF", "GNF", "JPY", "KMF", "KRW", "MGA",
             "PYG", "RWF", "UGX", "VND", "VUV", "XAF", "XOF", "XPF"
     );
+
+    /**
+     * Copied from {@code StripeCurrencyRules.WHOLE_UNITS_IN_HUNDREDTHS}: Stripe charges ISK in whole units, although
+     * it takes the amount in hundredths, so a fractional ISK could never be paid in or out.
+     */
+    private static final Set<String> WHOLE_UNITS_IN_HUNDREDTHS = Set.of("ISK");
 
     private AmountPrecision() {
     }
@@ -89,6 +95,8 @@ public final class AmountPrecision {
     }
 
     private static int acceptedScale(String upperCaseCode) {
-        return ZERO_DECIMAL.contains(upperCaseCode) ? 0 : DEFAULT_ACCEPTED_SCALE;
+        return ZERO_DECIMAL.contains(upperCaseCode) || WHOLE_UNITS_IN_HUNDREDTHS.contains(upperCaseCode)
+                ? 0
+                : DEFAULT_ACCEPTED_SCALE;
     }
 }
