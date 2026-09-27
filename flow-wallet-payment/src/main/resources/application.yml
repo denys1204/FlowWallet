@@ -14,6 +14,11 @@ spring:
       - optional:file:../.env[.properties]
   application:
     name: flow-wallet-payment
+  servlet:
+    multipart:
+      # Nothing here takes uploads. With a multipart resolver, DispatcherServlet reads and spools a multipart
+      # body (up to 10MB) before any controller runs, which would get past the webhook size cap.
+      enabled: false
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${PAYMENT_DB_NAME:payment_db}
     username: ${POSTGRES_USER:flowadmin}

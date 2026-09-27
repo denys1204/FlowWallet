@@ -157,7 +157,7 @@ only disables webhooks.
 
 ## Testing
 
-There are 322 tests, all green: 157 in the payment service, 132 in the wallet service and 33 in platform. They
+There are 324 tests, all green: 159 in the payment service, 132 in the wallet service and 33 in platform. They
 go after the parts most likely to be wrong rather than the ones easiest to reach. That means the asymmetric
 webhook state machine (a later failure must not undo an earlier success, but a later success must override
 an earlier failure), the outbox's claim, retry and backoff boundaries, Stripe signature verification

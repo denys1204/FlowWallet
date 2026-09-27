@@ -34,7 +34,9 @@ The body is bounded before anything reads it. `WebhookController` reads it throu
 `@RequestBody`. A `Content-Length` above `payment.webhook.max-payload-size` (256KB by default) is refused unread, and a
 body that declares no length (chunked) is read to at most one byte past the limit. Both cases throw
 `WebhookPayloadTooLargeException`, answered with `413 Content Too Large`. This adds a status to the list in 0016: its
-remedy, sending a smaller body, is one that no other status stands for.
+remedy, sending a smaller body, is one that no other status stands for. Payment Service sets
+`spring.servlet.multipart.enabled` to `false`: with a multipart resolver registered, `DispatcherServlet` reads and
+spools a multipart body of up to 10MB before any controller runs.
 
 The signature is checked before the body is parsed. `StripeClient.verifyWebhookSignature` runs
 `Webhook.Signature.verifyHeader` over the raw body, and only then does `StripeClient.constructVerifiedEvent` call
