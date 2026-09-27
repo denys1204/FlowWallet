@@ -49,11 +49,11 @@ Service being unavailable.
   (`ResourceAccessException`) gets "Payment Service is unavailable. Retry with the same Idempotency-Key.", and an
   answer the wallet cannot read gets a detail of its own.
 - `WalletService.open` refuses a code that ISO 4217 gives no minor unit with `NonPaymentCurrencyException` (400),
-  through `Currencies.normaliseForNewWallet`: the precious metals, the SDR and bond-market units, XSU, XUA, XTS and
-  XXX. The JDK reports -1 default fraction digits for them. None is a means of payment, so no provider could fund
-  such a wallet. The check uses ISO semantics only, so the wallet stays free of Stripe
-  ([0002](0002-module-boundaries.md)). Reads and lookups keep `Currencies.normalise`, so a wallet opened before the
-  rule stays reachable.
+  through `Currencies.normaliseForNewWallet`: the precious metals, the SDR and bond-market units, XSU, XUA, the
+  withdrawn XFO and XFU, XTS and XXX. The JDK reports -1 default fraction digits for them. None is a means of
+  payment, so no provider could fund such a wallet. The check uses ISO semantics only, so the wallet stays free of
+  Stripe ([0002](0002-module-boundaries.md)). Reads and lookups keep `Currencies.normalise`, so a wallet opened
+  before the rule stays reachable.
 
 ## Alternatives considered
 

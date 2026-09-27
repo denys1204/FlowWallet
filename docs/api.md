@@ -229,8 +229,8 @@ The status mapping lives in one place, and each status stands for one remedy
 - `404`: wallet not found. Wallet lookups are scoped to the caller, so it is never `403`. On a transfer it
   always means the caller's own wallet; a recipient without a wallet gets `422`.
 - `406`: a transfer whose `Accept` header rules out JSON. It is refused before anything runs.
-- `409`: transaction reference already in use (another user, different terms, or already paid), wallet already exists, `Idempotency-Key` reused for a different or completed deposit or for
-  a different transfer.
+- `409`: transaction reference already in use (another user, different terms, or already paid), wallet
+  already exists, `Idempotency-Key` reused for a different or completed deposit or for a different transfer.
 - `413`: a webhook body larger than `PAYMENT_WEBHOOK_MAX_PAYLOAD_SIZE`, refused before its signature is
   checked ([ADR 0017](adr/0017-webhooks-verified-before-they-are-read.md)).
 - `422`: a transfer the caller's balance doesn't cover, or a recipient without a wallet in the currency. The

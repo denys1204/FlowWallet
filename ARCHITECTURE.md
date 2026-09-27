@@ -150,6 +150,16 @@ sequenceDiagram
     end
 ```
 
+Payment Service answers a retry under the same key from the row that holds the key. An initiated row returns
+the original intent, and a row that was reserved but never initiated calls Stripe again under the same
+idempotency key ([ADR 0005](docs/adr/0005-client-supplied-idempotency-keys.md)). Two requests with the same key
+and terms that race for the reservation get the same treatment: the loser receives the winner's intent, or a
+`503` while the winner is still waiting for Stripe, which the wallet passes on as a `502` to retry under the same
+key. The Stripe call has its own connect and read timeouts and no network retry by default, so it ends before
+the wallet stops waiting ([ADR 0024](docs/adr/0024-deposit-initiation-settles-its-own-races.md)).
+[ADR 0022](docs/adr/0022-stripe-charge-rules-checked-before-the-reservation.md) covers which refusals come
+before the reservation and how a refusal from Stripe itself is answered.
+
 ## The Transactional Outbox
 
 Payment Service never publishes to Kafka straight from business logic. In the same database transaction

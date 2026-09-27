@@ -169,7 +169,7 @@ webhooks.
 
 ## Testing
 
-There are 477 tests, all green: 239 in the payment service, 204 in the wallet service, 33 in platform and 1 in
+There are 478 tests, all green: 239 in the payment service, 205 in the wallet service, 33 in platform and 1 in
 the gateway (it binds the gateway's own `application.yml` into Spring Cloud Gateway's `HttpClientProperties`,
 so a YAML regression that drops the response or connect timeout fails here rather than in a live request left
 waiting). The rest go after the parts most likely to be wrong rather than the ones easiest to reach. That means
@@ -182,11 +182,11 @@ RFC 9457 status mapping, the minor-unit conversion that decides how much money a
 currencies Stripe charges and its minimum charges checked before a row is reserved, a Stripe refusal told
 apart from a failure (400 against 502) and the wallet's three kinds of 502, a deposit that loses the
 reservation to its own twin, a second recording of the same Stripe answer, the Stripe call's timeouts and
-retries, the optimistic-lock retry on both webhook paths, the field names of the internal intent call on both sides of it,
-and the identity and idempotency-key rules. For the wallet consumer they cover dispatch on the `eventType` header,
-dead-lettering of unreadable records, refusals (an event amount off its currency's grid among them),
-duplicate classification (by the `DEPOSIT` entry alone, since one reference can own one movement of each
-type), the barrier row being written before the wallet is loaded, failed payments never touching a wallet
+retries, the optimistic-lock retry on both webhook paths, the field names of the internal intent call on both
+sides of it, and the identity and idempotency-key rules. For the wallet consumer they cover dispatch on the
+`eventType` header, dead-lettering of unreadable records, refusals (an event amount off its currency's grid
+among them), duplicate classification (by the `DEPOSIT` entry alone, since one reference can own one movement
+of each type), the barrier row being written before the wallet is loaded, failed payments never touching a wallet
 (a redelivered failure is acknowledged, any other violation is raised), and the error handler (an unreadable
 record dead-lettered at once, any other failure only after its retries, each dead letter counted, and the
 dead-letter topic created with unlimited retention).

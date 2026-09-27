@@ -11,6 +11,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
+import org.springframework.web.client.RestClientException;
 import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
@@ -149,6 +150,22 @@ class DepositServiceTest {
                 .isInstanceOf(PaymentUnavailableException.class)
                 .hasMessage(
                         "Payment Service could not start the payment. Nothing was charged. Retry with the same "
+                                + "Idempotency-Key."
+                );
+    }
+
+    @Test
+    void anAnswerTheWalletCannotReadIsNeitherUnavailabilityNorAProviderFailure() {
+        // Guards the last catch being folded into one of the others: a body that does not bind or an unknown
+        // status means Payment Service answered, so blaming its availability or its provider call misleads the
+        // operator, and the caller still needs the same-key advice.
+        walletExists();
+        when(payments.createIntent(any(), any())).thenThrow(new RestClientException("could not extract response"));
+
+        assertThatThrownBy(() -> service.start("gina", "USD", KEY, request))
+                .isInstanceOf(PaymentUnavailableException.class)
+                .hasMessage(
+                        "Payment Service gave an answer the wallet could not read. Retry with the same "
                                 + "Idempotency-Key."
                 );
     }
