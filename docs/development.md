@@ -148,7 +148,7 @@ set real test values for both. `.env.example` has the full list with comments. T
 | `PAYMENT_WEBHOOK_MAX_PAYLOAD_SIZE` | `256KB` | Payment: a larger webhook body gets `413` |
 | `PAYMENT_MIN_DEPOSIT_AMOUNT` / `PAYMENT_MAX_DEPOSIT_AMOUNT` | `1.00` / `10000.00` | Payment |
 | `OUTBOX_POLL_INTERVAL_MS` / `OUTBOX_BATCH_SIZE` | `10000` / `50` | Payment |
-| `OUTBOX_MAX_RETRIES` | `3` | Payment (backoff from `OUTBOX_RETRY_BACKOFF_BASE_MS`, `1000`, up to `_MAX_MS`, `60000`) |
+| `OUTBOX_MAX_RETRIES` | `10` | Payment: send attempts, the first included, before a row becomes `FAILED`, with backoff from `OUTBOX_RETRY_BACKOFF_BASE_MS` (`1000`) doubling up to `_MAX_MS` (`60000`). The default spends about four minutes in backoff (1, 2, 4, 8, 16, 32 s, then 60 s three times); the poll interval and each send's wait on the broker (up to the producer's `max.block.ms`, 60 s by default, when it is unreachable) add to that |
 | `OUTBOX_REAPER_INTERVAL_MS` / `OUTBOX_STUCK_PROCESSING_THRESHOLD_MS` | `60000` / `300000` | Payment |
 | `OUTBOX_RETENTION_DAYS` / `OUTBOX_CLEANUP_CRON` | `7` / `0 0 3 * * *` | Payment (`COMPLETED` rows only) |
 | `ACTUATOR_EXPOSED_ENDPOINTS` | Payment `health,info,metrics,outbox`; Wallet `health,info,metrics`; Gateway `health,info` | All three. It is one shared name, so a value set in `.env` replaces all three defaults at once; the template leaves it commented for that reason |
@@ -158,12 +158,13 @@ set real test values for both. `.env.example` has the full list with comments. T
 The wallet service won't start with values that make no sense, such as a retry multiplier below 1.0, an
 initial interval above the maximum, or a blank Payment Service URL. The payment service does the same for a
 deposit range that is inverted, not positive, or too wide for `NUMERIC(19,4)`, a webhook tolerance that isn't
-positive, and a webhook size limit outside 1B to 16MB. A missing webhook secret doesn't stop it starting; it
+positive, a webhook size limit outside 1B to 16MB, an outbox setting below 1, and an outbox backoff base above
+its maximum. A missing webhook secret doesn't stop it starting; it
 only disables webhooks.
 
 ## Testing
 
-There are 345 tests, all green: 179 in the payment service, 132 in the wallet service, 33 in platform and 1 in
+There are 347 tests, all green: 181 in the payment service, 132 in the wallet service, 33 in platform and 1 in
 the gateway (it binds the gateway's own `application.yml` into Spring Cloud Gateway's `HttpClientProperties`,
 so a YAML regression that drops the response or connect timeout fails here rather than in a live request left
 waiting). The rest go after the parts most likely to be wrong rather than the ones easiest to reach. That means

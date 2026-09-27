@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.context.ConfigurationPropertiesAutoConfiguration;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.boot.validation.autoconfigure.ValidationAutoConfiguration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -16,7 +17,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class OutboxPropertiesTest {
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
-            .withConfiguration(AutoConfigurations.of(ConfigurationPropertiesAutoConfiguration.class))
+            .withConfiguration(AutoConfigurations.of(
+                    ConfigurationPropertiesAutoConfiguration.class,
+                    ValidationAutoConfiguration.class
+            ))
             .withUserConfiguration(OutboxProperties.class);
 
     @Test
@@ -49,11 +53,26 @@ class OutboxPropertiesTest {
             OutboxProperties outbox = context.getBean(OutboxProperties.class);
 
             assertThat(outbox.getBatchSize()).isEqualTo(50);
-            assertThat(outbox.getMaxRetries()).isEqualTo(3);
+            assertThat(outbox.getMaxRetries()).isEqualTo(10);
             assertThat(outbox.getRetentionDays()).isEqualTo(7);
             assertThat(outbox.getRetryBackoffBaseMs()).isEqualTo(1000);
             assertThat(outbox.getRetryBackoffMaxMs()).isEqualTo(60000);
             assertThat(outbox.getStuckProcessingThresholdMs()).isEqualTo(300000);
         });
+    }
+
+    @Test
+    @DisplayName("an attempt count below one fails startup")
+    void zeroAttemptsFailsStartup() {
+        runner.withPropertyValues("outbox.max-retries=0").run(context -> assertThat(context).hasFailed());
+    }
+
+    @Test
+    @DisplayName("a backoff base above its maximum fails startup")
+    void invertedBackoffRangeFailsStartup() {
+        runner.withPropertyValues(
+                "outbox.retry-backoff-base-ms=60000",
+                "outbox.retry-backoff-max-ms=1000"
+        ).run(context -> assertThat(context).hasFailed());
     }
 }

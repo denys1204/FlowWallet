@@ -81,7 +81,7 @@ payment:
 outbox:
   poll-interval-ms: ${OUTBOX_POLL_INTERVAL_MS:10000}
   batch-size: ${OUTBOX_BATCH_SIZE:50}
-  max-retries: ${OUTBOX_MAX_RETRIES:3}
+  max-retries: ${OUTBOX_MAX_RETRIES:10}
   retention-days: ${OUTBOX_RETENTION_DAYS:7}
   cleanup-cron: ${OUTBOX_CLEANUP_CRON:0 0 3 * * *}
   reaper-interval-ms: ${OUTBOX_REAPER_INTERVAL_MS:60000}
