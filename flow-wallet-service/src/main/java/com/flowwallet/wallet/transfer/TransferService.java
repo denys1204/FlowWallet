@@ -87,13 +87,18 @@ public class TransferService {
                 .map(wallet -> taken.get().isRepeatOf(wallet.getId(), command.recipientUserId(), command.amount()))
                 .orElse(false);
         if (ownRepeat) {
-            log.warn("Transfer {} reached the unique index although its sender's wallet lock should have "
-                    + "serialized it; answering with the original", command.reference());
+            log.warn(
+                    "Transfer {} reached the unique index although its sender's wallet lock should have "
+                            + "serialized it; answering with the original",
+                    command.reference()
+            );
             return TransferResponse.of(taken.get(), command.currency());
         }
 
-        log.info("Idempotency-Key {} went to another wallet's transfer, which reached the unique index first",
-                command.reference());
+        log.info(
+                "Idempotency-Key {} went to another wallet's transfer, which reached the unique index first",
+                command.reference()
+        );
         throw new ConflictingTransferException();
     }
 }

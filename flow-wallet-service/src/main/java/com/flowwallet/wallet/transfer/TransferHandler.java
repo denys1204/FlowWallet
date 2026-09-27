@@ -86,8 +86,15 @@ public class TransferHandler {
         BigDecimal senderBefore = from.debit(amount);
 
         Wallet to = (senderSortsFirst ? higher : lower).orElseThrow(() -> {
-            log.warn("User {} tried to send {} {} to user {}, who holds no {} wallet (transfer {})",
-                    sender, amount, currency, recipient, currency, reference);
+            log.warn(
+                    "User {} tried to send {} {} to user {}, who holds no {} wallet (transfer {})",
+                    sender,
+                    amount,
+                    currency,
+                    recipient,
+                    currency,
+                    reference
+            );
             return new RecipientHasNoWalletException(currency);
         });
         BigDecimal recipientBefore = to.credit(amount);
@@ -96,8 +103,16 @@ public class TransferHandler {
         movements.save(out);
         movements.saveAndFlush(BalanceHistory.transferIn(to, reference, from.getUserId(), amount, recipientBefore));
 
-        log.info("Transferred {} {} from wallet {} (user {}) to wallet {} (user {}) for transfer {}",
-                amount, currency, from.getId(), from.getUserId(), to.getId(), to.getUserId(), reference);
+        log.info(
+                "Transferred {} {} from wallet {} (user {}) to wallet {} (user {}) for transfer {}",
+                amount,
+                currency,
+                from.getId(),
+                from.getUserId(),
+                to.getId(),
+                to.getUserId(),
+                reference
+        );
         return TransferResponse.of(out, currency);
     }
 }

@@ -10,7 +10,6 @@ import java.util.List;
 
 @Mapper(componentModel = "spring")
 public interface WalletMapper {
-
     WalletResponse toResponse(Wallet wallet);
 
     List<WalletResponse> toResponses(List<Wallet> wallets);

@@ -32,7 +32,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * so the test is fast and focused.
  */
 class PaymentControllerErrorHandlingTest {
-    /** Identities must be random-based UUIDs; the resolver refuses anything else before the controller runs. */
+    /**
+     * Identities must be random-based UUIDs; the resolver refuses anything else before the controller runs.
+     */
     private static final String CALLER = "4c9a1b2e-1f3d-4a5b-8c7d-9e0f1a2b3c4d";
 
     private final PaymentService paymentService = Mockito.mock(PaymentService.class);

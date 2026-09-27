@@ -2,12 +2,12 @@ package com.flowwallet.wallet.config;
 
 import com.flowwallet.wallet.balance.UnreadablePaymentEventException;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.clients.admin.NewTopic;
+import org.apache.kafka.common.TopicPartition;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.kafka.config.TopicBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.kafka.config.TopicBuilder;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
@@ -21,7 +21,6 @@ import org.springframework.util.backoff.ExponentialBackOff;
 @Slf4j
 @Configuration
 public class KafkaConsumerConfig {
-
     /**
      * The wallet's own dead-letter topic for failed consumer records, kept apart from Payment Service's
      * dead-letter store of outbox rows.
@@ -71,8 +70,14 @@ public class KafkaConsumerConfig {
         errorHandler.addNotRetryableExceptions(UnreadablePaymentEventException.class);
 
         errorHandler.setRetryListeners((record, exception, deliveryAttempt) ->
-                log.warn("Attempt {} failed for offset {} on {}: {}",
-                        deliveryAttempt, record.offset(), record.topic(), exception.getMessage()));
+                log.warn(
+                        "Attempt {} failed for offset {} on {}: {}",
+                        deliveryAttempt,
+                        record.offset(),
+                        record.topic(),
+                        exception.getMessage()
+                )
+        );
 
         return errorHandler;
     }

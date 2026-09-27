@@ -7,7 +7,6 @@ package com.flowwallet.wallet.enums;
  * the event itself carries. See docs/adr/0004-wallet-addressed-by-owner-and-currency.md.
  */
 public enum RejectionReason {
-
     /**
      * Amount absent, zero or negative.
      */

@@ -22,8 +22,16 @@ class PaymentEventHandlerTest {
             new PaymentEventHandler(wallets, balanceHistory, processedEvents);
 
     private PaymentCompletedEvent completed(String amount) {
-        return new PaymentCompletedEvent("evt-1", 1, "ref-1", "pi_1",
-                new BigDecimal(amount), "USD", "alice", Instant.parse("2026-09-05T12:00:00Z"));
+        return new PaymentCompletedEvent(
+                "evt-1",
+                1,
+                "ref-1",
+                "pi_1",
+                new BigDecimal(amount),
+                "USD",
+                "alice",
+                Instant.parse("2026-09-05T12:00:00Z")
+        );
     }
 
     @Test
@@ -88,9 +96,17 @@ class PaymentEventHandlerTest {
     void aFailedPaymentTouchesNoWalletAndNoLedger() {
         // This is what makes the order of a failure and a success for one reference irrelevant: only one of
         // the two outcomes moves money, so neither can undo the other.
-        PaymentFailedEvent failed = new PaymentFailedEvent("evt-9", 1, "ref-9", "pi_9",
-                new BigDecimal("10.00"), "USD", "alice", "card_declined",
-                Instant.parse("2026-09-05T12:05:00Z"));
+        PaymentFailedEvent failed = new PaymentFailedEvent(
+                "evt-9",
+                1,
+                "ref-9",
+                "pi_9",
+                new BigDecimal("10.00"),
+                "USD",
+                "alice",
+                "card_declined",
+                Instant.parse("2026-09-05T12:05:00Z")
+        );
 
         handler.recordFailure(failed, "{}");
 

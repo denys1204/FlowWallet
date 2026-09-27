@@ -44,8 +44,13 @@ public class PaymentEventHandler {
                 wallet, event.transactionReference(), event.eventId(), event.amount(), balanceBefore
         ));
 
-        log.info("Credited {} {} to wallet {} for transaction {}",
-                event.amount(), event.currency(), wallet.getId(), event.transactionReference());
+        log.info(
+                "Credited {} {} to wallet {} for transaction {}",
+                event.amount(),
+                event.currency(),
+                wallet.getId(),
+                event.transactionReference()
+        );
     }
 
     /**

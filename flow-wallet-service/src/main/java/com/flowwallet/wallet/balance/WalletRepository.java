@@ -10,7 +10,6 @@ import java.util.List;
 import java.util.Optional;
 
 public interface WalletRepository extends JpaRepository<Wallet, Long> {
-
     /**
      * Reads a wallet without locking it, for code that writes no balance. Never call it before
      * {@link #lockByUserIdAndCurrency} in the same transaction. See docs/adr/0011-wallet-row-locking.md.

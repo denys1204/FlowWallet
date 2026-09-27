@@ -6,6 +6,7 @@ import com.flowwallet.wallet.balance.WalletRepository;
 import com.flowwallet.wallet.dto.DepositRequest;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.ResourceAccessException;
@@ -36,8 +37,13 @@ class DepositServiceTest {
     }
 
     private HttpClientErrorException refusal(HttpStatus status, String body) {
-        return HttpClientErrorException.create(status, status.getReasonPhrase(),
-                org.springframework.http.HttpHeaders.EMPTY, body.getBytes(), null);
+        return HttpClientErrorException.create(
+                status,
+                status.getReasonPhrase(),
+                HttpHeaders.EMPTY,
+                body.getBytes(),
+                null
+        );
     }
 
     @Test
@@ -87,8 +93,10 @@ class DepositServiceTest {
         // A bean-validation failure renders detail as "Invalid request content." and puts the only useful
         // sentence in errors. Relaying detail alone would be a 400 that looks like an answer and is not.
         walletExists();
-        when(payments.createIntent(any(), any())).thenThrow(refusal(HttpStatus.BAD_REQUEST,
-                "{\"detail\":\"Invalid request content.\",\"errors\":[\"amount Maximum deposit amount is 10000.00\"]}"));
+        when(payments.createIntent(any(), any())).thenThrow(refusal(
+                HttpStatus.BAD_REQUEST,
+                "{\"detail\":\"Invalid request content.\",\"errors\":[\"amount Maximum deposit amount is 10000.00\"]}"
+        ));
 
         assertThatThrownBy(() -> service.start("gina", "USD", KEY, request))
                 .isInstanceOf(DepositRejectedException.class)

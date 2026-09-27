@@ -12,8 +12,10 @@ import org.springframework.http.HttpStatus;
  */
 public class ConflictingDepositException extends ApiException {
     public ConflictingDepositException() {
-        super(HttpStatus.CONFLICT,
+        super(
+                HttpStatus.CONFLICT,
                 "This Idempotency-Key was already used for a different deposit, or that deposit has "
-                        + "already completed. Retry with a new key.");
+                        + "already completed. Retry with a new key."
+        );
     }
 }

@@ -33,8 +33,12 @@ public class DepositController {
     public DepositResponse start(
             @PathVariable String currency,
             @RequestHeader("Idempotency-Key")
-            @UUID(allowNil = false, letterCase = UUID.LetterCase.INSENSITIVE,
-                    version = {1, 2, 3, 4, 5, 6, 7, 8}, message = "Idempotency-Key must be a UUID") String idempotencyKey,
+            @UUID(
+                    allowNil = false,
+                    letterCase = UUID.LetterCase.INSENSITIVE,
+                    version = {1, 2, 3, 4, 5, 6, 7, 8},
+                    message = "Idempotency-Key must be a UUID"
+            ) String idempotencyKey,
             @Valid @RequestBody DepositRequest request,
             @CurrentUserId String userId
     ) {

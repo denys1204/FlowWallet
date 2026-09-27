@@ -14,7 +14,6 @@ import org.springframework.context.annotation.Bean;
 @AutoConfiguration
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 public class WebExceptionHandlerAutoConfiguration {
-
     @Bean
     @ConditionalOnMissingBean
     public GlobalExceptionHandler flowWalletGlobalExceptionHandler() {

@@ -35,13 +35,16 @@ public class PaymentService {
             transaction.differencesFrom(request).ifPresent(differences -> {
                 log.warn("Reference {} reused with a different {}", request.transactionReference(), differences);
                 throw DuplicateTransactionReferenceException.forConflictingPayload(
-                        request.transactionReference(), differences
+                        request.transactionReference(),
+                        differences
                 );
             });
 
             if (transaction.isSettled()) {
-                log.warn("Reference {} was already paid; refusing to hand back a spent intent",
-                        request.transactionReference());
+                log.warn(
+                        "Reference {} was already paid; refusing to hand back a spent intent",
+                        request.transactionReference()
+                );
                 throw DuplicateTransactionReferenceException.forSettledReference(request.transactionReference());
             }
 
@@ -50,8 +53,10 @@ public class PaymentService {
                 return mapper.toResponse(transaction);
             }
 
-            log.warn("Reference {} was reserved but never reached the provider; retrying initiation",
-                    request.transactionReference());
+            log.warn(
+                    "Reference {} was reserved but never reached the provider; retrying initiation",
+                    request.transactionReference()
+            );
         }
 
         // Factory lookup and validation can refuse, so they run before reserve and a refusal leaves the reference free.

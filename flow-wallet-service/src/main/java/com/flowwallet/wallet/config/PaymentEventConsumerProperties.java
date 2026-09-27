@@ -17,7 +17,6 @@ import org.springframework.validation.annotation.Validated;
 @Configuration
 @ConfigurationProperties(prefix = "wallet.consumer.retry")
 public class PaymentEventConsumerProperties {
-
     /**
      * Redeliveries after the first attempt, for failures a later attempt can resolve, such as a momentary
      * database outage. A record that fails every time exhausts them and is dead-lettered.

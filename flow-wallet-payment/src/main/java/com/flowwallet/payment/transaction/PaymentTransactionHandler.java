@@ -78,8 +78,11 @@ public class PaymentTransactionHandler {
         // retry could change nothing. See docs/adr/0016-error-model-and-status-codes.md.
         transactionRepository.findByProviderTransactionId(providerTransactionId).ifPresentOrElse(
                 action,
-                () -> log.warn("Ignoring event {} for provider tx {}: no transaction in this service",
-                        providerEventId, providerTransactionId)
+                () -> log.warn(
+                        "Ignoring event {} for provider tx {}: no transaction in this service",
+                        providerEventId,
+                        providerTransactionId
+                )
         );
     }
 }

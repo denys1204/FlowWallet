@@ -53,8 +53,9 @@ public class DepositService {
             // Covers 5xx, connection refused and both timeouts. Nothing was charged, so the same key may be
             // retried.
             log.warn("Payment Service did not answer for reference {}: {}", reference, e.getMessage());
-            throw new PaymentUnavailableException("Payment Service is unavailable. Retry with the same "
-                    + "Idempotency-Key.");
+            throw new PaymentUnavailableException(
+                    "Payment Service is unavailable. Retry with the same Idempotency-Key."
+            );
         }
     }
 
@@ -76,8 +77,11 @@ public class DepositService {
             return new DepositRejectedException(detailFrom(e));
         }
         // Any other 4xx is a fault in the wallet's own request, not the caller's, so it is not passed through.
-        log.error("Payment Service refused the wallet's own request with {}: {}",
-                e.getStatusCode(), e.getResponseBodyAsString());
+        log.error(
+                "Payment Service refused the wallet's own request with {}: {}",
+                e.getStatusCode(),
+                e.getResponseBodyAsString()
+        );
         return new PaymentUnavailableException("Payment Service refused the request.");
     }
 

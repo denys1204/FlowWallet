@@ -17,7 +17,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * mis-wired status (e.g. a copy-paste to the wrong HttpStatus) is caught here rather than only at the API boundary.
  */
 class DomainExceptionStatusTest {
-
     @Test
     void domainExceptionsCarryTheirDeclaredHttpStatus() {
         assertThat(new PaymentInitiationException("provider down", new RuntimeException()).getStatus())

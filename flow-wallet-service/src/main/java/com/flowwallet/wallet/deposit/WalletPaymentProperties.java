@@ -19,7 +19,6 @@ import java.time.Duration;
 @Configuration
 @ConfigurationProperties(prefix = "wallet.payment")
 public class WalletPaymentProperties {
-
     /**
      * Payment Service's own address, not the gateway's, which has no route to the intent endpoint.
      * See docs/adr/0013-deposit-initiation.md.

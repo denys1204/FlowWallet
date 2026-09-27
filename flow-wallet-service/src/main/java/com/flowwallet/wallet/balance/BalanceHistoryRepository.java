@@ -10,7 +10,6 @@ import java.util.List;
 import java.util.Optional;
 
 public interface BalanceHistoryRepository extends JpaRepository<BalanceHistory, Long> {
-
     /**
      * The movement of one type under a reference. The type is required: a reference owns one movement of each
      * type, and the unique {@code (transaction_reference, type)} is what makes the {@code Optional} safe.

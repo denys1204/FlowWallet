@@ -14,7 +14,6 @@ import org.springframework.web.service.annotation.PostExchange;
  */
 @HttpExchange
 interface PaymentIntentClient {
-
     @PostExchange("/api/payments/intent")
     PaymentIntentResult createIntent(
             @RequestHeader(HttpHeaders.USER_ID) String userId,

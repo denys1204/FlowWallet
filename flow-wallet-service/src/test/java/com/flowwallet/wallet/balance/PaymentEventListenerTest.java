@@ -28,8 +28,7 @@ class PaymentEventListenerTest {
     private ConsumerRecord<String, String> record(String eventType, String json) {
         var consumerRecord = new ConsumerRecord<>(KafkaConstants.PAYMENT_EVENTS_TOPIC, 0, 0L, "ref-1", json);
         if (eventType != null) {
-            consumerRecord.headers().add(KafkaConstants.HEADER_EVENT_TYPE,
-                    eventType.getBytes(StandardCharsets.UTF_8));
+            consumerRecord.headers().add(KafkaConstants.HEADER_EVENT_TYPE, eventType.getBytes(StandardCharsets.UTF_8));
         }
         return consumerRecord;
     }
@@ -88,8 +87,14 @@ class PaymentEventListenerTest {
         // balance_history_amount_positive, roll back, and be retried and dead-lettered instead.
         listener.onPaymentEvent(completed("evt-1", "-500.00", "USD", "alice"));
 
-        verify(outcomes).recordRejection(eq("evt-1"), eq(COMPLETED), eq("ref-1"), any(),
-                eq(RejectionReason.INVALID_AMOUNT), any());
+        verify(outcomes).recordRejection(
+                eq("evt-1"),
+                eq(COMPLETED),
+                eq("ref-1"),
+                any(),
+                eq(RejectionReason.INVALID_AMOUNT),
+                any()
+        );
         verifyNoInteractions(handler);
     }
 
@@ -97,8 +102,7 @@ class PaymentEventListenerTest {
     void aZeroAmountIsRefused() {
         listener.onPaymentEvent(completed("evt-1", "0.00", "USD", "alice"));
 
-        verify(outcomes).recordRejection(any(), any(), any(), any(),
-                eq(RejectionReason.INVALID_AMOUNT), any());
+        verify(outcomes).recordRejection(any(), any(), any(), any(), eq(RejectionReason.INVALID_AMOUNT), any());
         verifyNoInteractions(handler);
     }
 
@@ -106,8 +110,7 @@ class PaymentEventListenerTest {
     void aMissingUserIsRefusedBecauseTheWalletCannotBeResolvedWithoutOne() {
         listener.onPaymentEvent(completed("evt-1", "50.00", "USD", null));
 
-        verify(outcomes).recordRejection(any(), any(), any(), any(),
-                eq(RejectionReason.INVALID_ENVELOPE), any());
+        verify(outcomes).recordRejection(any(), any(), any(), any(), eq(RejectionReason.INVALID_ENVELOPE), any());
         verifyNoInteractions(handler);
     }
 
@@ -128,8 +131,14 @@ class PaymentEventListenerTest {
 
         listener.onPaymentEvent(completed("evt-2", "50.00", "USD", "alice"));
 
-        verify(outcomes).recordRejection(eq("evt-2"), eq(COMPLETED), eq("ref-1"), any(),
-                eq(RejectionReason.DUPLICATE_REFERENCE), any());
+        verify(outcomes).recordRejection(
+                eq("evt-2"),
+                eq(COMPLETED),
+                eq("ref-1"),
+                any(),
+                eq(RejectionReason.DUPLICATE_REFERENCE),
+                any()
+        );
     }
 
     @Test
@@ -140,8 +149,14 @@ class PaymentEventListenerTest {
 
         listener.onPaymentEvent(completed("evt-1", "50.00", "USD", "alice"));
 
-        verify(outcomes).recordRejection(eq("evt-1"), eq(COMPLETED), eq("ref-1"), any(),
-                eq(RejectionReason.WALLET_NOT_FOUND), any());
+        verify(outcomes).recordRejection(
+                eq("evt-1"),
+                eq(COMPLETED),
+                eq("ref-1"),
+                any(),
+                eq(RejectionReason.WALLET_NOT_FOUND),
+                any()
+        );
     }
 
     @Test

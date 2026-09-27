@@ -6,7 +6,6 @@ package com.flowwallet.wallet.balance;
  * See docs/adr/0010-idempotent-payment-event-consumer.md.
  */
 enum DuplicateVerdict {
-
     /**
      * This exact event was handled before: an ordinary redelivery.
      */

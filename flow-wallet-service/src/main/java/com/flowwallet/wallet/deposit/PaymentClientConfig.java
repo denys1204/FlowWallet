@@ -17,7 +17,6 @@ import java.net.http.HttpClient;
 @Configuration
 @RequiredArgsConstructor
 public class PaymentClientConfig {
-
     @Bean
     PaymentIntentClient paymentIntentClient(WalletPaymentProperties properties) {
         // The connect timeout lives on the JDK client and the read timeout on the factory. Either left at its

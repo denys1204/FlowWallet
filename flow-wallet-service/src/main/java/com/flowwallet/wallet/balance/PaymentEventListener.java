@@ -45,15 +45,28 @@ public class PaymentEventListener {
     }
 
     private void onPaymentCompleted(ConsumerRecord<String, String> record) {
-        PaymentCompletedEvent event = read(record, PaymentCompletedEvent.class,
-                KafkaConstants.EVENT_TYPE_PAYMENT_COMPLETED);
+        PaymentCompletedEvent event = read(
+                record,
+                PaymentCompletedEvent.class,
+                KafkaConstants.EVENT_TYPE_PAYMENT_COMPLETED
+        );
         requireEventId(event.eventId(), KafkaConstants.EVENT_TYPE_PAYMENT_COMPLETED);
 
-        Optional<RejectionReason> refusal = refusalFor(event.transactionReference(), event.currency(),
-                event.userId(), event.amount());
+        Optional<RejectionReason> refusal = refusalFor(
+                event.transactionReference(),
+                event.currency(),
+                event.userId(),
+                event.amount()
+        );
         if (refusal.isPresent()) {
-            reject(event.eventId(), KafkaConstants.EVENT_TYPE_PAYMENT_COMPLETED, event.transactionReference(),
-                    event.amount(), refusal.get(), record.value());
+            reject(
+                    event.eventId(),
+                    KafkaConstants.EVENT_TYPE_PAYMENT_COMPLETED,
+                    event.transactionReference(),
+                    event.amount(),
+                    refusal.get(),
+                    record.value()
+            );
             return;
         }
 
@@ -61,21 +74,37 @@ public class PaymentEventListener {
             handler.credit(event);
         } catch (UnknownWalletException e) {
             // Recorded with its payload rather than dead-lettered, so it can be replayed once the wallet exists.
-            reject(event.eventId(), KafkaConstants.EVENT_TYPE_PAYMENT_COMPLETED, event.transactionReference(),
-                    event.amount(), RejectionReason.WALLET_NOT_FOUND, record.value());
+            reject(
+                    event.eventId(),
+                    KafkaConstants.EVENT_TYPE_PAYMENT_COMPLETED,
+                    event.transactionReference(),
+                    event.amount(),
+                    RejectionReason.WALLET_NOT_FOUND,
+                    record.value()
+            );
         } catch (DataIntegrityViolationException e) {
             // The transaction is already rolled back. A fresh one asks the database which barrier refused it.
             switch (outcomes.classify(event.eventId(), event.transactionReference())) {
                 case EVENT_ALREADY_PROCESSED -> log.info(
-                        "Event {} was already processed; balance unchanged", event.eventId());
+                        "Event {} was already processed; balance unchanged",
+                        event.eventId()
+                );
 
                 case REFERENCE_ALREADY_CREDITED -> {
-                    log.error("Transaction {} was already credited by a different event; event {} refused. "
+                    log.error(
+                            "Transaction {} was already credited by a different event; event {} refused. "
                                     + "Two events for one payment is a producer contract violation.",
-                            event.transactionReference(), event.eventId());
-                    reject(event.eventId(), KafkaConstants.EVENT_TYPE_PAYMENT_COMPLETED,
-                            event.transactionReference(), event.amount(),
-                            RejectionReason.DUPLICATE_REFERENCE, record.value());
+                            event.transactionReference(),
+                            event.eventId()
+                    );
+                    reject(
+                            event.eventId(),
+                            KafkaConstants.EVENT_TYPE_PAYMENT_COMPLETED,
+                            event.transactionReference(),
+                            event.amount(),
+                            RejectionReason.DUPLICATE_REFERENCE,
+                            record.value()
+                    );
                 }
 
                 // Neither barrier: the credit did not happen. Rethrowing sends the record through the retries
@@ -86,8 +115,7 @@ public class PaymentEventListener {
     }
 
     private void onPaymentFailed(ConsumerRecord<String, String> record) {
-        PaymentFailedEvent event = read(record, PaymentFailedEvent.class,
-                KafkaConstants.EVENT_TYPE_PAYMENT_FAILED);
+        PaymentFailedEvent event = read(record, PaymentFailedEvent.class, KafkaConstants.EVENT_TYPE_PAYMENT_FAILED);
         requireEventId(event.eventId(), KafkaConstants.EVENT_TYPE_PAYMENT_FAILED);
 
         try {
@@ -108,8 +136,12 @@ public class PaymentEventListener {
      * {@code INVALID_AMOUNT} and stored with its payload. Without it, {@code balance_history_amount_positive}
      * would refuse the ledger row, and the record would be retried and dead-lettered instead.
      */
-    private Optional<RejectionReason> refusalFor(String transactionReference, String currency, String userId,
-                                                 BigDecimal amount) {
+    private Optional<RejectionReason> refusalFor(
+            String transactionReference,
+            String currency,
+            String userId,
+            BigDecimal amount
+    ) {
         if (isBlank(transactionReference) || isBlank(currency) || isBlank(userId)) {
             return Optional.of(RejectionReason.INVALID_ENVELOPE);
         }
@@ -124,8 +156,14 @@ public class PaymentEventListener {
      * does not reach the dead-letter topic, which is for records the wallet could not read or could not settle
      * after its retries.
      */
-    private void reject(String eventId, String eventType, String transactionReference, BigDecimal amount,
-                        RejectionReason reason, String payload) {
+    private void reject(
+            String eventId,
+            String eventType,
+            String transactionReference,
+            BigDecimal amount,
+            RejectionReason reason,
+            String payload
+    ) {
         log.error("Refused event {} for transaction {}: {}", eventId, transactionReference, reason);
         try {
             outcomes.recordRejection(eventId, eventType, transactionReference, amount, reason, payload);

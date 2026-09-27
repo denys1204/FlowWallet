@@ -33,8 +33,9 @@ public record TransferResponse(
      */
     public static TransferResponse of(BalanceHistory out, String currency) {
         if (out.getType() != TransactionType.TRANSFER_OUT) {
-            throw new IllegalArgumentException("A transfer receipt is built from the sending leg, got "
-                    + out.getType());
+            throw new IllegalArgumentException(
+                    "A transfer receipt is built from the sending leg, got " + out.getType()
+            );
         }
         return new TransferResponse(
                 out.getTransactionReference(),

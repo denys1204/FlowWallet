@@ -7,7 +7,6 @@ import com.flowwallet.payment.provider.dto.PaymentRequestContext;
 import com.flowwallet.payment.provider.dto.WebhookResult;
 
 public interface PaymentProviderStrategy {
-    
     boolean supports(PaymentProvider provider);
 
     /**
