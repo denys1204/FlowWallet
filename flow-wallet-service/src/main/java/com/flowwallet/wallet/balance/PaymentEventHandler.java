@@ -37,7 +37,7 @@ public class PaymentEventHandler {
         processedEvents.saveAndFlush(ProcessedEvent.credited(event));
 
         Wallet wallet = wallets.lockByUserIdAndCurrency(event.userId(), event.currency())
-                .orElseThrow(() -> new UnknownWalletException(event.userId(), event.currency()));
+                .orElseThrow(() -> new UnknownWalletException(event.currency()));
 
         BigDecimal balanceBefore = wallet.credit(event.amount());
         balanceHistory.saveAndFlush(BalanceHistory.deposit(

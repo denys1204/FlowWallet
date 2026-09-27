@@ -7,7 +7,6 @@ import com.flowwallet.wallet.balance.WalletRepository;
 import com.flowwallet.wallet.dto.HistoryPage;
 import com.flowwallet.wallet.dto.WalletResponse;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
@@ -21,7 +20,6 @@ import java.util.List;
  * Every query takes the caller's id, so ownership is part of the lookup and never a check after it.
  * See docs/adr/0004-wallet-addressed-by-owner-and-currency.md.
  */
-@Slf4j
 @Service
 @RequiredArgsConstructor
 public class WalletService {
@@ -47,8 +45,10 @@ public class WalletService {
         try {
             return mapper.toResponse(wallets.saveAndFlush(Wallet.open(userId, code)));
         } catch (DataIntegrityViolationException e) {
-            // The violation has aborted this transaction, so nothing else is issued on it.
-            log.info("User {} already holds a {} wallet", userId, code);
+            // The violation has aborted this transaction, so nothing else is issued on it. No wallet was created,
+            // so there is no wallet id to log, and the user id stays out of every log line
+            // (docs/adr/0027-user-ids-stay-out-of-logs-and-provider-metadata.md); GlobalExceptionHandler already
+            // logs the currency at WARN from the exception below.
             throw new WalletAlreadyExistsException(code);
         }
     }

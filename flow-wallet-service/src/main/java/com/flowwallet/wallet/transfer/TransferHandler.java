@@ -85,13 +85,15 @@ public class TransferHandler {
 
         BigDecimal senderBefore = from.debit(amount);
 
+        // The sender and recipient ids stay out of this line (docs/adr/0027-user-ids-stay-out-of-logs-and-
+        // provider-metadata.md): the sending wallet already exists and is named by its id, and the recipient has
+        // none to name.
         Wallet to = (senderSortsFirst ? higher : lower).orElseThrow(() -> {
             log.warn(
-                    "User {} tried to send {} {} to user {}, who holds no {} wallet (transfer {})",
-                    sender,
+                    "Wallet {} tried to send {} {} to a recipient with no {} wallet (transfer {})",
+                    from.getId(),
                     amount,
                     currency,
-                    recipient,
                     currency,
                     reference
             );
@@ -104,13 +106,11 @@ public class TransferHandler {
         movements.saveAndFlush(BalanceHistory.transferIn(to, reference, from.getUserId(), amount, recipientBefore));
 
         log.info(
-                "Transferred {} {} from wallet {} (user {}) to wallet {} (user {}) for transfer {}",
+                "Transferred {} {} from wallet {} to wallet {} for transfer {}",
                 amount,
                 currency,
                 from.getId(),
-                from.getUserId(),
                 to.getId(),
-                to.getUserId(),
                 reference
         );
         return TransferResponse.of(out, currency);

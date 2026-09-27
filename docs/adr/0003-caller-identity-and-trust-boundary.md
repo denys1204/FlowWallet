@@ -1,6 +1,6 @@
 # 0003. The caller is an opaque X-User-Id taken on trust behind a network boundary
 
-- Status: Accepted
+- Status: Accepted, extended by [0027](0027-user-ids-stay-out-of-logs-and-provider-metadata.md)
 - Date: 2026-07-03
 
 ## Context

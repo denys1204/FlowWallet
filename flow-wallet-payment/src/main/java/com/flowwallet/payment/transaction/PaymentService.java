@@ -29,7 +29,15 @@ public class PaymentService {
      * See docs/adr/0006-short-transactions-across-bean-boundaries.md and docs/adr/0013-deposit-initiation.md.
      */
     public PaymentIntentResponse initiatePayment(CreatePaymentIntentRequest request, String userId) {
-        log.info("Initiating payment for user {} with amount {} {}", userId, request.amount(), request.currency());
+        // The user id is a bearer credential (docs/adr/0003-caller-identity-and-trust-boundary.md) and never goes
+        // into a log line; the reference already identifies the row.
+        // See docs/adr/0027-user-ids-stay-out-of-logs-and-provider-metadata.md.
+        log.info(
+                "Initiating payment for reference {} with amount {} {}",
+                request.transactionReference(),
+                request.amount(),
+                request.currency()
+        );
 
         Optional<PaymentTransaction> existing = store.findOwnedBy(request.transactionReference(), userId);
         if (existing.isPresent()) {
@@ -84,6 +92,10 @@ public class PaymentService {
      * Judges a row that already holds the reference against a request for this owner: other terms or a settled
      * payment are a 409, and an initiated row is answered as it stands. See
      * docs/adr/0005-client-supplied-idempotency-keys.md.
+     * <p>
+     * Neither refusal below logs: {@link com.flowwallet.platform.web.GlobalExceptionHandler} already logs every
+     * 4xx {@code ApiException} at WARN with its message, which names the reference and the reason, so a second
+     * log here would only repeat it.
      *
      * @return the original response, or empty for a row that was reserved but never initiated
      */
@@ -92,7 +104,6 @@ public class PaymentService {
             CreatePaymentIntentRequest request
     ) {
         transaction.differencesFrom(request).ifPresent(differences -> {
-            log.warn("Reference {} reused with a different {}", request.transactionReference(), differences);
             throw DuplicateTransactionReferenceException.forConflictingPayload(
                     request.transactionReference(),
                     differences
@@ -100,10 +111,6 @@ public class PaymentService {
         });
 
         if (transaction.isSettled()) {
-            log.warn(
-                    "Reference {} was already paid; refusing to hand back a spent intent",
-                    request.transactionReference()
-            );
             throw DuplicateTransactionReferenceException.forSettledReference(request.transactionReference());
         }
 

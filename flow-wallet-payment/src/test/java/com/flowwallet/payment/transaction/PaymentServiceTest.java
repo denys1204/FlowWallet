@@ -1,5 +1,8 @@
 package com.flowwallet.payment.transaction;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.flowwallet.payment.dto.CreatePaymentIntentRequest;
 import com.flowwallet.payment.dto.PaymentIntentResponse;
 import com.flowwallet.payment.provider.PaymentProvider;
@@ -11,9 +14,11 @@ import com.flowwallet.payment.provider.exception.InvalidPaymentRequestException;
 import com.flowwallet.payment.provider.exception.PaymentRefusedException;
 import com.flowwallet.payment.provider.exception.UnsupportedPaymentProviderException;
 import com.flowwallet.payment.transaction.mapper.PaymentEventMapper;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 
 import java.math.BigDecimal;
@@ -32,6 +37,8 @@ class PaymentServiceTest {
     private PaymentEventMapper mapper;
     private PaymentProviderStrategy strategy;
     private PaymentService service;
+    private final Logger logger = (Logger) LoggerFactory.getLogger(PaymentService.class);
+    private final ListAppender<ILoggingEvent> logs = new ListAppender<>();
 
     @BeforeEach
     void setUp() {
@@ -40,6 +47,13 @@ class PaymentServiceTest {
         mapper = mock(PaymentEventMapper.class);
         strategy = mock(PaymentProviderStrategy.class);
         service = new PaymentService(factory, store, mapper);
+        logs.start();
+        logger.addAppender(logs);
+    }
+
+    @AfterEach
+    void tearDown() {
+        logger.detachAppender(logs);
     }
 
     @Test
@@ -340,6 +354,28 @@ class PaymentServiceTest {
         assertThat(sent.getValue()).isEqualTo(
                 new PaymentRequestContext("ref-1", new BigDecimal("50.00"), "USD", "user-1")
         );
+    }
+
+    @Test
+    void theInitiationLogNamesTheReferenceAndNeverTheUserId() {
+        // The user id is a bearer credential (ADR 0003); logging it would let anyone who can read application
+        // logs act as that user. The reference is already client-supplied and identifies the attempt just as
+        // well. See docs/adr/0027-user-ids-stay-out-of-logs-and-provider-metadata.md.
+        PaymentTransaction reserved = reservedTransaction();
+        when(store.findOwnedBy("ref-1", "user-1")).thenReturn(Optional.empty());
+        strategyResolves();
+        when(store.reserve(any(), eq("user-1"), eq(PaymentProvider.STRIPE))).thenReturn(reserved);
+        when(strategy.initiatePayment(any())).thenReturn(
+                new PaymentInitiationResult("pi_123", Map.of("clientSecret", "cs_new"))
+        );
+        when(store.recordInitiation(any(), eq("pi_123"), any())).thenReturn(reserved);
+
+        service.initiatePayment(request("ref-1", "STRIPE"), "user-1");
+
+        assertThat(logs.list)
+                .isNotEmpty()
+                .allSatisfy(e -> assertThat(e.getFormattedMessage()).doesNotContain("user-1"))
+                .anySatisfy(e -> assertThat(e.getFormattedMessage()).contains("ref-1"));
     }
 
     private void strategyResolves() {

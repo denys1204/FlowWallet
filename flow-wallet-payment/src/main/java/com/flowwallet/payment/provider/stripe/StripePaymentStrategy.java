@@ -54,8 +54,11 @@ public class StripePaymentStrategy implements PaymentProviderStrategy {
                     Map.of(RESPONSE_CLIENT_SECRET, paymentIntent.getClientSecret())
             );
         } catch (StripeException e) {
+            // GlobalExceptionHandler logs every ApiException (ERROR with the stack trace for 5xx, WARN for 4xx),
+            // so this logs only the status and code Stripe gave, which the wrapping exception's message does not
+            // carry, and never the exception itself: passing it here would print its stack trace a second time.
             if (isRefusalOfTheRequest(e)) {
-                log.warn(
+                log.info(
                         "Stripe refused the payment for transaction {} with {} ({})",
                         context.transactionReference(),
                         e.getStatusCode(),
@@ -63,7 +66,11 @@ public class StripePaymentStrategy implements PaymentProviderStrategy {
                 );
                 throw new PaymentRefusedException(e.getUserMessage(), e);
             }
-            log.error("Failed to initiate Stripe payment for transaction: {}", context.transactionReference(), e);
+            log.info(
+                    "Stripe failed to initiate payment for transaction {}: {}",
+                    context.transactionReference(),
+                    e.getMessage()
+            );
             throw new PaymentInitiationException("Stripe payment initiation failed", e);
         }
     }

@@ -1,5 +1,8 @@
 package com.flowwallet.wallet.api;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.flowwallet.wallet.balance.BalanceHistory;
 import com.flowwallet.wallet.balance.BalanceHistoryRepository;
 import com.flowwallet.wallet.balance.Wallet;
@@ -8,10 +11,13 @@ import com.flowwallet.wallet.dto.BalanceHistoryResponse;
 import com.flowwallet.wallet.dto.HistoryPage;
 import com.flowwallet.wallet.dto.WalletResponse;
 import com.flowwallet.wallet.enums.TransactionType;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mapstruct.factory.Mappers;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Limit;
 
@@ -37,6 +43,19 @@ class WalletServiceTest {
     private final BalanceHistoryRepository movements = mock(BalanceHistoryRepository.class);
     private final WalletService service =
             new WalletService(wallets, movements, Mappers.getMapper(WalletMapper.class));
+    private final Logger logger = (Logger) LoggerFactory.getLogger(WalletService.class);
+    private final ListAppender<ILoggingEvent> logs = new ListAppender<>();
+
+    @BeforeEach
+    void attachLogAppender() {
+        logs.start();
+        logger.addAppender(logs);
+    }
+
+    @AfterEach
+    void detachLogAppender() {
+        logger.detachAppender(logs);
+    }
 
     @ParameterizedTest(name = "{0} resolves to the USD wallet")
     @ValueSource(strings = {"USD", "usd", "Usd"})
@@ -124,6 +143,10 @@ class WalletServiceTest {
                 .isInstanceOf(WalletAlreadyExistsException.class);
 
         verify(wallets, never()).findByUserIdAndCurrency(any(), any());
+        // Guards the caller's user id leaking into a log line here: no wallet was created, so there is no
+        // wallet id to log by, and GlobalExceptionHandler already logs the conflict from the exception.
+        // See docs/adr/0027-user-ids-stay-out-of-logs-and-provider-metadata.md.
+        assertThat(logs.list).isEmpty();
     }
 
     @Test

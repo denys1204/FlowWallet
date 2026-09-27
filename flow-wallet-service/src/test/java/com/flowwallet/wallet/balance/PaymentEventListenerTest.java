@@ -190,7 +190,7 @@ class PaymentEventListenerTest {
         // The payload is kept so the event can be republished under a fresh id once the wallet exists.
         // Dead-lettering it would put a refusal the wallet understood among the records it could not read or
         // settle, without the reason that says what to fix.
-        doThrow(new UnknownWalletException("alice", "USD")).when(handler).credit(any());
+        doThrow(new UnknownWalletException("USD")).when(handler).credit(any());
 
         listener.onPaymentEvent(completed("evt-1", "50.00", "USD", "alice"));
 

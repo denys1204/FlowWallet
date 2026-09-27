@@ -12,7 +12,6 @@ import java.math.BigDecimal;
 import java.util.Locale;
 
 import static com.flowwallet.payment.provider.stripe.StripeConstants.META_TRANSACTION_REF;
-import static com.flowwallet.payment.provider.stripe.StripeConstants.META_USER_ID;
 
 @Component
 public class StripeRequestMapper {
@@ -26,12 +25,13 @@ public class StripeRequestMapper {
                 .setEnabled(true)
                 .build();
 
+        // The user id never reaches Stripe (docs/adr/0027-user-ids-stay-out-of-logs-and-provider-metadata.md); the
+        // reference is enough to trace a payment in the Stripe dashboard back to this service's own record of it.
         return PaymentIntentCreateParams.builder()
                 .setAmount(amountInSmallestUnit)
                 .setCurrency(currencyLower)
                 .setAutomaticPaymentMethods(paymentMethods)
                 .putMetadata(META_TRANSACTION_REF, context.transactionReference())
-                .putMetadata(META_USER_ID, context.userId())
                 .build();
     }
 

@@ -357,7 +357,13 @@ its receipt ([ADR 0025](docs/adr/0025-unreachable-database-answers-503.md)).
   holds no USD wallet". The wallet keeps no user registry, so a user without a wallet and an id that belongs
   to nobody get that same answer. Confirming that a wallet exists takes a completed transfer, which moves
   money and leaves the sender's id in the recipient's history. Each refused recipient is logged at WARN with
-  both user ids ([ADR 0014](docs/adr/0014-transfers-in-one-local-transaction.md)).
+  the sending wallet's id and no id for the recipient, who holds no wallet to have one
+  ([ADR 0027](docs/adr/0027-user-ids-stay-out-of-logs-and-provider-metadata.md)).
+- No log line names a user id anywhere in the wallet or payment services: a wallet-scoped line names the
+  wallet id instead, which no URL accepts, and a payment-scoped line names the `transactionReference`. The
+  Stripe PaymentIntent's metadata carries the reference and not the user id either, because the id is the
+  only credential a caller has and neither a log reader nor Stripe needs it to do their job
+  ([ADR 0027](docs/adr/0027-user-ids-stay-out-of-logs-and-provider-metadata.md)).
 - Stripe webhooks are verified cryptographically (HMAC signature with a replay window). That check doesn't
   depend on user identity and stays enforced. The body is capped at 256KB by default and its signature is
   checked before it is parsed. Without a real signing secret (`whsec_...`, not a placeholder) webhooks are

@@ -1,5 +1,9 @@
 package com.flowwallet.payment.provider.stripe;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.flowwallet.payment.provider.dto.PaymentInitiationResult;
 import com.flowwallet.payment.provider.dto.PaymentRequestContext;
 import com.flowwallet.payment.provider.dto.WebhookEventType;
@@ -20,11 +24,14 @@ import com.stripe.model.PaymentIntent;
 import com.stripe.model.StripeError;
 import com.stripe.model.StripeObject;
 import com.stripe.param.PaymentIntentCreateParams;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -48,6 +55,19 @@ class StripePaymentStrategyTest {
             webhookParser,
             stripeClient
     );
+    private final Logger logger = (Logger) LoggerFactory.getLogger(StripePaymentStrategy.class);
+    private final ListAppender<ILoggingEvent> logs = new ListAppender<>();
+
+    @BeforeEach
+    void attachLogAppender() {
+        logs.start();
+        logger.addAppender(logs);
+    }
+
+    @AfterEach
+    void detachLogAppender() {
+        logger.detachAppender(logs);
+    }
 
     @Test
     void usesTransactionReferenceAsStripeIdempotencyKey() throws Exception {
@@ -91,6 +111,10 @@ class StripePaymentStrategyTest {
         assertThatThrownBy(() -> strategy.initiatePayment(context))
                 .isInstanceOf(PaymentInitiationException.class)
                 .hasCause(stripeException);
+        // Guards a second stack trace: GlobalExceptionHandler already logs this 502 at ERROR with the full
+        // cause chain, so a log here at the same level would print the same trace twice for one failure.
+        // See docs/adr/0027-user-ids-stay-out-of-logs-and-provider-metadata.md.
+        assertThat(logs.list).noneMatch(e -> e.getLevel().isGreaterOrEqual(Level.WARN));
     }
 
     @Test
@@ -114,6 +138,9 @@ class StripePaymentStrategyTest {
                 .isInstanceOf(PaymentRefusedException.class)
                 .hasMessageContaining("Amount must convert to at least 50 cents.")
                 .hasMessageContaining("new Idempotency-Key");
+        // GlobalExceptionHandler already logs every 4xx ApiException at WARN with its message, so this logs
+        // at most at INFO, never a level that would repeat a failure the handler already reports.
+        assertThat(logs.list).noneMatch(e -> e.getLevel().isGreaterOrEqual(Level.WARN));
     }
 
     @Test

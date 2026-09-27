@@ -1,5 +1,8 @@
 package com.flowwallet.wallet.transfer;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.flowwallet.platform.exception.ApiException;
 import com.flowwallet.wallet.api.WalletNotFoundException;
 import com.flowwallet.wallet.balance.BalanceHistory;
@@ -8,6 +11,8 @@ import com.flowwallet.wallet.balance.InsufficientFundsException;
 import com.flowwallet.wallet.balance.Wallet;
 import com.flowwallet.wallet.balance.WalletRepository;
 import com.flowwallet.wallet.enums.TransactionType;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -15,6 +20,7 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
+import org.slf4j.LoggerFactory;
 import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -40,6 +46,20 @@ import static org.mockito.Mockito.*;
  * database's part and need a real one to prove.
  */
 class TransferHandlerTest {
+    private final Logger logger = (Logger) LoggerFactory.getLogger(TransferHandler.class);
+    private final ListAppender<ILoggingEvent> logs = new ListAppender<>();
+
+    @BeforeEach
+    void attachLogAppender() {
+        logs.start();
+        logger.addAppender(logs);
+    }
+
+    @AfterEach
+    void detachLogAppender() {
+        logger.detachAppender(logs);
+    }
+
     /**
      * Sorts before {@link #BOB}, so which of the two is locked first is known in every test.
      */
@@ -262,6 +282,13 @@ class TransferHandlerTest {
         verifyNothingWritten();
         verify(movements, never()).flush();
         verify(wallets, never()).flush();
+        // Guards the sender's and the recipient's user ids leaking into the log line: they are the only
+        // credential (ADR 0003), and the sending wallet's own id already identifies the attempt (ADR 0027).
+        assertThat(logs.list)
+                .singleElement()
+                .satisfies(e -> {
+                    assertThat(e.getFormattedMessage()).doesNotContain(sender, recipient).contains("Wallet 11");
+                });
     }
 
     @ParameterizedTest(name = "from {0} to {1}")
@@ -308,6 +335,16 @@ class TransferHandlerTest {
         ));
         // The balances change on the managed entities and reach the database through the flush.
         verify(wallets, never()).save(any());
+        // Guards both sides' user ids leaking into the completed-transfer log line; the wallet ids already
+        // identify both legs (docs/adr/0027-user-ids-stay-out-of-logs-and-provider-metadata.md).
+        assertThat(logs.list)
+                .singleElement()
+                .satisfies(e -> {
+                    assertThat(e.getFormattedMessage())
+                            .doesNotContain(sender, recipient)
+                            .contains("wallet 11")
+                            .contains("wallet 12");
+                });
     }
 
     @ParameterizedTest(name = "from {0} to {1}")

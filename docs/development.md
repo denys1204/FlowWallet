@@ -169,7 +169,7 @@ webhooks.
 
 ## Testing
 
-There are 513 tests, all green: 240 in the payment service, 228 in the wallet service, 44 in platform and 1 in
+There are 514 tests, all green: 241 in the payment service, 228 in the wallet service, 44 in platform and 1 in
 the gateway (it binds the gateway's own `application.yml` into Spring Cloud Gateway's `HttpClientProperties`,
 so a YAML regression that drops the response or connect timeout fails here rather than in a live request left
 waiting). The rest go after the parts most likely to be wrong rather than the ones easiest to reach. That means
@@ -183,8 +183,9 @@ conversion that decides how much money actually leaves a card, the currencies St
 charges checked before a row is reserved, a Stripe refusal told apart from a failure (400 against 502) and
 the wallet's three kinds of 502, a deposit that loses the reservation to its own twin, a second recording of
 the same Stripe answer, the Stripe call's timeouts and retries, the optimistic-lock retry on both webhook
-paths, the field names of the internal intent call on both sides of it, and the identity and idempotency-key
-rules. For the wallet consumer they cover dispatch on the
+paths, the field names of the internal intent call on both sides of it, the identity and idempotency-key
+rules, and a log line never naming a user id or a Stripe refusal repeating its stack trace after the handler
+already logged it. For the wallet consumer they cover dispatch on the
 `eventType` header, dead-lettering of unreadable records, refusals (an event amount off its currency's grid
 among them), duplicate classification (by the `DEPOSIT` entry alone, since one reference can own one movement
 of each type), the barrier row being written before the wallet is loaded, failed payments never touching a wallet
@@ -195,7 +196,8 @@ dead-letter topic created with unlimited retention).
 For transfers they cover the lock order in both directions, the key judged only after both locks, and no
 other wallet read in the transaction. With the sender sorting first and last, they cover a retry that still
 gets its receipt after the balance was spent, funds checked before the recipient, a recipient without a
-wallet, and both ledger legs with their counterparties and balances. They also cover every cause of a `409`,
+wallet, and both ledger legs with their counterparties and balances. A completed transfer and a refused
+recipient are each logged by wallet id, never by user id. They also cover every cause of a `409`,
 the status of each refusal, the receipt rendering to the same bytes on a replay, the amount grid (trailing
 zeros, zero-decimal currencies, the size bound), the recipient id and key rules (including a fifth dash and
 non-ASCII digits, on the deposit key as well), a `406` before the service runs (also for a deposit and a

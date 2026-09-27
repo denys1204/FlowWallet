@@ -124,12 +124,14 @@ class StripeRequestMapperTest {
     }
 
     @Test
-    void metadataCarriesTheReferenceAndUser() {
+    void metadataCarriesTheReferenceAndNoUserId() {
+        // Guards the user id leaking to Stripe: it is a bearer credential (ADR 0003) that Stripe has no need of,
+        // and the reference alone is enough to trace the payment back to this service's record of it (ADR 0027).
         var params = mapper.toPaymentIntentParams(context("50.00", "USD"));
 
         assertThat(params.getMetadata())
                 .containsEntry("transactionReference", "ref-1")
-                .containsEntry("userId", "user-1");
+                .doesNotContainKey("userId");
         assertThat(params.getCurrency()).isEqualTo("usd");
     }
 }

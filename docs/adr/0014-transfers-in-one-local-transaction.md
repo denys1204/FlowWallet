@@ -1,6 +1,7 @@
 # 0014. A transfer is one local transaction in wallet_db with a fixed decision order
 
-- Status: Accepted
+- Status: Accepted, logging detail superseded by
+  [0027](0027-user-ids-stay-out-of-logs-and-provider-metadata.md)
 - Date: 2026-09-26
 
 ## Context
