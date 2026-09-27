@@ -1,6 +1,6 @@
 # 0013. A deposit starts in Wallet Service and is reserved in Payment Service before Stripe is called
 
-- Status: Accepted
+- Status: Accepted, extended by [0022](0022-stripe-charge-rules-checked-before-the-reservation.md)
 - Date: 2026-09-05
 
 ## Context

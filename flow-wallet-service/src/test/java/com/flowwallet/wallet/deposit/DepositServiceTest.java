@@ -9,6 +9,7 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
 import tools.jackson.databind.ObjectMapper;
 
@@ -104,13 +105,52 @@ class DepositServiceTest {
     }
 
     @Test
+    void aProviderRefusalRelaysPaymentServicesDetailWithItsAdviceOnTheKey() {
+        // Guards the detail being replaced with the wallet's own wording. Only Payment Service knows that the key
+        // is now bound to the refused request, and a caller told nothing would retry under the same key forever.
+        walletExists();
+        when(payments.createIntent(any(), any())).thenThrow(refusal(
+                HttpStatus.BAD_REQUEST,
+                "{\"detail\":\"The payment provider refused the payment: Amount too small. Correct the request "
+                        + "and retry with a new Idempotency-Key; this one stays bound to the refused request.\"}"
+        ));
+
+        assertThatThrownBy(() -> service.start("gina", "USD", KEY, request))
+                .isInstanceOf(DepositRejectedException.class)
+                .hasMessageContaining("Amount too small")
+                .hasMessageContaining("new Idempotency-Key");
+    }
+
+    @Test
     void aPaymentServiceThatDoesNotAnswerIsABadGateway() {
+        // Guards a connection failure or timeout losing its same-key advice: nothing was charged.
         walletExists();
         when(payments.createIntent(any(), any())).thenThrow(new ResourceAccessException("read timed out"));
 
         assertThatThrownBy(() -> service.start("gina", "USD", KEY, request))
                 .isInstanceOf(PaymentUnavailableException.class)
-                .hasMessageContaining("same Idempotency-Key");
+                .hasMessage("Payment Service is unavailable. Retry with the same Idempotency-Key.");
+    }
+
+    @Test
+    void aFailureThatPaymentServiceAnsweredIsNotCalledUnavailability() {
+        // Guards a 5xx that Payment Service sent itself, such as a 502 for a provider outage, being reported as
+        // Payment Service being unavailable, which sends an operator to the wrong service.
+        walletExists();
+        when(payments.createIntent(any(), any())).thenThrow(HttpServerErrorException.create(
+                HttpStatus.BAD_GATEWAY,
+                "Bad Gateway",
+                HttpHeaders.EMPTY,
+                "{\"detail\":\"Stripe payment initiation failed\"}".getBytes(),
+                null
+        ));
+
+        assertThatThrownBy(() -> service.start("gina", "USD", KEY, request))
+                .isInstanceOf(PaymentUnavailableException.class)
+                .hasMessage(
+                        "Payment Service could not start the payment. Nothing was charged. Retry with the same "
+                                + "Idempotency-Key."
+                );
     }
 
     @Test

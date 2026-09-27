@@ -6,10 +6,12 @@ import com.flowwallet.payment.provider.stripe.StripeCurrencyRules;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.math.BigDecimal;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
@@ -65,7 +67,7 @@ class StripeRequestMapperTest {
     }
 
     @ParameterizedTest(name = "{1} {0} survives the round trip")
-    @CsvSource({"50.00, USD", "0.01, EUR", "5000, JPY", "50.00, KWD", "5000, ISK", "5000, MGA"})
+    @CsvSource({"50.00, USD", "10.01, EUR", "5000, JPY", "50.00, KWD", "5000, ISK", "5000, MGA"})
     void conversionLosesNothing(String amount, String currency) {
         long minor = amountSentToStripe(amount, currency);
         int exponent = StripeCurrencyRules.of(currency).transmitExponent();
@@ -81,11 +83,42 @@ class StripeRequestMapperTest {
         assertThat(amountSentToStripe("50.0000", "USD")).isEqualTo(5000L);
     }
 
-    @Test
-    void anUnknownCurrencyFallsBackToHundredthsRatherThanFailing() {
-        // ISO validity is the HTTP layer's job. A code that reaches here unrecognised gets Stripe's default
-        // exponent, and Stripe itself refuses the currency if it does not support it.
-        assertThat(amountSentToStripe("50.00", "ZZZ")).isEqualTo(5000L);
+    @ParameterizedTest(name = "{0} is refused as a currency Stripe does not charge")
+    @ValueSource(strings = {"XAU", "XTS", "XXX", "VES", "ZZZ"})
+    void aCurrencyStripeDoesNotChargeIsRefusedBeforeTheReservation(String currency) {
+        // Guards sending Stripe a currency it refuses every time. The refusal would come after the row was
+        // reserved, so the key would be spent on a payment that could never start. The JDK accepts XAU, XTS and
+        // XXX as ISO codes, so @Iso4217Currency lets them through.
+        assertThatThrownBy(() -> mapper.validate(context("50.00", currency)))
+                .isInstanceOf(InvalidPaymentRequestException.class)
+                .hasMessage("Stripe does not charge in " + currency);
+    }
+
+    @ParameterizedTest(name = "{1} {0} is refused below Stripe's minimum of {2}")
+    @CsvSource({
+            "49,     JPY, 50",
+            "174.99, HUF, 175.00",
+            "14.99,  CZK, 15.00",
+            "3.99,   HKD, 4.00",
+    })
+    void anAmountBelowStripesMinimumChargeIsRefusedNamingTheMinimum(String amount, String currency, String minimum) {
+        // Guards the deposit range's 1.00 floor being taken as enough in every currency. Stripe refuses a 1 JPY
+        // charge, and after the reservation that refusal would cost the caller the key. The detail names the
+        // minimum so the caller can correct the amount.
+        assertThatThrownBy(() -> mapper.validate(context(amount, currency)))
+                .isInstanceOf(InvalidPaymentRequestException.class)
+                .hasMessage(
+                        "Minimum deposit amount in %s is %s, the smallest charge Stripe accepts in it"
+                                .formatted(currency, minimum)
+                );
+    }
+
+    @ParameterizedTest(name = "{1} {0} is accepted")
+    @CsvSource({"50, JPY", "175, HUF", "1.00, USD", "1, VND", "1.00, TWD"})
+    void anAmountAtStripesMinimumOrInACurrencyWithoutOneIsAccepted(String amount, String currency) {
+        // Guards an off-by-one at the minimum, and a currency Stripe lists no minimum for being refused locally.
+        // Such a currency's minimum depends on the account's settlement currency, which only Stripe can judge.
+        assertThatCode(() -> mapper.validate(context(amount, currency))).doesNotThrowAnyException();
     }
 
     @Test

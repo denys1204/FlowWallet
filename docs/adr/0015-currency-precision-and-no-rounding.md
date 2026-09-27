@@ -1,6 +1,7 @@
 # 0015. Amounts sit on an explicit per-currency grid and are refused, never rounded
 
-- Status: Accepted, extended by [0019](0019-payment-event-amounts-on-the-grid.md)
+- Status: Accepted, extended by [0019](0019-payment-event-amounts-on-the-grid.md) and
+  [0022](0022-stripe-charge-rules-checked-before-the-reservation.md)
 - Date: 2026-09-05
 
 ## Context

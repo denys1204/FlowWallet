@@ -8,6 +8,7 @@ import com.flowwallet.payment.provider.PaymentProviderStrategy;
 import com.flowwallet.payment.provider.dto.PaymentInitiationResult;
 import com.flowwallet.payment.provider.dto.PaymentRequestContext;
 import com.flowwallet.payment.provider.exception.InvalidPaymentRequestException;
+import com.flowwallet.payment.provider.exception.PaymentRefusedException;
 import com.flowwallet.payment.provider.exception.UnsupportedPaymentProviderException;
 import com.flowwallet.payment.transaction.mapper.PaymentEventMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -228,6 +229,25 @@ class PaymentServiceTest {
         // would only violate the constraint that makes the reference unique.
         verify(store, never()).reserve(any(), any(), any());
         verify(store).recordInitiation(any(), eq("pi_123"), any());
+    }
+
+    @Test
+    void aProviderRefusalAfterTheReservationKeepsTheRowAndRecordsNothing() {
+        // Guards deleting or initiating the reserved row on a refusal. The row keeps the key bound to the refused
+        // terms, so a same-key retry gets the same refusal and a corrected amount under it gets a 409, which is
+        // what the refusal's detail tells the caller.
+        PaymentTransaction reserved = reservedTransaction();
+        when(store.findOwnedBy("ref-1", "user-1")).thenReturn(Optional.empty());
+        strategyResolves();
+        when(store.reserve(any(), eq("user-1"), eq(PaymentProvider.STRIPE))).thenReturn(reserved);
+        when(strategy.initiatePayment(any())).thenThrow(
+                new PaymentRefusedException("Amount must convert to at least 50 cents.", new RuntimeException())
+        );
+
+        assertThatThrownBy(() -> service.initiatePayment(request("ref-1", "STRIPE"), "user-1"))
+                .isInstanceOf(PaymentRefusedException.class);
+
+        verify(store, never()).recordInitiation(any(), any(), any());
     }
 
     @Test

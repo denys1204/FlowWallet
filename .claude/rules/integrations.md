@@ -25,3 +25,8 @@ paths:
 - Stripe minor units come from the explicit table in `StripeCurrencyRules`; never derive them from
   `java.util.Currency` (ISO is wrong for Stripe on MGA and ISK). A server-side PaymentIntent confirm needs
   `return_url`.
+- `StripeChargeLimits` (chargeable currencies, minimum charges) is a dated copy of Stripe's currency page, like
+  the tables in `StripeCurrencyRules`; update the retrieval date with the lists. Only a 400
+  `InvalidRequestException` or a 402 `CardException` from Stripe is a refusal (400); every other
+  `StripeException` stays a 502
+  ([ADR 0022](../../docs/adr/0022-stripe-charge-rules-checked-before-the-reservation.md)).

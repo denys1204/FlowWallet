@@ -21,7 +21,7 @@ path and in the body.
 | Method & path | Request | Response |
 |---------------|---------|----------|
 | `GET /api/wallets` | (none) | `200` `[{balance, currency, createdAt, updatedAt}]`, ordered by currency; an empty list if none, never `404` |
-| `POST /api/wallets` | `{"currency": "USD"}` | `201` the wallet; `400` not an ISO 4217 code; `409` a wallet in that currency already exists |
+| `POST /api/wallets` | `{"currency": "USD"}` | `201` the wallet; `400` not an ISO 4217 code, or a code with no minor unit (XAU, XTS, XXX and the like); `409` a wallet in that currency already exists |
 | `GET /api/wallets/{currency}` | (none) | `200` the wallet; `400` invalid code; `404` the caller holds no such wallet (never `403`) |
 | `GET /api/wallets/{currency}/history?before={entryNo}&limit={n}` | (none) | `200` `{items, nextBefore}`, newest first |
 | `POST /api/wallets/{currency}/deposits` | `{"amount": 50.00}` + `Idempotency-Key` header | `200` `{reference, provider, providerData}` |
@@ -52,10 +52,14 @@ finishes the work itself by confirming the payment with Stripe using `providerDa
 - Repeating a request with the same key and the same amount returns a byte-identical body. Reusing a key
   with a different amount, or a key whose deposit already completed, gets a `409`.
 - The provider comes from configuration (`WALLET_PAYMENT_PROVIDER`, default `STRIPE`), not from the request.
-- Errors: `400` for an invalid currency, a missing or invalid key, an amount that isn't positive, or an
-  amount Payment Service rejects (its message is passed on); `404` for no such wallet, checked before
-  anything is charged; `409` as above; `502` when Payment Service is unreachable, times out or answers
-  unexpectedly. Retrying with the same key is safe.
+- Errors: `400` for an invalid currency, a missing or invalid key, an amount that isn't positive, or a
+  deposit Payment Service refuses (its message is passed on); `404` for no such wallet, checked before
+  anything is charged; `409` as above; `502` when Payment Service is unreachable, times out, fails to start
+  the payment or answers unexpectedly, with the detail saying which. Retrying a `502` with the same key is
+  safe.
+- A `400` passed on from Payment Service leaves the key free, except the one for a payment Stripe itself
+  refused: its detail says to correct the request and retry with a new key
+  ([ADR 0022](adr/0022-stripe-charge-rules-checked-before-the-reservation.md)).
 
 A transfer moves money from the caller's wallet in `{currency}` to the wallet the user `to` holds in the same
 currency. The body has no currency field, so a transfer between currencies can't be expressed. The first
@@ -172,12 +176,19 @@ Stripe.
   same row. The response is `409` if the reference belongs to another user, if the amount, currency or
   provider differs, if the payment already succeeded, or if a concurrent request with the same reference got
   there first.
+- `400` with a detail that names the reason and asks for a new key when Stripe refuses the payment itself
+  (a `400` or `402` from Stripe). The reserved row stays, so a retry with the same key and terms gets the same
+  answer. Any other Stripe failure is a `502`
+  ([ADR 0022](adr/0022-stripe-charge-rules-checked-before-the-reservation.md)).
 - `currency` must be an upper-case ISO 4217 code, `transactionReference` can be at most 64 characters, and
   `providerName` at most 32 (case-insensitive).
 - `amount` must be between `1.00` and `10000.00` inclusive by default (`PAYMENT_MIN_DEPOSIT_AMOUNT` /
   `PAYMENT_MAX_DEPOSIT_AMOUNT`). For Stripe it can have at most two decimal places, and none for
   zero-decimal currencies such as JPY; trailing zeros don't count. Three-decimal currencies such as KWD are
-  limited to two as well. Breaking any of these gives a `400` before a transaction row is written.
+  limited to two as well. The currency must be one Stripe charges, and the amount must reach Stripe's minimum
+  charge for the currencies Stripe lists one for (50 JPY, 175.00 HUF, 0.50 USD), both taken from a dated copy
+  of Stripe's currency page in `StripeChargeLimits`. Breaking any of these gives a `400` before a transaction
+  row is written.
 
 ## Error responses
 
@@ -205,10 +216,12 @@ The status mapping lives in one place, and each status stands for one remedy
 ([ADR 0016](adr/0016-error-model-and-status-codes.md)):
 
 - `401`: missing or malformed `X-User-Id` (blank, over 64 characters, not a version 4 or 7 UUID).
-- `400`: invalid request, unknown provider, non-ISO-4217 currency, missing or non-UUID `Idempotency-Key`, a
-  deposit amount Payment Service rejects (its message passed on), a transfer `to` that isn't a version 4 or 7
-  UUID, a transfer amount off its currency's grid or too large for a balance, a transfer to oneself, a
-  missing, malformed or invalid webhook signature, or any webhook while no signing secret is configured.
+- `400`: invalid request, unknown provider, non-ISO-4217 currency, a new wallet in a code with no minor unit,
+  missing or non-UUID `Idempotency-Key`, a deposit Payment Service refuses (its message passed on, including
+  a currency Stripe doesn't charge, an amount below Stripe's minimum, and a payment Stripe refused, whose key
+  is spent), a transfer `to` that isn't a version 4 or 7 UUID, a transfer amount off its currency's grid or
+  too large for a balance, a transfer to oneself, a missing, malformed or invalid webhook signature, or any
+  webhook while no signing secret is configured.
 - `404`: wallet not found. Wallet lookups are scoped to the caller, so it is never `403`. On a transfer it
   always means the caller's own wallet; a recipient without a wallet gets `422`.
 - `406`: a transfer whose `Accept` header rules out JSON. It is refused before anything runs.
@@ -221,8 +234,9 @@ The status mapping lives in one place, and each status stands for one remedy
   request is well-formed and its key unspent, and the remedy is a smaller amount, a top-up or another
   recipient. On a transfer it is kept apart from `409`, whose remedy there is a new key, because without a
   `type` the status is all a client can branch on.
-- `502`: upstream failure, meaning the payment provider, or Payment Service being unreachable, timing out or
-  answering unexpectedly. Retrying a deposit with the same key is safe.
+- `502`: upstream failure, meaning the payment provider failing (not refusing), or Payment Service being
+  unreachable, timing out, failing to start the payment or answering unexpectedly. The detail says which.
+  Retrying a deposit with the same key is safe.
 - `503`: a transfer lost a lock or a version check (a deadlock, a lock wait that timed out, a version
   conflict). The lock order is meant to rule these out. Nothing was moved, and retrying with the same key is
   safe.

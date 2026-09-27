@@ -3,6 +3,7 @@ package com.flowwallet.payment;
 import com.flowwallet.payment.provider.exception.InvalidPaymentRequestException;
 import com.flowwallet.payment.provider.exception.InvalidWebhookSignatureException;
 import com.flowwallet.payment.provider.exception.PaymentInitiationException;
+import com.flowwallet.payment.provider.exception.PaymentRefusedException;
 import com.flowwallet.payment.provider.exception.UnsupportedPaymentProviderException;
 import com.flowwallet.payment.provider.exception.WebhookProcessingException;
 import com.flowwallet.payment.transaction.DuplicateTransactionReferenceException;
@@ -22,6 +23,8 @@ class DomainExceptionStatusTest {
     void domainExceptionsCarryTheirDeclaredHttpStatus() {
         assertThat(new PaymentInitiationException("provider down", new RuntimeException()).getStatus())
                 .isEqualTo(HttpStatus.BAD_GATEWAY);
+        assertThat(new PaymentRefusedException("amount_too_small", new RuntimeException()).getStatus())
+                .isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(new InvalidPaymentRequestException("bad request").getStatus())
                 .isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(new InvalidWebhookSignatureException("bad signature").getStatus())

@@ -103,8 +103,11 @@ lock order and the idempotency checks are specified there, not here.
 - `Idempotency-Key` is a client-supplied UUID of any version, lower-cased and used verbatim as
   `transactionReference`, which is also Stripe's idempotency key; the server never generates it
   ([ADR 0005](docs/adr/0005-client-supplied-idempotency-keys.md)). Refusals write nothing, so they consume no
-  key. In the wallet ledger one reference can own several rows, so every `balance_history` lookup by reference
-  names its type ([ADR 0012](docs/adr/0012-balances-and-append-only-ledger.md)).
+  key, except a payment Stripe refuses after the row is reserved; Payment Service checks what it knows of
+  Stripe's rules before reserving
+  ([ADR 0022](docs/adr/0022-stripe-charge-rules-checked-before-the-reservation.md)). In the wallet ledger one
+  reference can own several rows, so every `balance_history` lookup by reference names its type
+  ([ADR 0012](docs/adr/0012-balances-and-append-only-ledger.md)).
 - `X-User-Id` must be a UUID version 4 or 7 (enforced in `CurrentUserIdResolver`) and is case-folded; a
   transfer's `to` is checked with the same expression (`CurrentUserIdResolver.RANDOM_UUID_REGEX` in
   `TransferRequest`). Services take it on trust and it is unauthenticated: the gateway has no filters and

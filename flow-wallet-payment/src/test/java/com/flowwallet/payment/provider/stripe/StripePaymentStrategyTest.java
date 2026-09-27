@@ -5,23 +5,36 @@ import com.flowwallet.payment.provider.dto.PaymentRequestContext;
 import com.flowwallet.payment.provider.dto.WebhookEventType;
 import com.flowwallet.payment.provider.dto.WebhookResult;
 import com.flowwallet.payment.provider.exception.PaymentInitiationException;
+import com.flowwallet.payment.provider.exception.PaymentRefusedException;
 import com.flowwallet.payment.provider.stripe.client.StripeClient;
 import com.flowwallet.payment.provider.stripe.mapper.StripeRequestMapper;
 import com.stripe.exception.ApiConnectionException;
+import com.stripe.exception.ApiException;
+import com.stripe.exception.AuthenticationException;
+import com.stripe.exception.CardException;
+import com.stripe.exception.IdempotencyException;
+import com.stripe.exception.InvalidRequestException;
+import com.stripe.exception.RateLimitException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.PaymentIntent;
+import com.stripe.model.StripeError;
 import com.stripe.model.StripeObject;
 import com.stripe.param.PaymentIntentCreateParams;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Map;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Named.named;
+import static org.junit.jupiter.params.provider.Arguments.arguments;
 import static org.mockito.Mockito.*;
 
 class StripePaymentStrategyTest {
@@ -78,6 +91,75 @@ class StripePaymentStrategyTest {
         assertThatThrownBy(() -> strategy.initiatePayment(context))
                 .isInstanceOf(PaymentInitiationException.class)
                 .hasCause(stripeException);
+    }
+
+    @Test
+    void aStripeRefusalOfTheRequestIsABadRequestThatSendsTheCallerToANewKey() throws Exception {
+        // Guards a permanent refusal answered as a 502. The wallet tells the caller to retry a 502 with the same
+        // key, every such retry reuses the reserved row and is refused again, and a corrected amount under that
+        // key gets a 409, so the caller could never learn what to fix.
+        PaymentRequestContext context = stripeCallFails(refusal(
+                new InvalidRequestException(
+                        "Amount must convert to at least 50 cents.",
+                        "amount",
+                        "req_1",
+                        "amount_too_small",
+                        400,
+                        null
+                ),
+                "Amount must convert to at least 50 cents."
+        ));
+
+        assertThatThrownBy(() -> strategy.initiatePayment(context))
+                .isInstanceOf(PaymentRefusedException.class)
+                .hasMessageContaining("Amount must convert to at least 50 cents.")
+                .hasMessageContaining("new Idempotency-Key");
+    }
+
+    @Test
+    void aCardRefusalIsABadRequest() throws Exception {
+        // Guards the second kind of refusal Stripe gives on create, a 402 CardException, being retried forever.
+        PaymentRequestContext context = stripeCallFails(refusal(
+                new CardException(
+                        "Your card was declined.",
+                        "req_1",
+                        "card_declined",
+                        null,
+                        "generic_decline",
+                        null,
+                        402,
+                        null
+                ),
+                "Your card was declined."
+        ));
+
+        assertThatThrownBy(() -> strategy.initiatePayment(context))
+                .isInstanceOf(PaymentRefusedException.class)
+                .hasMessageContaining("Your card was declined.");
+    }
+
+    static Stream<Arguments> failuresThatAreNotARefusalOfTheRequest() {
+        return Stream.of(
+                arguments(named("connection error", new ApiConnectionException("stripe unreachable"))),
+                arguments(named("409 conflict", new ApiException("Lock timeout", "req_1", "lock_timeout", 409, null))),
+                arguments(named("idempotency error", new IdempotencyException("Keys in use", "req_1", null, 400))),
+                arguments(named("rate limit", new RateLimitException("Too many", null, "req_1", null, 429, null))),
+                arguments(named("bad API key", new AuthenticationException("Invalid key", "req_1", null, 401))),
+                arguments(named("404", new InvalidRequestException("No such", null, "req_1", null, 404, null))),
+                arguments(named("500 at Stripe", new ApiException("Internal", "req_1", null, 500, null)))
+        );
+    }
+
+    @ParameterizedTest(name = "a {0} stays a 502")
+    @MethodSource("failuresThatAreNotARefusalOfTheRequest")
+    void aFailureThatIsNotARefusalOfTheRequestStaysABadGateway(StripeException failure) throws Exception {
+        // Guards the refusal branch widening: a conflict, a rate limit or an outage passes, and this service's
+        // own keys or account are no fault of the caller, so each must keep the same-key retry a 502 invites.
+        PaymentRequestContext context = stripeCallFails(failure);
+
+        assertThatThrownBy(() -> strategy.initiatePayment(context))
+                .isInstanceOf(PaymentInitiationException.class)
+                .hasCause(failure);
     }
 
     @Test
@@ -172,6 +254,28 @@ class StripePaymentStrategyTest {
         WebhookResult result = strategy.handleWebhook("payload", Map.of());
 
         assertThat(result.eventType()).isEqualTo(WebhookEventType.UNKNOWN);
+    }
+
+    private PaymentRequestContext stripeCallFails(StripeException failure) throws StripeException {
+        PaymentRequestContext context =
+                new PaymentRequestContext("ref-1", new BigDecimal("50.00"), "USD", "user-1");
+        PaymentIntentCreateParams params = PaymentIntentCreateParams.builder()
+                .setAmount(5000L)
+                .setCurrency("usd")
+                .build();
+        when(requestMapper.toPaymentIntentParams(context)).thenReturn(params);
+        when(stripeClient.createPaymentIntent(params, "ref-1")).thenThrow(failure);
+        return context;
+    }
+
+    /**
+     * stripe-java fills the user-facing message from the parsed error body, so a test sets that body too.
+     */
+    private static StripeException refusal(StripeException exception, String message) {
+        StripeError error = new StripeError();
+        error.setMessage(message);
+        exception.setStripeError(error);
+        return exception;
     }
 
     private static PaymentIntent paymentIntent(String status, Long amount, String currency) {

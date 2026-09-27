@@ -1,6 +1,6 @@
 # 0005. A client-supplied Idempotency-Key binds the terms of one money operation
 
-- Status: Accepted
+- Status: Accepted, extended by [0022](0022-stripe-charge-rules-checked-before-the-reservation.md)
 - Date: 2026-07-25
 
 ## Context

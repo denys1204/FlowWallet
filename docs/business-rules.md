@@ -17,7 +17,8 @@ Details: [identity and security model](../ARCHITECTURE.md#identity--security-mod
 ## Wallets
 
 - A user opens a wallet explicitly, one per currency. A deposit, a transfer or a payment event never opens one.
-- The currency is an ISO 4217 code, in either letter case.
+- The currency is an ISO 4217 code, in either letter case. A code that names no currency of payment, such as
+  gold (XAU), the testing code (XTS) or "no currency" (XXX), cannot be opened, because no deposit could fund it.
 - A new wallet holds 0. A wallet cannot be closed, deleted or moved to another currency.
 - A wallet is addressed by its owner and currency and has no id in the API. Someone else's wallet and a wallet
   that does not exist look the same.
@@ -27,7 +28,8 @@ Details: [identity and security model](../ARCHITECTURE.md#identity--security-mod
 
 Details: [API reference](api.md#wallet-service). Reasoning:
 [ADR 0004](adr/0004-wallet-addressed-by-owner-and-currency.md),
-[ADR 0012](adr/0012-balances-and-append-only-ledger.md).
+[ADR 0012](adr/0012-balances-and-append-only-ledger.md),
+[ADR 0022](adr/0022-stripe-charge-rules-checked-before-the-reservation.md).
 
 ## Amounts
 
@@ -45,12 +47,18 @@ Details: [API reference](api.md#wallet-service). Reasoning:
 - The balance changes when Stripe confirms the payment. Starting a deposit moves no money.
 - A deposit is between a configured minimum and maximum, 1.00 and 10,000.00 by default. The bounds are the same
   figures in each currency's own units: 1 to 10,000 JPY, and equally 1 to 10,000 KWD.
+- A deposit is only possible in a currency Stripe charges, and it must reach Stripe's minimum charge for the
+  currency where Stripe lists one, such as 50 JPY, 175 HUF or 15 CZK. The higher of that minimum and the
+  configured one applies. Both rules come from a copy of Stripe's currency page taken on 2026-09-27.
+- A deposit these rules refuse records nothing. If Stripe still refuses a payment for its own reasons, the
+  deposit is refused too, and its idempotency key stays tied to the refused request: correct it and use a new key.
 - The payment provider comes from configuration, not from the client. Stripe is the only one.
 - A declined payment moves no money, and the same deposit can still be paid afterwards.
 - There is no refund or reversal: a credited deposit stays credited.
 
 Details: [deposit flow](../ARCHITECTURE.md#end-to-end-deposit-flow), [API reference](api.md#wallet-service),
-[configuration](development.md#configuration). Reasoning: [ADR 0013](adr/0013-deposit-initiation.md).
+[configuration](development.md#configuration). Reasoning: [ADR 0013](adr/0013-deposit-initiation.md),
+[ADR 0022](adr/0022-stripe-charge-rules-checked-before-the-reservation.md).
 
 ## Transfers
 
@@ -76,12 +84,14 @@ Reasoning: [ADR 0014](adr/0014-transfers-in-one-local-transaction.md),
 - A deposit whose payment has completed cannot be replayed, and its key is refused. A transfer can be replayed
   at any time and returns the original receipt, even after the balance was spent.
 - A request the wallet refuses records nothing and does not use up its key. A transfer refused for low funds
-  can go through under the same key after a top-up.
+  can go through under the same key after a top-up. The one exception is a deposit that Stripe itself refuses:
+  its key stays tied to the refused request.
 - A deposit and a transfer are protected separately, so a key used for one does not block the other. Use a
   fresh key for each operation anyway.
 
 Details: [API reference](api.md#wallet-service). Reasoning:
-[ADR 0005](adr/0005-client-supplied-idempotency-keys.md).
+[ADR 0005](adr/0005-client-supplied-idempotency-keys.md),
+[ADR 0022](adr/0022-stripe-charge-rules-checked-before-the-reservation.md).
 
 ## Ledger and history
 

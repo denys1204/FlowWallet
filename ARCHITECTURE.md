@@ -125,9 +125,10 @@ sequenceDiagram
     G->>W: proxy
     W->>W: find wallet (userId, currency) — 404 if none, nothing charged
     W->>P: POST /api/payments/intent (internal, transactionReference = Idempotency-Key)
+    P->>P: check range, grid, Stripe currency and minimum (400 if refused, nothing written)
     P->>DB: save PaymentTransaction (PENDING)
     P->>S: create PaymentIntent (idempotency key = reference)
-    S-->>P: paymentIntentId + client_secret
+    S-->>P: paymentIntentId + client_secret (a Stripe 400/402 refusal becomes a 400, the key stays taken)
     P->>DB: save provider metadata
     P-->>W: providerData {clientSecret}, paymentIntentId, transactionReference
     W-->>C: 200 {reference, provider, providerData {clientSecret}}

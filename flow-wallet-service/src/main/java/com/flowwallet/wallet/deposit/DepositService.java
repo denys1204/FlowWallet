@@ -10,6 +10,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClientException;
 import tools.jackson.databind.ObjectMapper;
 
@@ -49,12 +51,25 @@ public class DepositService {
             );
         } catch (HttpClientErrorException e) {
             throw translate(e);
-        } catch (RestClientException e) {
-            // Covers 5xx, connection refused and both timeouts. Nothing was charged, so the same key may be
-            // retried.
+        } catch (HttpServerErrorException e) {
+            // Payment Service is up and answered: its call to the provider failed, or it hit a defect. Nothing was
+            // charged, so the same key may be retried.
+            log.warn("Payment Service answered {} for reference {}", e.getStatusCode(), reference);
+            throw new PaymentUnavailableException(
+                    "Payment Service could not start the payment. Nothing was charged. Retry with the same "
+                            + "Idempotency-Key."
+            );
+        } catch (ResourceAccessException e) {
+            // Connection refused or either timeout. Nothing was charged, so the same key may be retried.
             log.warn("Payment Service did not answer for reference {}: {}", reference, e.getMessage());
             throw new PaymentUnavailableException(
                     "Payment Service is unavailable. Retry with the same Idempotency-Key."
+            );
+        } catch (RestClientException e) {
+            // An answer the wallet cannot read, such as an unknown status or a body that does not bind.
+            log.error("Payment Service gave an unreadable answer for reference {}", reference, e);
+            throw new PaymentUnavailableException(
+                    "Payment Service gave an answer the wallet could not read. Retry with the same Idempotency-Key."
             );
         }
     }

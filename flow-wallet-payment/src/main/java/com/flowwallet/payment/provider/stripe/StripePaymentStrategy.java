@@ -7,8 +7,11 @@ import com.flowwallet.payment.provider.dto.PaymentRequestContext;
 import com.flowwallet.payment.provider.dto.WebhookEventType;
 import com.flowwallet.payment.provider.dto.WebhookResult;
 import com.flowwallet.payment.provider.exception.PaymentInitiationException;
+import com.flowwallet.payment.provider.exception.PaymentRefusedException;
 import com.flowwallet.payment.provider.stripe.client.StripeClient;
 import com.flowwallet.payment.provider.stripe.mapper.StripeRequestMapper;
+import com.stripe.exception.CardException;
+import com.stripe.exception.InvalidRequestException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.PaymentIntent;
 import lombok.RequiredArgsConstructor;
@@ -51,6 +54,15 @@ public class StripePaymentStrategy implements PaymentProviderStrategy {
                     Map.of(RESPONSE_CLIENT_SECRET, paymentIntent.getClientSecret())
             );
         } catch (StripeException e) {
+            if (isRefusalOfTheRequest(e)) {
+                log.warn(
+                        "Stripe refused the payment for transaction {} with {} ({})",
+                        context.transactionReference(),
+                        e.getStatusCode(),
+                        e.getCode()
+                );
+                throw new PaymentRefusedException(e.getUserMessage(), e);
+            }
             log.error("Failed to initiate Stripe payment for transaction: {}", context.transactionReference(), e);
             throw new PaymentInitiationException("Stripe payment initiation failed", e);
         }
@@ -91,6 +103,20 @@ public class StripePaymentStrategy implements PaymentProviderStrategy {
                 paymentIntent.getCurrency() == null ? null : paymentIntent.getCurrency().toUpperCase(Locale.ROOT),
                 event.created()
         );
+    }
+
+    /**
+     * A 400 {@code InvalidRequestException} or a 402 {@code CardException} judges the request's own content:
+     * whether Stripe replays the error it saved under the key or validates the request again, every retry of the
+     * same terms gets the same answer. Every other failure stays a 502, which invites a retry under the same key:
+     * stripe-java maps 409 to {@code ApiException}, a 400 idempotency error to {@code IdempotencyException} and 429
+     * to {@code RateLimitException}, and a 401, 403 or 404 on create points at this service's keys or account, not
+     * at the caller. See docs/adr/0022-stripe-charge-rules-checked-before-the-reservation.md.
+     */
+    private static boolean isRefusalOfTheRequest(StripeException e) {
+        Integer status = e.getStatusCode();
+        return (e instanceof InvalidRequestException && Integer.valueOf(400).equals(status))
+                || (e instanceof CardException && Integer.valueOf(402).equals(status));
     }
 
     /**

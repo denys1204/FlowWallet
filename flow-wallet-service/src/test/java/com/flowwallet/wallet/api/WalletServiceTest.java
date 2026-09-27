@@ -58,6 +58,27 @@ class WalletServiceTest {
         verifyNoInteractions(wallets);
     }
 
+    @ParameterizedTest(name = "a wallet in {0} is refused")
+    @ValueSource(strings = {"XAU", "xts", "XXX", "XDR"})
+    void aWalletInACodeWithNoMinorUnitIsRefusedBeforeAnythingIsWritten(String written) {
+        // Guards opening a wallet that no deposit could ever fund. The JDK accepts these as ISO codes, and the
+        // caller would only learn at the first deposit that the wallet is useless.
+        assertThatThrownBy(() -> service.open("erin", written))
+                .isInstanceOf(NonPaymentCurrencyException.class)
+                .hasMessageContaining("not a currency of payment");
+
+        verifyNoInteractions(wallets);
+    }
+
+    @Test
+    void anExistingWalletInACodeWithNoMinorUnitCanStillBeRead() {
+        // Guards applying the opening rule to every lookup: a wallet opened before the rule would disappear
+        // from its owner's reach.
+        when(wallets.findByUserIdAndCurrency("erin", "XTS")).thenReturn(Optional.of(Wallet.open("erin", "XTS")));
+
+        assertThat(service.read("erin", "XTS").currency()).isEqualTo("XTS");
+    }
+
     @Test
     void aWalletTheCallerDoesNotHoldIsNotFound() {
         // The only query the service can issue is scoped to the caller, so "not yours" and "does not exist"

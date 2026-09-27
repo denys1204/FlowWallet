@@ -27,4 +27,19 @@ public final class Currencies {
         }
         return code;
     }
+
+    /**
+     * {@link #normalise}, then refuses a code that ISO 4217 gives no minor unit: the precious metals (XAU, XAG,
+     * XPT, XPD), the SDR and the bond-market units (XDR, XBA to XBD), XSU, XUA, the testing code XTS and XXX for
+     * "no currency". None is a means of payment, so no deposit could fund the wallet. The JDK marks them with a
+     * default fraction digit count of -1, which keeps the check free of any payment provider's list.
+     * See docs/adr/0022-stripe-charge-rules-checked-before-the-reservation.md.
+     */
+    public static String normaliseForNewWallet(String currency) {
+        String code = normalise(currency);
+        if (Currency.getInstance(code).getDefaultFractionDigits() < 0) {
+            throw new NonPaymentCurrencyException(code);
+        }
+        return code;
+    }
 }

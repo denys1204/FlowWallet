@@ -43,7 +43,7 @@ public class WalletService {
      */
     @Transactional
     public WalletResponse open(String userId, String currency) {
-        String code = Currencies.normalise(currency);
+        String code = Currencies.normaliseForNewWallet(currency);
         try {
             return mapper.toResponse(wallets.saveAndFlush(Wallet.open(userId, code)));
         } catch (DataIntegrityViolationException e) {
