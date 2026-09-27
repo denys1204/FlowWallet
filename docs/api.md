@@ -175,8 +175,10 @@ Stripe.
   key. The same user with the same terms gets the original intent back, including after a declined card, so
   the payment can be retried. A reference that was reserved but never sent to the provider is retried on the
   same row. The response is `409` if the reference belongs to another user, if the amount, currency or
-  provider differs, if the payment already succeeded, or if a concurrent request with the same reference got
-  there first.
+  provider differs, or if the payment already succeeded, whether that row was there first or won a concurrent
+  reservation. A concurrent request with the same user and terms gets the winner's intent, or `503` while the
+  winner has not recorded Stripe's answer yet, which the wallet passes on as a `502` to retry with the same key
+  ([ADR 0024](adr/0024-deposit-initiation-settles-its-own-races.md)).
 - `400` with a detail that names the reason and asks for a new key when Stripe refuses the payment itself
   (a `400` or `402` from Stripe). The reserved row stays, so a retry with the same key and terms gets the same
   answer. Any other Stripe failure is a `502`
@@ -227,8 +229,7 @@ The status mapping lives in one place, and each status stands for one remedy
 - `404`: wallet not found. Wallet lookups are scoped to the caller, so it is never `403`. On a transfer it
   always means the caller's own wallet; a recipient without a wallet gets `422`.
 - `406`: a transfer whose `Accept` header rules out JSON. It is refused before anything runs.
-- `409`: transaction reference already in use (another user, a concurrent request, different terms, or
-  already paid), wallet already exists, `Idempotency-Key` reused for a different or completed deposit or for
+- `409`: transaction reference already in use (another user, different terms, or already paid), wallet already exists, `Idempotency-Key` reused for a different or completed deposit or for
   a different transfer.
 - `413`: a webhook body larger than `PAYMENT_WEBHOOK_MAX_PAYLOAD_SIZE`, refused before its signature is
   checked ([ADR 0017](adr/0017-webhooks-verified-before-they-are-read.md)).
@@ -239,9 +240,10 @@ The status mapping lives in one place, and each status stands for one remedy
 - `502`: upstream failure, meaning the payment provider failing (not refusing), or Payment Service being
   unreachable, timing out, failing to start the payment or answering unexpectedly. The detail says which.
   Retrying a deposit with the same key is safe.
-- `503`: a transfer lost a lock or a version check (a deadlock, a lock wait that timed out, a version
-  conflict). The lock order is meant to rule these out. Nothing was moved, and retrying with the same key is
-  safe.
+- `503`: a transfer that lost a lock or a version check (a deadlock, a lock wait that timed out, a version
+  conflict), which the lock order is meant to rule out, or Payment Service's answer to a deposit whose twin
+  request with the same key is still starting the payment (the wallet turns that one into a `502`). Nothing
+  was moved, and retrying with the same key is safe.
 - `500`: a correctly signed webhook payload that can't be processed, a transfer that broke a database CHECK
   or overflowed a column, or anything unexpected. The detail stays generic; the specifics go to the logs and
   are never returned.

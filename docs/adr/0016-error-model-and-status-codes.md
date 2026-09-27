@@ -1,7 +1,8 @@
 # 0016. Errors are RFC 9457 problems whose status tells the client what to do
 
-- Status: Accepted, extended by [0017](0017-webhooks-verified-before-they-are-read.md) and
-  [0022](0022-stripe-charge-rules-checked-before-the-reservation.md)
+- Status: Accepted, extended by [0017](0017-webhooks-verified-before-they-are-read.md),
+  [0022](0022-stripe-charge-rules-checked-before-the-reservation.md) and
+  [0024](0024-deposit-initiation-settles-its-own-races.md)
 - Date: 2026-07-25
 
 ## Context

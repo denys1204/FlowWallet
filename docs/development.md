@@ -146,6 +146,8 @@ set real test values for both. `.env.example` has the full list with comments. T
 | `WALLET_PAYMENT_PROVIDER` | `STRIPE` | Wallet |
 | `STRIPE_API_KEY` / `STRIPE_WEBHOOK_SECRET` | `sk_test_dummy` / none (webhooks disabled) | Payment |
 | `STRIPE_WEBHOOK_TOLERANCE_SECONDS` | `300` | Payment: how old a webhook's signed timestamp may be |
+| `STRIPE_API_CONNECT_TIMEOUT` / `_READ_TIMEOUT` | `2s` / `6s` | Payment: how long a Stripe API call may take to connect and to answer |
+| `STRIPE_API_MAX_NETWORK_RETRIES` | `0` | Payment: how often stripe-java retries a failed call under the same idempotency key. Keep (1 + retries) × (connect + read), plus about 0.5s of backoff per retry, below `WALLET_PAYMENT_READ_TIMEOUT` |
 | `PAYMENT_WEBHOOK_MAX_PAYLOAD_SIZE` | `256KB` | Payment: a larger webhook body gets `413` |
 | `PAYMENT_MIN_DEPOSIT_AMOUNT` / `PAYMENT_MAX_DEPOSIT_AMOUNT` | `1.00` / `10000.00` | Payment |
 | `OUTBOX_POLL_INTERVAL_MS` / `OUTBOX_BATCH_SIZE` | `10000` / `50` | Payment |
@@ -159,15 +161,15 @@ set real test values for both. `.env.example` has the full list with comments. T
 The wallet service won't start with values that make no sense, such as a negative retry count, a retry
 multiplier below 1.0, an initial interval above the maximum, a maximum interval above 60000 ms, or a blank
 Payment Service URL. The payment service does the same for a
-deposit range that is inverted, not positive, or too wide for `NUMERIC(19,4)`, a webhook tolerance that isn't
-positive, a webhook size limit outside 1B to 16MB, an outbox batch size, attempt count, backoff, retention or
-stuck-processing threshold below 1, an outbox backoff base above its maximum, and a `payment.events` topic with
+deposit range that is inverted, not positive, or too wide for `NUMERIC(19,4)`, a Stripe timeout below 1ms or a
+negative Stripe retry count, a webhook tolerance that isn't positive, a webhook size limit outside 1B to 16MB, an
+outbox batch size, attempt count, backoff, retention or stuck-processing threshold below 1, an outbox backoff base above its maximum, and a `payment.events` topic with
 more in-sync replicas than replicas. A missing webhook secret doesn't stop it starting; it only disables
 webhooks.
 
 ## Testing
 
-There are 457 tests, all green: 226 in the payment service, 197 in the wallet service, 33 in platform and 1 in
+There are 470 tests, all green: 239 in the payment service, 197 in the wallet service, 33 in platform and 1 in
 the gateway (it binds the gateway's own `application.yml` into Spring Cloud Gateway's `HttpClientProperties`,
 so a YAML regression that drops the response or connect timeout fails here rather than in a live request left
 waiting). The rest go after the parts most likely to be wrong rather than the ones easiest to reach. That means
@@ -178,7 +180,9 @@ against payloads signed with a real secret (placeholder secrets and malformed he
 before the check), the webhook size cap, the check of a success against the stored amount and currency, the
 RFC 9457 status mapping, the minor-unit conversion that decides how much money actually leaves a card, the
 currencies Stripe charges and its minimum charges checked before a row is reserved, a Stripe refusal told
-apart from a failure (400 against 502) and the wallet's three kinds of 502, the optimistic-lock retry on both webhook paths, the field names of the internal intent call on both sides of it,
+apart from a failure (400 against 502) and the wallet's three kinds of 502, a deposit that loses the
+reservation to its own twin, a second recording of the same Stripe answer, the Stripe call's timeouts and
+retries, the optimistic-lock retry on both webhook paths, the field names of the internal intent call on both sides of it,
 and the identity and idempotency-key rules. For the wallet consumer they cover dispatch on the `eventType` header,
 dead-lettering of unreadable records, refusals (an event amount off its currency's grid among them),
 duplicate classification (by the `DEPOSIT` entry alone, since one reference can own one movement of each

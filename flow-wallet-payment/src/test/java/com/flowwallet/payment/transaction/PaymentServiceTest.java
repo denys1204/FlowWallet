@@ -14,6 +14,7 @@ import com.flowwallet.payment.transaction.mapper.PaymentEventMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.math.BigDecimal;
 import java.util.Map;
@@ -85,16 +86,82 @@ class PaymentServiceTest {
     }
 
     @Test
-    void propagatesConflictOnConcurrentReserve() {
-        when(store.findOwnedBy("ref-1", "user-1")).thenReturn(Optional.empty());
+    void aRequestThatLosesTheReservationToItsOwnTwinGetsTheTwinsIntent() {
+        // Guards the race loser being sent to a new key. Its twin, with the same key and terms, won the unique
+        // index and initiated the payment, so a 409 would make the client pay a second time under another key.
+        PaymentTransaction winner = initiatedTransaction("pi_123", Map.of("clientSecret", "cs_1"));
+        PaymentIntentResponse mapped = new PaymentIntentResponse(Map.of("clientSecret", "cs_1"), "pi_123", "ref-1");
+        when(store.findOwnedBy("ref-1", "user-1")).thenReturn(Optional.empty(), Optional.of(winner));
         strategyResolves();
         when(store.reserve(any(), eq("user-1"), eq(PaymentProvider.STRIPE))).thenThrow(
-                DuplicateTransactionReferenceException.forReference("ref-1")
+                new DataIntegrityViolationException("duplicate key")
+        );
+        when(mapper.toResponse(winner)).thenReturn(mapped);
+
+        assertThat(service.initiatePayment(request("ref-1", "STRIPE"), "user-1")).isSameAs(mapped);
+        verify(strategy, never()).initiatePayment(any());
+    }
+
+    @Test
+    void aTwinThatHasNotReachedTheProviderYetIsARetryableUnavailability() {
+        // Guards a 409, which sends the client to a new key and a second payment, and a second provider call,
+        // which races the twin's own call under one idempotency key.
+        when(store.findOwnedBy("ref-1", "user-1")).thenReturn(Optional.empty(), Optional.of(reservedTransaction()));
+        strategyResolves();
+        when(store.reserve(any(), eq("user-1"), eq(PaymentProvider.STRIPE))).thenThrow(
+                new DataIntegrityViolationException("duplicate key")
+        );
+
+        assertThatThrownBy(() -> service.initiatePayment(request("ref-1", "STRIPE"), "user-1"))
+                .isInstanceOf(PaymentInProgressException.class)
+                .hasMessageContaining("same Idempotency-Key");
+        verify(strategy, never()).initiatePayment(any());
+    }
+
+    @Test
+    void aRaceLostToAPaymentOnOtherTermsIsAConflict() {
+        // Guards the winning row being replayed without its terms being compared: the loser asked for another
+        // amount and must not receive an intent for the winner's.
+        PaymentTransaction winner = initiatedTransaction("pi_123", Map.of("clientSecret", "cs_1"));
+        when(store.findOwnedBy("ref-1", "user-1")).thenReturn(Optional.empty(), Optional.of(winner));
+        strategyResolves();
+        when(store.reserve(any(), eq("user-1"), eq(PaymentProvider.STRIPE))).thenThrow(
+                new DataIntegrityViolationException("duplicate key")
+        );
+
+        assertThatThrownBy(() -> service.initiatePayment(
+                new CreatePaymentIntentRequest("ref-1", new BigDecimal("75.00"), "USD", "STRIPE"),
+                "user-1"
+        ))
+                .isInstanceOf(DuplicateTransactionReferenceException.class)
+                .hasMessageContaining("amount");
+    }
+
+    @Test
+    void aRaceLostToAnotherUserIsAConflict() {
+        // Guards the other user's row, which carries their client secret, reaching this caller.
+        when(store.findOwnedBy("ref-1", "user-1"))
+                .thenReturn(Optional.empty())
+                .thenThrow(DuplicateTransactionReferenceException.forReference("ref-1"));
+        strategyResolves();
+        when(store.reserve(any(), eq("user-1"), eq(PaymentProvider.STRIPE))).thenThrow(
+                new DataIntegrityViolationException("duplicate key")
         );
 
         assertThatThrownBy(() -> service.initiatePayment(request("ref-1", "STRIPE"), "user-1"))
                 .isInstanceOf(DuplicateTransactionReferenceException.class);
-        verify(strategy, never()).initiatePayment(any());
+    }
+
+    @Test
+    void aViolationThatNoRowExplainsIsRethrownAsTheDefectItIs() {
+        // Guards another constraint's violation being reported as a duplicate reference: with no row under the
+        // reference, the reservation failed for a reason no 409 describes.
+        DataIntegrityViolationException violation = new DataIntegrityViolationException("value too long");
+        when(store.findOwnedBy("ref-1", "user-1")).thenReturn(Optional.empty(), Optional.empty());
+        strategyResolves();
+        when(store.reserve(any(), eq("user-1"), eq(PaymentProvider.STRIPE))).thenThrow(violation);
+
+        assertThatThrownBy(() -> service.initiatePayment(request("ref-1", "STRIPE"), "user-1")).isSameAs(violation);
     }
 
     @Test

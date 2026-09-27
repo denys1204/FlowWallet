@@ -1,13 +1,18 @@
 package com.flowwallet.payment.provider.stripe.config;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.PositiveOrZero;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.validator.constraints.time.DurationMax;
+import org.hibernate.validator.constraints.time.DurationMin;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.validation.annotation.Validated;
 
+import java.time.Duration;
 import java.util.Set;
 
 @Getter
@@ -18,8 +23,17 @@ import java.util.Set;
 public class StripeProperties {
     @Valid
     private final Webhook webhook = new Webhook();
+
+    @Valid
     private final Api api = new Api();
 
+    /**
+     * How the API calls reach Stripe. The timeouts and retries replace stripe-java's defaults (30 s to connect,
+     * 80 s to read, two retries), which kept a Payment Service thread busy long after Wallet Service had given up
+     * on it. {@code (1 + maxNetworkRetries) * (connectTimeout + readTimeout)}, plus about half a second of backoff
+     * per retry, should stay below the wallet's {@code wallet.payment.read-timeout}.
+     * See docs/adr/0024-deposit-initiation-settles-its-own-races.md.
+     */
     @Getter
     @Setter
     public static class Api {
@@ -27,6 +41,26 @@ public class StripeProperties {
          * Secret API key. The dummy default lets the application start without credentials.
          */
         private String key = "sk_test_dummy";
+
+        /**
+         * stripe-java takes whole milliseconds as an {@code int}, which bounds both timeouts from above.
+         */
+        @NotNull
+        @DurationMin(millis = 1, message = "stripe.api.connect-timeout must be at least 1ms")
+        @DurationMax(millis = Integer.MAX_VALUE, message = "stripe.api.connect-timeout must fit an int of millis")
+        private Duration connectTimeout = Duration.ofSeconds(2);
+
+        @NotNull
+        @DurationMin(millis = 1, message = "stripe.api.read-timeout must be at least 1ms")
+        @DurationMax(millis = Integer.MAX_VALUE, message = "stripe.api.read-timeout must fit an int of millis")
+        private Duration readTimeout = Duration.ofSeconds(6);
+
+        /**
+         * stripe-java retries a connection failure, a timeout, a 409 and a 5xx under the same idempotency key. Zero
+         * leaves the retry to the client, which repeats the deposit with its key.
+         */
+        @PositiveOrZero(message = "stripe.api.max-network-retries must not be negative")
+        private int maxNetworkRetries = 0;
     }
 
     @Getter

@@ -59,18 +59,19 @@ class PaymentTransactionStoreTest {
     }
 
     @Test
-    void reserveTranslatesUniqueViolationIntoConflict() {
-        when(repository.saveAndFlush(any())).thenThrow(new DataIntegrityViolationException("dup"));
+    void reserveLetsAViolationReachTheCallerUntranslated() {
+        // Guards translating the violation inside the transaction it aborted. PaymentService explains it from a
+        // fresh read after the rollback, and it needs the violation itself to rethrow one no row explains.
+        DataIntegrityViolationException violation = new DataIntegrityViolationException("dup");
+        when(repository.saveAndFlush(any())).thenThrow(violation);
 
-        assertThatThrownBy(
-                () -> store.reserve(request(), "user-1", PaymentProvider.STRIPE)
-        ).isInstanceOf(DuplicateTransactionReferenceException.class);
+        assertThatThrownBy(() -> store.reserve(request(), "user-1", PaymentProvider.STRIPE)).isSameAs(violation);
     }
 
     @Test
-    void recordInitiationLoadsMarksAndSaves() {
+    void recordInitiationLocksMarksAndSaves() {
         PaymentTransaction tx = transaction("user-1");
-        when(repository.findById(5L)).thenReturn(Optional.of(tx));
+        when(repository.lockById(5L)).thenReturn(Optional.of(tx));
         when(repository.save(tx)).thenReturn(tx);
 
         PaymentTransaction result = store.recordInitiation(5L, "pi_9", Map.of("clientSecret", "cs"));
@@ -78,11 +79,37 @@ class PaymentTransactionStoreTest {
         assertThat(result.getProviderTransactionId()).isEqualTo("pi_9");
         assertThat(result.getProviderMetadata()).containsEntry("clientSecret", "cs");
         verify(repository).save(tx);
+        verify(repository, never()).findById(any());
+    }
+
+    @Test
+    void recordingTheSameAnswerTwiceReturnsTheRowAsItStands() {
+        // Guards two same-key requests that both reached the provider: the second recording must return the
+        // row, not fail the version check with a 500 after the provider has already created the intent.
+        PaymentTransaction tx = transaction("user-1");
+        tx.markAsInitiated("pi_9", Map.of("clientSecret", "cs"));
+        when(repository.lockById(5L)).thenReturn(Optional.of(tx));
+
+        assertThat(store.recordInitiation(5L, "pi_9", Map.of("clientSecret", "cs"))).isSameAs(tx);
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void recordingADifferentAnswerOnAnInitiatedRowIsADefect() {
+        // Guards silently replacing an intent the client may already hold. The idempotency key makes a second
+        // intent impossible, so a different id means something is badly wrong.
+        PaymentTransaction tx = transaction("user-1");
+        tx.markAsInitiated("pi_9", Map.of("clientSecret", "cs"));
+        when(repository.lockById(5L)).thenReturn(Optional.of(tx));
+
+        assertThatThrownBy(() -> store.recordInitiation(5L, "pi_other", Map.of()))
+                .isInstanceOf(IllegalStateException.class);
+        verify(repository, never()).save(any());
     }
 
     @Test
     void recordInitiationThrowsWhenTransactionMissing() {
-        when(repository.findById(9L)).thenReturn(Optional.empty());
+        when(repository.lockById(9L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(
                 () -> store.recordInitiation(9L, "pi_9", Map.of())

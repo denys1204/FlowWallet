@@ -23,10 +23,21 @@ public class StripeClient {
             PaymentIntentCreateParams params,
             String idempotencyKey
     ) throws StripeException {
-        RequestOptions options = RequestOptions.builder()
+        return PaymentIntent.create(params, requestOptions(idempotencyKey));
+    }
+
+    /**
+     * Sets the timeouts and retries on every call, so none of stripe-java's global defaults applies.
+     * See docs/adr/0024-deposit-initiation-settles-its-own-races.md.
+     */
+    RequestOptions requestOptions(String idempotencyKey) {
+        StripeProperties.Api api = stripe.getApi();
+        return RequestOptions.builder()
                 .setIdempotencyKey(idempotencyKey)
+                .setConnectTimeout(Math.toIntExact(api.getConnectTimeout().toMillis()))
+                .setReadTimeout(Math.toIntExact(api.getReadTimeout().toMillis()))
+                .setMaxNetworkRetries(api.getMaxNetworkRetries())
                 .build();
-        return PaymentIntent.create(params, options);
     }
 
     public boolean isWebhookVerificationEnabled() {

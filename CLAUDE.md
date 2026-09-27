@@ -166,8 +166,8 @@ lock order and the idempotency checks are specified there, not here.
 ## Traps already hit
 
 - In Postgres a constraint violation aborts the transaction. Catch `DataIntegrityViolationException` only to
-  rethrow at once (see `PaymentTransactionStore.reserve`), or outside the rolled-back transaction and then read
-  from a fresh one (`PaymentEventListener` with `PaymentEventOutcomeStore`, `TransferService`); never keep
+  rethrow at once (see `WalletService.open`), or outside the rolled-back transaction and then read from a fresh
+  one (`PaymentEventListener` with `PaymentEventOutcomeStore`, `TransferService`, `PaymentService`); never keep
   working on that connection. The catching class must not be `@Transactional` itself, or the inner
   transaction joins it and the reads run on the aborted one ([ADR 0007](docs/adr/0007-unique-constraints-decide.md)).
 - `@Transactional` on a method called from the same class does nothing: there is no proxy

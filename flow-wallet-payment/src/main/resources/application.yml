@@ -67,6 +67,12 @@ spring:
 stripe:
   api:
     key: ${STRIPE_API_KEY:sk_test_dummy}
+    # Payment Service's own wait for Stripe. (1 + retries) x (connect + read), plus about 0.5s of backoff per
+    # retry, stays below Wallet Service's WALLET_PAYMENT_READ_TIMEOUT (10s), so no Stripe call outlives the
+    # wallet's answer to its caller.
+    connect-timeout: ${STRIPE_API_CONNECT_TIMEOUT:2s}
+    read-timeout: ${STRIPE_API_READ_TIMEOUT:6s}
+    max-network-retries: ${STRIPE_API_MAX_NETWORK_RETRIES:0}
   webhook:
     # No working default: while this is empty or a placeholder, every webhook is refused with 400.
     secret: ${STRIPE_WEBHOOK_SECRET:}

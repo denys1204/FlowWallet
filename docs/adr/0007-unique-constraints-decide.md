@@ -1,6 +1,7 @@
 # 0007. Unique constraints decide uniqueness, and a violation is handled outside the aborted transaction
 
-- Status: Accepted
+- Status: Accepted, handling of `PaymentTransactionStore.reserve` superseded by
+  [0024](0024-deposit-initiation-settles-its-own-races.md)
 - Date: 2026-07-25
 
 ## Context

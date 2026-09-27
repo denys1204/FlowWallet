@@ -4,8 +4,8 @@ import com.flowwallet.platform.exception.ApiException;
 import org.springframework.http.HttpStatus;
 
 /**
- * One 409 for a reference that is already taken by a concurrent request, by another user's payment, by a payment
- * that succeeded or by one on other terms. The detail names the case.
+ * One 409 for a reference that is already taken by another user's payment, by a payment that succeeded or by one on
+ * other terms, whether it was there first or won a concurrent reservation. The detail names the case.
  * See docs/adr/0005-client-supplied-idempotency-keys.md.
  */
 public class DuplicateTransactionReferenceException extends ApiException {
@@ -14,7 +14,9 @@ public class DuplicateTransactionReferenceException extends ApiException {
     }
 
     public static DuplicateTransactionReferenceException forReference(String transactionReference) {
-        return new DuplicateTransactionReferenceException("Transaction reference already in use: " + transactionReference);
+        return new DuplicateTransactionReferenceException(
+                "Transaction reference already in use: " + transactionReference
+        );
     }
 
     /**

@@ -9,6 +9,8 @@ import org.springframework.boot.autoconfigure.context.ConfigurationPropertiesAut
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.boot.validation.autoconfigure.ValidationAutoConfiguration;
 
+import java.time.Duration;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -66,5 +68,34 @@ class StripePropertiesTest {
         // delivery replayed at any later time.
         runner.withPropertyValues("stripe.webhook.tolerance-seconds=" + tolerance)
                 .run(context -> assertThat(context).hasFailed());
+    }
+
+    @Test
+    void theStripeCallDefaultsFitInsideTheWalletsWait() {
+        // Guards stripe-java's own defaults (30 s to connect, 80 s to read, two retries) coming back. With them a
+        // Payment Service thread stays busy for minutes after the wallet answered its caller at 10 s.
+        runner.run(context -> {
+            StripeProperties.Api api = context.getBean(StripeProperties.class).getApi();
+            assertThat(api.getConnectTimeout()).isEqualTo(Duration.ofSeconds(2));
+            assertThat(api.getReadTimeout()).isEqualTo(Duration.ofSeconds(6));
+            assertThat(api.getMaxNetworkRetries()).isZero();
+            long worstCase = (1L + api.getMaxNetworkRetries())
+                    * (api.getConnectTimeout().toMillis() + api.getReadTimeout().toMillis());
+            assertThat(worstCase).isLessThan(Duration.ofSeconds(10).toMillis());
+        });
+    }
+
+    @ParameterizedTest(name = "{0} fails startup")
+    @ValueSource(strings = {
+            "stripe.api.connect-timeout=0s",
+            "stripe.api.read-timeout=0ms",
+            "stripe.api.read-timeout=-1s",
+            "stripe.api.read-timeout=30d",
+            "stripe.api.max-network-retries=-1"
+    })
+    void aStripeCallSettingThatCannotWorkFailsStartup(String setting) {
+        // Guards a zero timeout, which fails every Stripe call at once while health stays green, a negative retry
+        // count, and a timeout past the int of milliseconds stripe-java takes, which would fail on the first call.
+        runner.withPropertyValues(setting).run(context -> assertThat(context).hasFailed());
     }
 }
