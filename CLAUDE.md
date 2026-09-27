@@ -121,7 +121,9 @@ lock order and the idempotency checks are specified there, not here.
 - The consumer's `DefaultErrorHandler` is the only retry mechanism in the wallet; do not add Spring Retry there.
   Refusals the wallet understands (invalid amount or envelope, unknown wallet, duplicate reference) are stored
   as acknowledged `REJECTED` rows with the payload; unreadable records and exhausted retries go to
-  `payment.events.wallet.DLT` ([ADR 0010](docs/adr/0010-idempotent-payment-event-consumer.md)).
+  `payment.events.wallet.DLT` ([ADR 0010](docs/adr/0010-idempotent-payment-event-consumer.md)). That topic keeps
+  records without a time limit, and each dead letter is logged at ERROR and counted in
+  `wallet.consumer.dead.letters` ([ADR 0020](docs/adr/0020-wallet-dead-letters-kept-and-counted.md)).
 - A webhook's status reports delivery, not the business outcome: an event for an intent this service never
   created gets 200, not 404 ([ADR 0016](docs/adr/0016-error-model-and-status-codes.md)).
 - A webhook body is size-capped and its signature verified before it is parsed; never call

@@ -1,9 +1,10 @@
 package com.flowwallet.wallet.config;
 
 import com.flowwallet.wallet.balance.UnreadablePaymentEventException;
-import lombok.extern.slf4j.Slf4j;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.config.TopicConfig;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -18,7 +19,6 @@ import org.springframework.util.backoff.ExponentialBackOff;
  * The container's default recoverer would log the record and drop the payment. This error handler is the
  * wallet's only retry mechanism. See docs/adr/0010-idempotent-payment-event-consumer.md.
  */
-@Slf4j
 @Configuration
 public class KafkaConsumerConfig {
     /**
@@ -35,20 +35,25 @@ public class KafkaConsumerConfig {
 
     /**
      * Declared rather than left to broker auto-creation, which production brokers disable: a failed dead-letter
-     * publish would have the record redelivered without end.
+     * publish would have the record redelivered without end. Retention is unlimited, because nothing else keeps
+     * a payment that reached this topic: under the broker's default of seven days, a dead letter nobody replayed
+     * in time would be deleted. {@code spring.kafka.admin.modify-topic-configs} applies it to an existing topic.
+     * See docs/adr/0020-wallet-dead-letters-kept-and-counted.md.
      */
     @Bean
     public NewTopic paymentEventsDeadLetterTopic() {
         return TopicBuilder.name(DEAD_LETTER_TOPIC)
                 .partitions(deadLetterPartitions)
                 .replicas(deadLetterReplicas)
+                .config(TopicConfig.RETENTION_MS_CONFIG, "-1")
                 .build();
     }
 
     @Bean
     public DefaultErrorHandler paymentEventErrorHandler(
             KafkaTemplate<String, String> kafkaTemplate,
-            PaymentEventConsumerProperties retry
+            PaymentEventConsumerProperties retry,
+            MeterRegistry meterRegistry
     ) {
         // Partition -1 leaves the choice to the producer's partitioner: the dead-letter topic need not have the
         // same partition count as the source. Pinning the original partition would add a partition lookup to
@@ -69,15 +74,7 @@ public class KafkaConsumerConfig {
         // An unreadable record fails the same way on every attempt, so it is dead-lettered at once.
         errorHandler.addNotRetryableExceptions(UnreadablePaymentEventException.class);
 
-        errorHandler.setRetryListeners((record, exception, deliveryAttempt) ->
-                log.warn(
-                        "Attempt {} failed for offset {} on {}: {}",
-                        deliveryAttempt,
-                        record.offset(),
-                        record.topic(),
-                        exception.getMessage()
-                )
-        );
+        errorHandler.setRetryListeners(new PaymentEventRetryListener(meterRegistry));
 
         return errorHandler;
     }

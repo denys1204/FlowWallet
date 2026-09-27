@@ -14,15 +14,28 @@ error responses, see [docs/api.md](api.md), and for the database schema behind t
 
 Both topics are declared as beans (`payment.events` by Payment Service, the dead-letter topic by Wallet
 Service), so they are created at startup with the configured partitions and replicas instead of relying on
-broker auto-creation. Both producers use `acks=all` with idempotence enabled.
+broker auto-creation. Both services set `spring.kafka.admin.fail-fast`, so neither starts while the broker is
+unreachable: without it, a service started too early logs "Could not configure topics" once and never creates
+its topic. Both producers use `acks=all` with idempotence enabled.
+
+`payment.events.wallet.DLT` is created with `retention.ms=-1` and keeps every record until an operator
+deletes it, because nothing else holds a payment that reached it. Wallet Service sets
+`spring.kafka.admin.modify-topic-configs`, so the retention also reaches a dead-letter topic created before
+it; on a secured broker its principal needs permission to describe and alter that topic's configuration.
+Each record the wallet publishes there is logged at ERROR with its topic, partition, offset and cause, and
+increments the Micrometer counter `wallet.consumer.dead.letters` (`/actuator/metrics/wallet.consumer.dead.letters`
+on Wallet Service). An alert on that counter rising is the signal that a payment waits for an operator. How to
+replay a dead letter is in [ARCHITECTURE.md](../ARCHITECTURE.md#the-wallet-consumer), and the reasoning in
+[ADR 0020](adr/0020-wallet-dead-letters-kept-and-counted.md).
 
 `payment.events` is also created with `min.insync.replicas` (`KAFKA_TOPIC_PAYMENT_EVENTS_MIN_INSYNC_REPLICAS`,
 default `1`). With more than one replica and the broker default of `1`, the leader alone can acknowledge an
 `acks=all` send and lose it with its disk. A three-broker cluster such as the lab uses 3 replicas with
 `min.insync.replicas=2`: a send still succeeds with one broker down, and with two down it fails instead of
 being acknowledged by the leader alone. Startup fails if the value exceeds the replica count. Kafka applies
-topic settings only when it creates the topic; for an existing topic, set
-`spring.kafka.admin.modify-topic-configs=true` or change it with `kafka-configs`.
+topic settings only when it creates the topic, and Payment Service does not set
+`spring.kafka.admin.modify-topic-configs`, so for an existing `payment.events` set it or change the topic
+with `kafka-configs`.
 
 Payment Service has no dead-letter topic of its own. The `FAILED` rows in `outbox_events` play that role,
 because a send fails almost only when the broker is unreachable, and a publish to another topic on the same

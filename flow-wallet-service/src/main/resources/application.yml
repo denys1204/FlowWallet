@@ -56,6 +56,14 @@ spring:
     listener:
       concurrency: ${KAFKA_LISTENER_CONCURRENCY:3}
       ack-mode: RECORD
+    admin:
+      # Startup fails while the broker is unreachable. Otherwise KafkaAdmin logs "Could not configure topics"
+      # once and never retries, so the dead-letter topic is never created, and on a broker with auto-creation
+      # off every dead-letter publish fails and the record is redelivered without end.
+      fail-fast: true
+      # Kafka applies topic settings only when it creates a topic. This applies the dead-letter topic's
+      # unlimited retention to one that already exists.
+      modify-topic-configs: true
     topic:
       payment-events-dlt:
         partitions: ${KAFKA_TOPIC_PAYMENT_EVENTS_DLT_PARTITIONS:3}

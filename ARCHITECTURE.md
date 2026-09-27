@@ -228,6 +228,10 @@ The listener reads the event type from the Kafka `eventType` header and never in
 | Unreadable (missing or unknown `eventType` header, unparseable JSON, no value or the JSON literal `null`, no `eventId`) | Sent to `payment.events.wallet.DLT` immediately, without retrying |
 | Anything else that fails | Retried with exponential backoff, then sent to `payment.events.wallet.DLT` |
 
+The dead-letter topic keeps its records without a time limit. Each record that reaches it is logged at ERROR
+and counted in `wallet.consumer.dead.letters`
+([ADR 0020](docs/adr/0020-wallet-dead-letters-kept-and-counted.md)).
+
 An event never creates a wallet. A deposit can only start through an existing wallet, so an event for a
 missing wallet means a payment got in some other way, and it gets recorded instead of absorbed. The
 consumer's design is in [ADR 0010](docs/adr/0010-idempotent-payment-event-consumer.md).

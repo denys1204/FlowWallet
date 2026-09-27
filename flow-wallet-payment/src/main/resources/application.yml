@@ -50,6 +50,10 @@ spring:
       acks: all
       properties:
         enable.idempotence: true
+    admin:
+      # Startup fails while the broker is unreachable. Otherwise KafkaAdmin logs "Could not configure topics"
+      # once and never retries, so payment.events is not created with its declared settings.
+      fail-fast: true
     topic:
       payment-events:
         partitions: ${KAFKA_TOPIC_PAYMENT_EVENTS_PARTITIONS:3}
