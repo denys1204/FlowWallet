@@ -6,9 +6,11 @@ is an engineering showcase that runs against Stripe test mode only and never goe
 Documentation is split by kind, and each file is kept accurate against the code: when behaviour changes, update
 the file that describes it in the same piece of work. `README.md` is the front page (status, topology diagram,
 tech stack, quickstart); `ARCHITECTURE.md` explains the modules, the deposit flow, the outbox, the wallet
-consumer, transfers and the identity model; `docs/api.md` holds the API and error responses, `docs/data-model.md`
+consumer, transfers and the identity model; `docs/business-rules.md` states the business rules in plain terms
+and links the files with the details; `docs/api.md` holds the API and error responses, `docs/data-model.md`
 the schema, `docs/events.md` the topics and event contracts, and `docs/development.md` running, configuring and
-testing. The topology diagram is in both `README.md` and `ARCHITECTURE.md`; a change goes in both. Decisions
+testing. The topology diagram is in both `README.md` and `ARCHITECTURE.md`; a change goes in both, and a change
+to a business rule also goes in `docs/business-rules.md`. Decisions
 that span files, with their context and rejected alternatives, are ADRs in `docs/adr/` (index:
 `docs/adr/README.md`). The rules below are stated once and link the ADR that holds their reasoning. Rules for one
 kind of file live in `.claude/rules/` and load when a matching file is read: `web.md` (controllers and request

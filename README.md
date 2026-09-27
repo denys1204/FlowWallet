@@ -81,6 +81,7 @@ the wallet consumer and the identity model.
 | Document | Answers |
 |----------|---------|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | How the system works: the modules, the deposit flow, the outbox, the wallet consumer, transfers and the identity model |
+| [docs/business-rules.md](docs/business-rules.md) | What the wallet allows and refuses, in business terms |
 | [docs/adr/](docs/adr/README.md) | Why: one decision record per file, with the alternatives that were rejected |
 | [docs/api.md](docs/api.md) | The API reference and error responses |
 | [docs/data-model.md](docs/data-model.md) | The database schema for each service |
