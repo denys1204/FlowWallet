@@ -101,8 +101,8 @@ class WebhookControllerTest {
 
     @Test
     void aBodyOverTheLimitIsA413ProblemAndNeverReachesTheService() throws Exception {
-        // The route is public: an unauthenticated body of any size used to be read whole and parsed as JSON
-        // before its signature was checked.
+        // The route is public: without the cap, an unauthenticated body of any size is read whole before its
+        // signature can be checked.
         byte[] oversized = new byte[1025];
 
         String detail = mockMvc.perform(post(PATH).contentType(MediaType.APPLICATION_JSON).content(oversized))

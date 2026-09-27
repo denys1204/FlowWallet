@@ -97,7 +97,7 @@ class StripeWebhookParserTest {
     @ValueSource(strings = {"t=abc,v1=00", "t", "v1", "t=", "t=1767225600", "v1=00", "", "garbage"})
     void aMalformedSignatureHeaderIsRefusedAsABadSignature(String header) {
         // stripe-java throws NumberFormatException or ArrayIndexOutOfBoundsException for some of these while it
-        // splits the header. Those used to escape as a 500, telling Stripe to retry a request that was never
+        // splits the header. Escaping as a 500, they would tell the sender to retry a request that was never
         // authenticated.
         String payload = succeededEvent(Stripe.API_VERSION);
 
@@ -113,8 +113,9 @@ class StripeWebhookParserTest {
 
     @Test
     void anUnsignedBodyThatIsNotJsonIsRefusedAsABadSignatureBecauseItIsNeverParsed() {
-        // stripe-java's constructEvent parses the body before it checks the signature, so an unauthenticated
-        // body reached the JSON parser and a broken one came back as a 500. Verifying first keeps it a 400.
+        // stripe-java's constructEvent parses the body before it checks the signature, so called first it hands
+        // an unauthenticated body to the JSON parser and a broken one comes back as a 500. Verifying first keeps
+        // it a 400.
         assertThatThrownBy(() -> parserWithSecret(SECRET).parse(
                 "{not json",
                 Map.of("Stripe-Signature", "t=1767225600,v1=00")

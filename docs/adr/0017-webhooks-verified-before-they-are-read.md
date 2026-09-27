@@ -10,16 +10,17 @@ answers without the gateway. A verified `payment_intent.succeeded` marks the tra
 `PaymentCompletedEvent`, which credits a wallet. The webhook signature is therefore all that stands between an
 unauthenticated request and a credit.
 
-stripe-java's `Webhook` computes its HMAC-SHA256 with whatever string it is given as the secret. The secret used to
-default to `whsec_dummy` in `application.yml` and in `StripeProperties`, and `.env.example` shipped
-`whsec_your_secret_here`, which the quickstart said to keep until `stripe listen` printed a real one. With either
-value, anyone could sign a `payment_intent.succeeded` for the `pi_` id inside their own deposit's client secret.
-The handler read only the intent id and the event id, so the wallet was credited without a payment.
+stripe-java's `Webhook` computes its HMAC-SHA256 with whatever string it is given as the secret. A default secret,
+or a placeholder published in `.env.example` such as `whsec_dummy` or `whsec_your_secret_here`, is therefore a
+signing key anyone can use. With it, anyone can sign a `payment_intent.succeeded` for the `pi_` id inside their own
+deposit's client secret, and a handler that reads only the intent id and the event id credits the wallet without a
+payment.
 
 `Webhook.constructEvent` deserializes the body into a Gson tree before it calls `Webhook.Signature.verifyHeader`, and
-`@RequestBody String` reads a body of any size, so an unauthenticated caller could make the service buffer and parse
-anything. The SDK's header parsing throws `NumberFormatException` or `ArrayIndexOutOfBoundsException` for a header
-such as `t=abc` or a bare `t`, and those were answered with 500 and logged at ERROR with a stack trace.
+`@RequestBody String` reads a body of any size, so together they let an unauthenticated caller make the service buffer
+and parse anything. The SDK's header parsing throws `NumberFormatException` or `ArrayIndexOutOfBoundsException` for a
+header such as `t=abc` or a bare `t`. Unless the caller counts them as a failed check, they surface as a 500 with a
+stack trace, although the fault is the sender's.
 
 ## Decision
 

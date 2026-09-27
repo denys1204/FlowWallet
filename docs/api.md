@@ -221,6 +221,6 @@ The status mapping lives in one place, and each status stands for one remedy
 - `503`: a transfer lost a lock or a version check (a deadlock, a lock wait that timed out, a version
   conflict). The lock order is meant to rule these out. Nothing was moved, and retrying with the same key is
   safe.
-- `500`: a correctly signed webhook payload that can't be processed, a transfer that broke a database CHECK or overflowed a
-  column, or anything unexpected. The detail stays generic; the specifics go to the logs and are never
-  returned.
+- `500`: a correctly signed webhook payload that can't be processed, a transfer that broke a database CHECK
+  or overflowed a column, or anything unexpected. The detail stays generic; the specifics go to the logs and
+  are never returned.
