@@ -56,13 +56,40 @@ public final class AmountPrecision {
         String code = currency.toUpperCase(Locale.ROOT);
         BigDecimal stripped = amount.stripTrailingZeros();
 
-        if ((long) stripped.precision() - stripped.scale() > MAX_INTEGER_DIGITS) {
+        if (!fitsIntegerDigits(stripped)) {
             throw InvalidAmountException.tooLarge();
         }
-        int acceptedScale = ZERO_DECIMAL.contains(code) ? 0 : DEFAULT_ACCEPTED_SCALE;
+        int acceptedScale = acceptedScale(code);
         if (stripped.scale() > acceptedScale) {
             throw InvalidAmountException.tooPrecise(code, acceptedScale);
         }
         return stripped.setScale(LEDGER_SCALE, RoundingMode.UNNECESSARY);
+    }
+
+    /**
+     * Whether {@link #canonical} would accept the amount, for a caller that records a refusal instead of throwing
+     * one, such as the payment event consumer. The sign is not judged.
+     */
+    public static boolean isOnGrid(BigDecimal amount, String currency) {
+        BigDecimal stripped = amount.stripTrailingZeros();
+        return fitsIntegerDigits(stripped)
+                && stripped.scale() <= acceptedScale(currency.toUpperCase(Locale.ROOT));
+    }
+
+    /**
+     * Whether a {@code NUMERIC(19,4)} column holds the amount exactly. Postgres rounds a finer value and refuses a
+     * larger one, so an amount that fails here must not be written to such a column as it is.
+     */
+    public static boolean fitsLedger(BigDecimal amount) {
+        BigDecimal stripped = amount.stripTrailingZeros();
+        return fitsIntegerDigits(stripped) && stripped.scale() <= LEDGER_SCALE;
+    }
+
+    private static boolean fitsIntegerDigits(BigDecimal stripped) {
+        return (long) stripped.precision() - stripped.scale() <= MAX_INTEGER_DIGITS;
+    }
+
+    private static int acceptedScale(String upperCaseCode) {
+        return ZERO_DECIMAL.contains(upperCaseCode) ? 0 : DEFAULT_ACCEPTED_SCALE;
     }
 }

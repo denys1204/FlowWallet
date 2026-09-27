@@ -1,6 +1,6 @@
 # 0015. Amounts sit on an explicit per-currency grid and are refused, never rounded
 
-- Status: Accepted
+- Status: Accepted, extended by [0019](0019-payment-event-amounts-on-the-grid.md)
 - Date: 2026-09-05
 
 ## Context

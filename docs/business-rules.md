@@ -109,10 +109,11 @@ Details: [data model](data-model.md), [API reference](api.md#wallet-service). Re
 - Because a failure moves no money, the order in which a payment's outcomes arrive does not matter.
 - Nothing expires or re-checks a pending payment. If Stripe's outcome never arrives, the deposit stays pending
   and credits nothing until an operator steps in.
-- An outcome the wallet cannot apply, such as a conflicting second completion for a payment already credited or
-  a credit for a wallet it cannot find, is recorded as rejected with its payload and changes no balance. Only
-  an operator can act on it.
+- An outcome the wallet cannot apply, such as a conflicting second completion for a payment already credited, a
+  credit for a wallet it cannot find, or a credit whose amount is off its currency's grid, is recorded as
+  rejected with its payload and changes no balance. Only an operator can act on it.
 
 Details: [webhooks](api.md#provider-webhook), [the wallet consumer](../ARCHITECTURE.md#the-wallet-consumer),
 [events](events.md). Reasoning: [ADR 0017](adr/0017-webhooks-verified-before-they-are-read.md),
-[ADR 0009](adr/0009-payment-event-contract.md), [ADR 0010](adr/0010-idempotent-payment-event-consumer.md).
+[ADR 0009](adr/0009-payment-event-contract.md), [ADR 0010](adr/0010-idempotent-payment-event-consumer.md),
+[ADR 0019](adr/0019-payment-event-amounts-on-the-grid.md).

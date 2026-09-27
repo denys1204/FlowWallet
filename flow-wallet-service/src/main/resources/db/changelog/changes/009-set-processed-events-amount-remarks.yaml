@@ -1,0 +1,12 @@
+databaseChangeLog:
+  - changeSet:
+      id: 009-set-processed-events-amount-remarks
+      author: flow-wallet
+      changes:
+        - setColumnRemarks:
+            tableName: processed_events
+            columnName: amount
+            remarks: >-
+              What the event claimed, so parked money can be totalled without parsing payloads. NULL when the
+              event carried no amount or one this column cannot hold exactly (finer than four decimals or more
+              than 15 integer digits); the payload keeps the figure as sent.

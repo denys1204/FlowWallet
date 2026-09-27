@@ -3,6 +3,7 @@ package com.flowwallet.wallet.balance;
 import com.flowwallet.contract.constant.KafkaConstants;
 import com.flowwallet.contract.event.PaymentCompletedEvent;
 import com.flowwallet.contract.event.PaymentFailedEvent;
+import com.flowwallet.wallet.api.AmountPrecision;
 import com.flowwallet.wallet.enums.ProcessedEventOutcome;
 import com.flowwallet.wallet.enums.RejectionReason;
 import jakarta.persistence.*;
@@ -78,7 +79,7 @@ public class ProcessedEvent {
                 .eventId(event.eventId())
                 .eventType(KafkaConstants.EVENT_TYPE_PAYMENT_FAILED)
                 .transactionReference(event.transactionReference())
-                .amount(event.amount())
+                .amount(storable(event.amount()))
                 .outcome(ProcessedEventOutcome.FAILURE_RECORDED)
                 .payload(payload)
                 .build();
@@ -93,10 +94,19 @@ public class ProcessedEvent {
                 .eventId(event.eventId())
                 .eventType(KafkaConstants.EVENT_TYPE_PAYMENT_COMPLETED)
                 .transactionReference(event.transactionReference())
-                .amount(event.amount())
+                .amount(storable(event.amount()))
                 .outcome(ProcessedEventOutcome.REJECTED)
                 .rejectionReason(reason)
                 .payload(payload)
                 .build();
+    }
+
+    /**
+     * The amount if {@code NUMERIC(19,4)} holds it exactly, otherwise NULL. Postgres would round a finer amount
+     * into a figure the event never carried and refuse a larger one, which would send a readable refusal through
+     * the retries to the dead-letter topic. The payload keeps the amount as it was sent.
+     */
+    private static BigDecimal storable(BigDecimal amount) {
+        return amount != null && AmountPrecision.fitsLedger(amount) ? amount : null;
     }
 }

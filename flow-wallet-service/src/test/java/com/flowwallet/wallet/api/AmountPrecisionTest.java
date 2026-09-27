@@ -73,4 +73,37 @@ class AmountPrecisionTest {
         // every replay 25.0000 or 100.0000.
         assertThat(AmountPrecision.canonical(new BigDecimal(amount), currency).toString()).isEqualTo(written);
     }
+
+    @ParameterizedTest(name = "{1} {0} on grid: {2}")
+    @CsvSource({
+            "10.50,        USD, true",
+            "10.5000,      USD, true",
+            "1E+2,         jpy, true",
+            "10.123,       USD, false",
+            "0.00001,      USD, false",
+            "10.5,         JPY, false",
+            "1E+15,        USD, false",
+            "1E+2147483647, USD, false"
+    })
+    void theNonThrowingCheckAgreesWithCanonical(String amount, String currency, boolean onGrid) {
+        // The payment event consumer records a refusal instead of throwing, so it asks isOnGrid. If the two
+        // checks drifted apart, an event could credit an amount a transfer of the same money would refuse.
+        assertThat(AmountPrecision.isOnGrid(new BigDecimal(amount), currency)).isEqualTo(onGrid);
+    }
+
+    @ParameterizedTest(name = "{0} fits NUMERIC(19,4): {1}")
+    @CsvSource({
+            "10.123,               true",
+            "0.0001,               true",
+            "999999999999999.9999, true",
+            "0.00001,              false",
+            "10.12345,             false",
+            "1E+15,                false",
+            "1E-999999999,         false"
+    })
+    void fitsLedgerAcceptsExactlyWhatTheColumnHoldsWithoutRounding(String amount, boolean fits) {
+        // A refused event's amount is stored only when the column keeps it as sent. Postgres would round
+        // 0.00001 to 0.0000 and refuse 1E+15, which would send the refusal to the dead-letter topic.
+        assertThat(AmountPrecision.fitsLedger(new BigDecimal(amount))).isEqualTo(fits);
+    }
 }

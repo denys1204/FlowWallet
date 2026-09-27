@@ -42,7 +42,10 @@ events that connect these two databases.
   Its columns are `id`, `event_id` (unique), `event_type`,
   `transaction_reference`, `amount`, `outcome` (`CREDITED`/`FAILURE_RECORDED`/`REJECTED`),
   `rejection_reason`, `payload TEXT` (kept for `FAILURE_RECORDED` and `REJECTED`, NULL for `CREDITED`) and
-  `processed_at`. It is indexed on (`outcome`, `processed_at`).
+  `processed_at`. It is indexed on (`outcome`, `processed_at`). `amount` is NULL when the event carried none
+  or carried one that `NUMERIC(19,4)` cannot hold exactly, such as `0.00001`, which Postgres would round, or
+  a 16-digit amount, which it would refuse; the payload keeps the figure as sent
+  ([ADR 0019](adr/0019-payment-event-amounts-on-the-grid.md)).
 
 Every table's `id` comes from a `<table>_seq` sequence with an increment of 50, matching the entities'
 `allocationSize = 50`.

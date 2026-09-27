@@ -3,6 +3,7 @@ package com.flowwallet.wallet.balance;
 import com.flowwallet.contract.constant.KafkaConstants;
 import com.flowwallet.contract.event.PaymentCompletedEvent;
 import com.flowwallet.contract.event.PaymentFailedEvent;
+import com.flowwallet.wallet.api.AmountPrecision;
 import com.flowwallet.wallet.enums.RejectionReason;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -14,6 +15,7 @@ import org.springframework.stereotype.Component;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 
@@ -109,15 +111,19 @@ public class PaymentEventListener {
 
     /**
      * Everything the credit depends on. The event records carry no validation and {@link Wallet#credit} takes
-     * its amount on trust, so this is the only place a zero or negative amount is refused as
-     * {@code INVALID_AMOUNT} and stored with its payload. Without it, {@code balance_history_amount_positive}
-     * would refuse the ledger row, and the record would be retried and dead-lettered instead.
+     * its amount on trust, so this is the only place an amount that is zero, negative or off its currency's grid
+     * is refused as {@code INVALID_AMOUNT} and stored with its payload. Without it an off-grid amount such as
+     * 10.123 USD would be credited, and one too fine for the ledger, such as 0.00001, would be rounded to zero,
+     * refused by {@code balance_history_amount_positive}, retried and dead-lettered. The envelope comes first,
+     * because the grid depends on the currency.
+     * See docs/adr/0019-payment-event-amounts-on-the-grid.md.
      */
     private Optional<RejectionReason> refusalFor(PaymentCompletedEvent event) {
         if (isBlank(event.transactionReference()) || isBlank(event.currency()) || isBlank(event.userId())) {
             return Optional.of(RejectionReason.INVALID_ENVELOPE);
         }
-        if (event.amount() == null || event.amount().signum() <= 0) {
+        BigDecimal amount = event.amount();
+        if (amount == null || amount.signum() <= 0 || !AmountPrecision.isOnGrid(amount, event.currency())) {
             return Optional.of(RejectionReason.INVALID_AMOUNT);
         }
         return Optional.empty();

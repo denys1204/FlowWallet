@@ -7,6 +7,7 @@ import com.flowwallet.wallet.enums.RejectionReason;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -135,6 +136,24 @@ class PaymentEventListenerTest {
         listener.onPaymentEvent(completed("evt-1", "0.00", "USD", "alice"));
 
         verify(outcomes).recordRejection(any(), eq(RejectionReason.INVALID_AMOUNT), any());
+        verifyNoInteractions(handler);
+    }
+
+    @ParameterizedTest(name = "{1} {0}")
+    @CsvSource({
+            "10.123,  USD",
+            "0.00001, USD",
+            "10.5,    JPY",
+            "10.5,    jpy",
+            "1E+15,   USD"
+    })
+    void anAmountOffItsCurrencysGridIsRefusedRatherThanCredited(String amount, String currency) {
+        // Guards two failures. 10.123 USD or 10.5 JPY would be credited as units no deposit or transfer can
+        // produce. 0.00001 would reach the ledger as 0.0000, fail balance_history_amount_positive, and be retried
+        // and dead-lettered instead of recorded with its payload.
+        listener.onPaymentEvent(completed("evt-1", amount, currency, "alice"));
+
+        verify(outcomes).recordRejection(eventWithId("evt-1"), eq(RejectionReason.INVALID_AMOUNT), any());
         verifyNoInteractions(handler);
     }
 

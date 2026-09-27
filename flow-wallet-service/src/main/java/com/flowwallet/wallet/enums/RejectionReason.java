@@ -8,7 +8,8 @@ package com.flowwallet.wallet.enums;
  */
 public enum RejectionReason {
     /**
-     * Amount absent, zero or negative.
+     * Amount absent, zero, negative, or off its currency's grid (finer than the currency allows, or more than 15
+     * integer digits).
      */
     INVALID_AMOUNT,
 
