@@ -135,7 +135,7 @@ set real test values for both. `.env.example` has the full list with comments. T
 | `PAYMENT_DB_NAME` / `WALLET_DB_NAME` | `payment_db` / `wallet_db` | Payment / Wallet (the init script always creates these two names) |
 | `DB_POOL_MAX_SIZE` / `DB_POOL_MIN_IDLE` | `10` / `2` | Payment, Wallet |
 | `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` | Payment, Wallet |
-| `KAFKA_TOPIC_PAYMENT_EVENTS_PARTITIONS` / `_REPLICAS` | `3` / `1` | Payment |
+| `KAFKA_TOPIC_PAYMENT_EVENTS_PARTITIONS` / `_REPLICAS` / `_MIN_INSYNC_REPLICAS` | `3` / `1` / `1` | Payment: applied when the topic is created. A three-broker cluster uses `3` / `2` for the last two; see [events.md](events.md) |
 | `KAFKA_TOPIC_PAYMENT_EVENTS_DLT_PARTITIONS` / `_REPLICAS` | `3` / `1` | Wallet |
 | `KAFKA_CONSUMER_GROUP_ID` | `flow-wallet-service` | Wallet |
 | `KAFKA_LISTENER_CONCURRENCY` | `3` | Wallet |
@@ -158,13 +158,13 @@ set real test values for both. `.env.example` has the full list with comments. T
 The wallet service won't start with values that make no sense, such as a retry multiplier below 1.0, an
 initial interval above the maximum, or a blank Payment Service URL. The payment service does the same for a
 deposit range that is inverted, not positive, or too wide for `NUMERIC(19,4)`, a webhook tolerance that isn't
-positive, a webhook size limit outside 1B to 16MB, an outbox setting below 1, and an outbox backoff base above
-its maximum. A missing webhook secret doesn't stop it starting; it
+positive, a webhook size limit outside 1B to 16MB, an outbox setting below 1, an outbox backoff base above
+its maximum, and a `payment.events` topic with more in-sync replicas than replicas. A missing webhook secret doesn't stop it starting; it
 only disables webhooks.
 
 ## Testing
 
-There are 347 tests, all green: 181 in the payment service, 132 in the wallet service, 33 in platform and 1 in
+There are 350 tests, all green: 184 in the payment service, 132 in the wallet service, 33 in platform and 1 in
 the gateway (it binds the gateway's own `application.yml` into Spring Cloud Gateway's `HttpClientProperties`,
 so a YAML regression that drops the response or connect timeout fails here rather than in a live request left
 waiting). The rest go after the parts most likely to be wrong rather than the ones easiest to reach. That means

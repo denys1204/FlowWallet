@@ -19,7 +19,7 @@ paths:
   default: `stripe.webhook.secret` is `${STRIPE_WEBHOOK_SECRET:}`, and an empty value disables webhooks
   ([ADR 0017](../../docs/adr/0017-webhooks-verified-before-they-are-read.md)). New settings go in a
   `@ConfigurationProperties` class with `@Validated` checks that fail startup on nonsense, like
-  `PaymentDepositProperties`, `StripeProperties`, `WalletPaymentProperties` or `OutboxProperties`. Older ones are
-  not there yet: outbox schedules, the optimistic-lock retry and topic partitions/replicas are read through
-  `@Scheduled`/`@Retryable`/`@Value` placeholders. New variables go in
-  `.env.example` too. Topic names are compile-time constants, not config.
+  `PaymentDepositProperties`, `StripeProperties`, `WalletPaymentProperties`, `OutboxProperties` or
+  `PaymentEventsTopicProperties`. Older ones are not there yet: outbox schedules, the optimistic-lock retry and
+  the wallet dead-letter topic's partitions/replicas are read through `@Scheduled`/`@Retryable`/`@Value`
+  placeholders. New variables go in `.env.example` too. Topic names are compile-time constants, not config.

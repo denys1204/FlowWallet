@@ -54,6 +54,7 @@ spring:
       payment-events:
         partitions: ${KAFKA_TOPIC_PAYMENT_EVENTS_PARTITIONS:3}
         replicas: ${KAFKA_TOPIC_PAYMENT_EVENTS_REPLICAS:1}
+        min-insync-replicas: ${KAFKA_TOPIC_PAYMENT_EVENTS_MIN_INSYNC_REPLICAS:1}
     properties:
       security.protocol: ${KAFKA_SECURITY_PROTOCOL:PLAINTEXT}
       sasl.mechanism: ${KAFKA_SASL_MECHANISM:PLAIN}

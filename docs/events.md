@@ -16,6 +16,14 @@ Both topics are declared as beans (`payment.events` by Payment Service, the dead
 Service), so they are created at startup with the configured partitions and replicas instead of relying on
 broker auto-creation. Both producers use `acks=all` with idempotence enabled.
 
+`payment.events` is also created with `min.insync.replicas` (`KAFKA_TOPIC_PAYMENT_EVENTS_MIN_INSYNC_REPLICAS`,
+default `1`). With more than one replica and the broker default of `1`, the leader alone can acknowledge an
+`acks=all` send and lose it with its disk. A three-broker cluster such as the lab uses 3 replicas with
+`min.insync.replicas=2`: a send still succeeds with one broker down, and with two down it fails instead of
+being acknowledged by the leader alone. Startup fails if the value exceeds the replica count. Kafka applies
+topic settings only when it creates the topic; for an existing topic, set
+`spring.kafka.admin.modify-topic-configs=true` or change it with `kafka-configs`.
+
 Payment Service has no dead-letter topic of its own. The `FAILED` rows in `outbox_events` play that role,
 because a send fails almost only when the broker is unreachable, and a publish to another topic on the same
 broker would fail then too. The wallet's dead-letter topic carries failed consumer records, not outbox rows.
