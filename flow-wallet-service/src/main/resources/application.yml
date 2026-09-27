@@ -1,4 +1,8 @@
 server:
+  # Binds to loopback only by default: without this, Wallet Service listens on every interface and its
+  # unauthenticated API (see ADR 0003) and actuator would be reachable from the LAN. A container sets this
+  # to 0.0.0.0 to stay reachable from other containers or the host.
+  address: ${WALLET_SERVICE_ADDRESS:127.0.0.1}
   port: ${WALLET_SERVICE_PORT:8081}
 
 spring:

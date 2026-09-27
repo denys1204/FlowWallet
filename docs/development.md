@@ -42,6 +42,10 @@ This starts PostgreSQL 17 (creating `wallet_db` and `payment_db`), a single-node
 Kafka-UI at `http://localhost:8090`. The services themselves aren't part of Compose, since there are no
 service images yet.
 
+Kafka-UI has no authentication of its own, so Compose runs it read-only (`KAFKA_CLUSTERS_0_READONLY`): it can
+browse topics and consumer groups but not produce to `payment.events`, which the wallet consumer would credit
+without question ([ADR 0010](adr/0010-idempotent-payment-event-consumer.md)).
+
 All three ports are bound to `127.0.0.1` only. If one is already taken, say by another project's Postgres on
 `5432`, set `DB_PORT`, `KAFKA_EXTERNAL_PORT` or `KAFKA_UI_PORT` in `.env`. The services pick up `DB_PORT`
 from the same file. If you change `KAFKA_EXTERNAL_PORT`, set `KAFKA_BOOTSTRAP_SERVERS=localhost:<port>` too.
@@ -124,6 +128,7 @@ set real test values for both. `.env.example` has the full list with comments. T
 | `GATEWAY_PORT` | `8080` | Gateway |
 | `WALLET_SERVICE_PORT` | `8081` | Wallet (listen port), Gateway (routing, unless `WALLET_SERVICE_URI` is set) |
 | `PAYMENT_SERVICE_PORT` | `8082` | Payment (listen port), Gateway (routing, unless `PAYMENT_SERVICE_URI` is set), Wallet (calls it, unless `WALLET_PAYMENT_BASE_URL` is set) |
+| `WALLET_SERVICE_ADDRESS` / `PAYMENT_SERVICE_ADDRESS` | `127.0.0.1` / `127.0.0.1` | Wallet, Payment: the interface each binds to. Loopback keeps their unauthenticated API and actuator off the LAN when run directly on a host; a container image sets these to `0.0.0.0` so the service is still reachable from other containers. The gateway is the intended public entry point and keeps listening on every interface |
 | `GATEWAY_HTTPCLIENT_RESPONSE_TIMEOUT` / `_CONNECT_TIMEOUT_MS` | `20s` / `2000` | Gateway: how long it waits for an upstream response and a connection, before the elastic Netty pool would otherwise wait forever. `20s` sits above the wallet's own worst case for a deposit call to Payment Service (`WALLET_PAYMENT_CONNECT_TIMEOUT` + `WALLET_PAYMENT_READ_TIMEOUT`, `2s` + `10s`), so that timeout fires first in the ordinary case |
 | `DB_HOST` / `DB_PORT` | `localhost` / `5432` | Payment, Wallet; `DB_PORT` is also the host port Compose publishes Postgres on |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` | `flowadmin` / `flowsecret` | Payment, Wallet and Docker Compose |
