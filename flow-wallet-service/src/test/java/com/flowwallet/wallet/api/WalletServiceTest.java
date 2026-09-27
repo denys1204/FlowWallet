@@ -6,6 +6,7 @@ import com.flowwallet.wallet.balance.Wallet;
 import com.flowwallet.wallet.balance.WalletRepository;
 import com.flowwallet.wallet.dto.BalanceHistoryResponse;
 import com.flowwallet.wallet.dto.HistoryPage;
+import com.flowwallet.wallet.dto.WalletResponse;
 import com.flowwallet.wallet.enums.TransactionType;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -15,6 +16,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Limit;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -172,6 +174,54 @@ class WalletServiceTest {
                         tuple("TRANSFER_OUT", "frank"),
                         tuple("DEPOSIT", null)
                 );
+    }
+
+    @Test
+    void everyFieldOfAWalletAndOfAMovementReachesItsResponse() {
+        // The build sets MapStruct's unmappedTargetPolicy to IGNORE, so a field renamed on either side of the
+        // mapper comes back null instead of failing the build. Each expected record is built from every field,
+        // so a field that stops mapping fails the equality, and a field added to a response fails to compile
+        // here until it is pinned too.
+        Instant opened = Instant.parse("2026-09-01T10:00:00Z");
+        Instant changed = Instant.parse("2026-09-02T11:30:00Z");
+        Wallet erin = Wallet.builder()
+                .id(1L)
+                .userId("erin")
+                .balance(new BigDecimal("75.0000"))
+                .currency("USD")
+                .version(3L)
+                .lastEntryNo(2L)
+                .createdAt(opened)
+                .updatedAt(changed)
+                .build();
+        BalanceHistory sent = BalanceHistory.builder()
+                .id(951L)
+                .walletId(1L)
+                .entryNo(2L)
+                .transactionReference("ref-2")
+                .type(TransactionType.TRANSFER_OUT)
+                .counterpartyUserId("frank")
+                .amount(new BigDecimal("25.0000"))
+                .balanceBefore(new BigDecimal("100.0000"))
+                .balanceAfter(new BigDecimal("75.0000"))
+                .createdAt(changed)
+                .build();
+        when(wallets.findByUserIdAndCurrency("erin", "USD")).thenReturn(Optional.of(erin));
+        when(movements.findNewest(any(), any())).thenReturn(List.of(sent));
+
+        assertThat(service.read("erin", "USD")).isEqualTo(
+                new WalletResponse(new BigDecimal("75.0000"), "USD", opened, changed)
+        );
+        assertThat(service.history("erin", "USD", null, 20).items()).containsExactly(new BalanceHistoryResponse(
+                2L,
+                "ref-2",
+                "TRANSFER_OUT",
+                "frank",
+                new BigDecimal("25.0000"),
+                new BigDecimal("100.0000"),
+                new BigDecimal("75.0000"),
+                changed
+        ));
     }
 
     /**
