@@ -30,3 +30,7 @@ paths:
   `InvalidRequestException` or a 402 `CardException` from Stripe is a refusal (400); every other
   `StripeException` stays a 502
   ([ADR 0022](../../docs/adr/0022-stripe-charge-rules-checked-before-the-reservation.md)).
+- Test values for Stripe keys and signing secrets are visibly fake and break the key shape with hyphens
+  (`whsec_unit-test-signing-secret`, not a `whsec_`/`sk_test_` prefix followed by a long alphanumeric run).
+  GitHub secret scanning flags anything shaped like a real key in this public repository, including the
+  example keys from Stripe's own docs.

@@ -42,7 +42,7 @@ class StripePropertiesTest {
     @DisplayName("binds a real signing secret and enables webhooks")
     void bindsARealSigningSecret() {
         runner.withPropertyValues(
-                "stripe.webhook.secret=whsec_4eC39HqLyjWDarjtT1zdp7dc",
+                "stripe.webhook.secret=whsec_unit-test-signing-secret",
                 "stripe.webhook.tolerance-seconds=120"
         ).run(context -> {
             StripeProperties properties = context.getBean(StripeProperties.class);

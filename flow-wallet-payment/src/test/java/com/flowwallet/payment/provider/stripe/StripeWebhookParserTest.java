@@ -33,7 +33,7 @@ import static org.mockito.Mockito.when;
  * parsing and verification rather than a mock of it.
  */
 class StripeWebhookParserTest {
-    private static final String SECRET = "whsec_test_4eC39HqLyjWDarjtT1zdp7dc";
+    private static final String SECRET = "whsec_unit-test-signing-secret";
     private static final long CREATED = 1_767_225_600L;
 
     @Test
