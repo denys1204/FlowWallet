@@ -48,6 +48,16 @@ says which way the money went.
 A deposit returns `200` rather than `201` or `202`. Nothing gets created on the wallet's side, and the client
 finishes the work itself by confirming the payment with Stripe using `providerData.clientSecret`.
 
+A deposit is paid by card ([ADR 0028](adr/0028-deposits-accept-cards-only.md)), and the client sees it go
+through three steps:
+
+1. Started: the `200` carries `providerData.clientSecret`, and the client confirms the card with Stripe.js. A
+   card that asks for 3D Secure is completed there too.
+2. Declined, if the card is refused: nothing moves, and the deposit stays open. The client can confirm the
+   same payment with another card, and repeating the request with the same key returns the same payment.
+3. Credited: once Stripe reports the payment as succeeded, the balance rises and a `DEPOSIT` entry appears in
+   the history. No response announces it, so the client reads the wallet or its history.
+
 - `Idempotency-Key` is required and can be a UUID of any version, in either case. It is lower-cased and
   becomes the payment's transaction reference, so the same string runs from the client through Payment
   Service into Stripe, onto the event and into the ledger. The server never generates one. If it did, a lost
@@ -179,7 +189,8 @@ Content-Type: application/json
 ```
 
 It returns `{providerData, paymentIntentId, transactionReference}`, with `providerData.clientSecret` for
-Stripe.
+Stripe. The intent offers only the payment methods in `STRIPE_PAYMENT_METHOD_TYPES`, cards by default
+([ADR 0028](adr/0028-deposits-accept-cards-only.md)).
 
 - `transactionReference` is the idempotency key, and it is also sent to Stripe as Stripe's own idempotency
   key. The same user with the same terms gets the original intent back, including after a declined card, so

@@ -45,6 +45,8 @@ Details: [API reference](api.md#wallet-service). Reasoning:
 
 - A deposit tops up a wallet the user already holds, in that wallet's currency. The client pays Stripe
   directly, so payment details never reach the wallet.
+- A deposit is paid by card. Other methods Stripe offers, such as bank debits or payments that redirect to a
+  bank's page, are not accepted.
 - The balance changes when Stripe confirms the payment. Starting a deposit moves no money.
 - A deposit is between a configured minimum and maximum, 1.00 and 10,000.00 by default. The bounds are the same
   figures in each currency's own units: 1 to 10,000 JPY, and equally 1 to 10,000 KWD.
@@ -59,7 +61,8 @@ Details: [API reference](api.md#wallet-service). Reasoning:
 
 Details: [deposit flow](../ARCHITECTURE.md#end-to-end-deposit-flow), [API reference](api.md#wallet-service),
 [configuration](development.md#configuration). Reasoning: [ADR 0013](adr/0013-deposit-initiation.md),
-[ADR 0022](adr/0022-stripe-charge-rules-checked-before-the-reservation.md).
+[ADR 0022](adr/0022-stripe-charge-rules-checked-before-the-reservation.md),
+[ADR 0028](adr/0028-deposits-accept-cards-only.md).
 
 ## Transfers
 

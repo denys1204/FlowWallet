@@ -158,7 +158,8 @@ and terms that race for the reservation get the same treatment: the loser receiv
 key. The Stripe call has its own connect and read timeouts and no network retry by default, so it ends before
 the wallet stops waiting ([ADR 0024](docs/adr/0024-deposit-initiation-settles-its-own-races.md)).
 [ADR 0022](docs/adr/0022-stripe-charge-rules-checked-before-the-reservation.md) covers which refusals come
-before the reservation and how a refusal from Stripe itself is answered.
+before the reservation and how a refusal from Stripe itself is answered. The intent offers only the payment methods
+in `STRIPE_PAYMENT_METHOD_TYPES`, cards by default ([ADR 0028](docs/adr/0028-deposits-accept-cards-only.md)).
 
 ## The Transactional Outbox
 

@@ -5,32 +5,41 @@ import com.flowwallet.payment.provider.exception.InvalidPaymentRequestException;
 import com.flowwallet.payment.provider.stripe.StripeChargeLimits;
 import com.flowwallet.payment.provider.stripe.StripeCurrencyRules;
 import com.flowwallet.payment.provider.stripe.StripeCurrencyRules.CurrencyRule;
+import com.flowwallet.payment.provider.stripe.config.StripePaymentMethodType;
+import com.flowwallet.payment.provider.stripe.config.StripeProperties;
 import com.stripe.param.PaymentIntentCreateParams;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Locale;
 
 import static com.flowwallet.payment.provider.stripe.StripeConstants.META_TRANSACTION_REF;
 
 @Component
+@RequiredArgsConstructor
 public class StripeRequestMapper {
+    private final StripeProperties properties;
+
     public PaymentIntentCreateParams toPaymentIntentParams(PaymentRequestContext context) {
         validate(context);
 
         String currencyLower = context.currency().toLowerCase(Locale.ROOT);
         long amountInSmallestUnit = toSmallestCurrencyUnit(context.amount(), context.currency());
 
-        var paymentMethods = PaymentIntentCreateParams.AutomaticPaymentMethods.builder()
-                .setEnabled(true)
-                .build();
+        List<String> paymentMethods = properties.getPaymentMethodTypes().stream()
+                .map(StripePaymentMethodType::apiValue)
+                .toList();
 
         // The user id never reaches Stripe (docs/adr/0027-user-ids-stay-out-of-logs-and-provider-metadata.md); the
         // reference is enough to trace a payment in the Stripe dashboard back to this service's own record of it.
         return PaymentIntentCreateParams.builder()
                 .setAmount(amountInSmallestUnit)
                 .setCurrency(currencyLower)
-                .setAutomaticPaymentMethods(paymentMethods)
+                // Listing the methods leaves automatic payment methods off.
+                // See docs/adr/0028-deposits-accept-cards-only.md.
+                .addAllPaymentMethodType(paymentMethods)
                 .putMetadata(META_TRANSACTION_REF, context.transactionReference())
                 .build();
     }

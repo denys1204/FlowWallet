@@ -98,4 +98,34 @@ class StripePropertiesTest {
         // count, and a timeout past the int of milliseconds stripe-java takes, which would fail on the first call.
         runner.withPropertyValues(setting).run(context -> assertThat(context).hasFailed());
     }
+
+    @Test
+    void depositsOfferCardsUnlessConfiguredOtherwise() {
+        // Guards the default drifting to an empty or wider set, which would offer methods nobody reviewed.
+        runner.run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context.getBean(StripeProperties.class).getPaymentMethodTypes())
+                    .containsExactly(StripePaymentMethodType.CARD);
+        });
+    }
+
+    @ParameterizedTest(name = "\"{0}\" binds to cards")
+    @ValueSource(strings = {"card", "CARD", "Card"})
+    void theCardMethodBindsInAnyCase(String value) {
+        // Guards a case-sensitive lookup refusing CARD from an environment variable while the YAML default card works.
+        runner.withPropertyValues("stripe.payment-method-types=" + value).run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context.getBean(StripeProperties.class).getPaymentMethodTypes())
+                    .containsExactly(StripePaymentMethodType.CARD);
+        });
+    }
+
+    @ParameterizedTest(name = "\"{0}\" fails startup")
+    @ValueSource(strings = {"sepa_debit", "automatic", "card,sepa_debit", "card,", ""})
+    void anUnknownOrEmptyPaymentMethodFailsStartup(String value) {
+        // Guards a typo or a method nobody reviewed being offered to depositors: delayed and redirect methods
+        // were left out on purpose (docs/adr/0028-deposits-accept-cards-only.md).
+        runner.withPropertyValues("stripe.payment-method-types=" + value)
+                .run(context -> assertThat(context).hasFailed());
+    }
 }

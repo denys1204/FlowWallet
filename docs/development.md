@@ -102,12 +102,11 @@ curl -X POST localhost:8080/api/wallets/USD/deposits \
 
 The deposit returns `providerData.clientSecret`. A real client would confirm the payment with Stripe.js. From
 a terminal you can confirm it with a test card instead. The PaymentIntent id is the part of the client
-secret before `_secret_`, and `return_url` is required because the intent accepts every payment method
-enabled in your dashboard, and some of those redirect:
+secret before `_secret_`. The intent accepts cards only, so the confirm needs no `return_url`:
 
 ```bash
 curl https://api.stripe.com/v1/payment_intents/<pi_...>/confirm \
-  -u "<your sk_test_ key>:" -d payment_method=pm_card_visa -d return_url=https://example.com
+  -u "<your sk_test_ key>:" -d payment_method=pm_card_visa
 ```
 
 Stripe sends the webhook, the outbox publishes, and the wallet credits the balance:
@@ -148,6 +147,7 @@ set real test values for both. `.env.example` has the full list with comments. T
 | `WALLET_PAYMENT_PROVIDER` | `STRIPE` | Wallet; `STRIPE` is the only accepted value |
 | `STRIPE_API_KEY` / `STRIPE_WEBHOOK_SECRET` | `sk_test_dummy` / none (webhooks disabled) | Payment |
 | `STRIPE_WEBHOOK_TOLERANCE_SECONDS` | `300` | Payment: how old a webhook's signed timestamp may be |
+| `STRIPE_PAYMENT_METHOD_TYPES` | `card` | Payment: the methods a deposit can be paid with. `card` is the only known one; any other name, or an empty value, fails startup |
 | `STRIPE_API_CONNECT_TIMEOUT` / `_READ_TIMEOUT` | `2s` / `6s` | Payment: how long a Stripe API call may take to connect and to answer |
 | `STRIPE_API_MAX_NETWORK_RETRIES` | `0` | Payment: how often stripe-java retries a failed call under the same idempotency key. Keep (1 + retries) × (connect + read), plus about 0.5s of backoff per retry, below `WALLET_PAYMENT_READ_TIMEOUT` |
 | `PAYMENT_WEBHOOK_MAX_PAYLOAD_SIZE` | `256KB` | Payment: a larger webhook body gets `413` |
@@ -164,14 +164,14 @@ The wallet service won't start with values that make no sense, such as a negativ
 1.0, an initial interval above the maximum, a maximum interval above 60000 ms, a blank Payment Service URL, a Payment
 Service timeout below 1ms, or a provider other than `STRIPE`. The payment service does the same for a deposit range that
 is inverted, not positive, or too wide for `NUMERIC(19,4)`, a Stripe timeout below 1ms or a negative Stripe retry count,
-a webhook tolerance that isn't positive, a webhook size limit outside 1B to 16MB, an outbox batch size, attempt count,
-backoff, retention or stuck-processing threshold below 1, an outbox backoff base above its maximum, and a
-`payment.events` topic with more in-sync replicas than replicas. A missing webhook secret doesn't stop it starting; it
-only disables webhooks.
+a webhook tolerance that isn't positive, a payment method list that is empty or names a method it doesn't know, a
+webhook size limit outside 1B to 16MB, an outbox batch size, attempt count, backoff, retention or stuck-processing
+threshold below 1, an outbox backoff base above its maximum, and a `payment.events` topic with more in-sync replicas
+than replicas. A missing webhook secret doesn't stop it starting; it only disables webhooks.
 
 ## Testing
 
-There are 520 tests, all green: 245 in the payment service, 230 in the wallet service, 44 in platform and 1 in the
+There are 530 tests, all green: 255 in the payment service, 230 in the wallet service, 44 in platform and 1 in the
 gateway (it binds the gateway's own `application.yml` into Spring Cloud Gateway's `HttpClientProperties`, so a YAML
 regression that drops the response or connect timeout fails here rather than in a live request left waiting). The rest
 go after the parts most likely to be wrong rather than the ones easiest to reach. That means the asymmetric webhook

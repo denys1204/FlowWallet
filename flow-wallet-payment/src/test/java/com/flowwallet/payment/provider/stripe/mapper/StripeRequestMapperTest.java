@@ -3,6 +3,7 @@ package com.flowwallet.payment.provider.stripe.mapper;
 import com.flowwallet.payment.provider.dto.PaymentRequestContext;
 import com.flowwallet.payment.provider.exception.InvalidPaymentRequestException;
 import com.flowwallet.payment.provider.stripe.StripeCurrencyRules;
+import com.flowwallet.payment.provider.stripe.config.StripeProperties;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -19,7 +20,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * coverage at all.
  */
 class StripeRequestMapperTest {
-    private final StripeRequestMapper mapper = new StripeRequestMapper();
+    private final StripeRequestMapper mapper = new StripeRequestMapper(new StripeProperties());
 
     private static PaymentRequestContext context(String amount, String currency) {
         return new PaymentRequestContext("ref-1", new BigDecimal(amount), currency, "user-1");
@@ -133,5 +134,18 @@ class StripeRequestMapperTest {
                 .containsEntry("transactionReference", "ref-1")
                 .doesNotContainKey("userId");
         assertThat(params.getCurrency()).isEqualTo("usd");
+    }
+
+    @Test
+    void aDepositIntentOffersCardsAndNothingElse() {
+        // Guards automatic payment methods coming back. They offer every method enabled in the Stripe dashboard,
+        // including bank debits that settle days later and redirect methods the wallet API cannot complete.
+        var params = mapper.toPaymentIntentParams(context("50.00", "USD"));
+
+        assertThat(params.getPaymentMethodTypes()).containsExactly("card");
+        assertThat(params.getAutomaticPaymentMethods()).isNull();
+        assertThat(params.toMap())
+                .containsKey("payment_method_types")
+                .doesNotContainKey("automatic_payment_methods");
     }
 }

@@ -81,6 +81,8 @@ stripe:
     connect-timeout: ${STRIPE_API_CONNECT_TIMEOUT:2s}
     read-timeout: ${STRIPE_API_READ_TIMEOUT:6s}
     max-network-retries: ${STRIPE_API_MAX_NETWORK_RETRIES:0}
+  # The payment methods a deposit can be paid with. Only `card` is known; any other name fails startup.
+  payment-method-types: ${STRIPE_PAYMENT_METHOD_TYPES:card}
   webhook:
     # No working default: while this is empty or a placeholder, every webhook is refused with 400.
     secret: ${STRIPE_WEBHOOK_SECRET:}

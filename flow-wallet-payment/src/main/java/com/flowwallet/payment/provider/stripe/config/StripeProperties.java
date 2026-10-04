@@ -1,6 +1,7 @@
 package com.flowwallet.payment.provider.stripe.config;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
@@ -13,6 +14,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.validation.annotation.Validated;
 
 import java.time.Duration;
+import java.util.EnumSet;
 import java.util.Set;
 
 @Getter
@@ -26,6 +28,14 @@ public class StripeProperties {
 
     @Valid
     private final Api api = new Api();
+
+    /**
+     * The payment methods a deposit intent offers. A name {@link StripePaymentMethodType} does not list fails
+     * binding and an empty set fails validation, so a mistyped value stops startup instead of offering methods
+     * nobody chose. See docs/adr/0028-deposits-accept-cards-only.md.
+     */
+    @NotEmpty(message = "stripe.payment-method-types must name at least one payment method")
+    private Set<StripePaymentMethodType> paymentMethodTypes = EnumSet.of(StripePaymentMethodType.CARD);
 
     /**
      * How the API calls reach Stripe. The timeouts and retries replace stripe-java's defaults (30 s to connect,

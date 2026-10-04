@@ -23,8 +23,10 @@ paths:
 - Jackson 3 is `tools.jackson.*`. Messages on the topic are JSON strings, so consumers use
   `StringDeserializer` and parse themselves.
 - Stripe minor units come from the explicit table in `StripeCurrencyRules`; never derive them from
-  `java.util.Currency` (ISO is wrong for Stripe on MGA and ISK). A server-side PaymentIntent confirm needs
-  `return_url`.
+  `java.util.Currency` (ISO is wrong for Stripe on MGA and ISK).
+- A deposit intent lists its payment methods (`stripe.payment-method-types`, cards only) instead of enabling
+  automatic ones, so a server-side confirm needs no `return_url`
+  ([ADR 0028](../../docs/adr/0028-deposits-accept-cards-only.md)).
 - `StripeChargeLimits` (chargeable currencies, minimum charges) is a dated copy of Stripe's currency page, like
   the tables in `StripeCurrencyRules`; update the retrieval date with the lists. Only a 400
   `InvalidRequestException` or a 402 `CardException` from Stripe is a refusal (400); every other
