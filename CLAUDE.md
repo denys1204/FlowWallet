@@ -3,47 +3,16 @@
 FlowWallet is an event-driven wallet on Java 25, Spring Boot 4.1, Kafka (KRaft), PostgreSQL and Stripe. It
 is an engineering showcase that runs against Stripe test mode only and never goes to production.
 
-Documentation is split by kind, and each file is kept accurate against the code: when behaviour changes, update
-the file that describes it in the same piece of work. `README.md` is the front page (status, topology diagram,
-tech stack, quickstart); `ARCHITECTURE.md` explains the modules, the deposit flow, the outbox, the wallet
-consumer, transfers and the identity model; `docs/business-rules.md` states the business rules in plain terms
-and links the files with the details; `docs/api.md` holds the API and error responses, `docs/data-model.md`
-the schema, `docs/events.md` the topics and event contracts, and `docs/development.md` running, configuring and
-testing. The topology diagram is in both `README.md` and `ARCHITECTURE.md`; a change goes in both, and a change
-to a business rule also goes in `docs/business-rules.md`. Decisions
-that span files, with their context and rejected alternatives, are ADRs in `docs/adr/` (index:
-`docs/adr/README.md`). The rules below are stated once and link the ADR that holds their reasoning. Rules for one
-kind of file live in `.claude/rules/` and load when a matching file is read: `web.md` (controllers and request
-DTOs), `persistence.md` (Liquibase and configuration), `integrations.md` (the Maven build, Kafka, MapStruct,
-Stripe).
+Rules for one kind of file live in `.claude/rules/` and load when a matching file is read: `web.md` (controllers
+and request DTOs), `persistence.md` (Liquibase and configuration), `integrations.md` (the Maven build, Kafka,
+MapStruct, Stripe).
 
-## Commands
+How to work in this repository is in `CONTRIBUTING.md`, imported below: the build and test commands, where each
+kind of text lives, the change map, the code conventions and the definition of done. Follow the change map on
+every change. The documentation defect that recurs most in this repository's history is a fact left behind in a
+second file.
 
-```bash
-./mvnw clean install                 # build all five modules and run every test
-./mvnw test                          # tests only (JUnit 6 + Mockito; no integration tests yet)
-./mvnw install -DskipTests           # install modules so -pl builds can resolve siblings
-
-# one module / one class / one method (after an install, or add -am)
-./mvnw -pl flow-wallet-payment test -Dtest=StripeRequestMapperTest
-./mvnw -pl flow-wallet-service test -Dtest='DepositServiceTest#aMissingWalletIsRefusedBeforeAnythingIsCharged'
-./mvnw -pl flow-wallet-service -am test -Dtest=DepositServiceTest -Dsurefire.failIfNoSpecifiedTests=false
-
-docker compose up -d                 # Postgres 17 (wallet_db + payment_db), Kafka, Kafka-UI on :8090
-./mvnw -pl flow-wallet-gateway spring-boot:run    # :8080
-./mvnw -pl flow-wallet-payment spring-boot:run    # :8082
-./mvnw -pl flow-wallet-service spring-boot:run    # :8081
-stripe listen --forward-to localhost:8080/api/payments/webhooks/stripe
-```
-
-There is no linter or formatter plugin; `.editorconfig` is the formatting source of truth.
-
-Never run two Maven builds at once in this checkout: they share `target/` and clobber each other.
-
-All three services import the repository-root `.env` through `spring.config.import` (both `./` and `../`,
-because the working directory is the module under the Maven plugin). Exported environment variables override
-it, and values must stay unquoted: Spring reads it as `.properties`, so quotes become part of the value.
-Compose ports bind to `127.0.0.1`; if `5432` is taken by another project, set `DB_PORT` in `.env`.
+@CONTRIBUTING.md
 
 ## Architecture
 
@@ -52,8 +21,9 @@ nothing about wallets ([ADR 0002](docs/adr/0002-module-boundaries.md)).
 
 - `flow-wallet-contract`: only what crosses the wire: the Kafka events (`PaymentCompletedEvent`,
   `PaymentFailedEvent`), the topic name, the `eventType` header and its values, and the schema version. No
-  dependencies of its own. Its `package-info` holds the evolution rules: add optional fields only, never rename,
-  remove or retype, keep enums off the wire ([ADR 0009](docs/adr/0009-payment-event-contract.md)).
+  dependencies of its own. Its `package-info` holds the evolution rules: add optional fields only; never rename,
+  remove or retype a field in place (add the replacement, then drop the old one once every consumer has moved);
+  keep enums off the wire ([ADR 0009](docs/adr/0009-payment-event-contract.md)).
 - `flow-wallet-platform`: shared servlet-side infrastructure, auto-configured: the RFC 9457
   `GlobalExceptionHandler`, `ApiException` (each subclass carries its HTTP status), the `@CurrentUserId`
   resolver, `@Iso4217Currency`. Nothing domain-shaped: a DTO that belongs to one service lives in that service.
@@ -78,6 +48,8 @@ Before changing either flow, read its sections of `ARCHITECTURE.md` and the ADRs
 lock order and the idempotency checks are specified there, not here.
 
 ## Invariants
+
+Each invariant here is stated once and links the ADR that holds its reasoning.
 
 - Money is `BigDecimal` / `NUMERIC(19,4)`, never floating point
   ([ADR 0012](docs/adr/0012-balances-and-append-only-ledger.md)).
@@ -149,26 +121,6 @@ lock order and the idempotency checks are specified there, not here.
   ([ADR 0008](docs/adr/0008-transactional-outbox.md)).
 - A `PaymentFailedEvent` moves no money, which is why the consumer does not depend on event order
   ([ADR 0009](docs/adr/0009-payment-event-contract.md)).
-
-## Conventions
-
-- Lombok over boilerplate; constructor injection via `@RequiredArgsConstructor`; records for DTOs and events.
-- Entities follow `PaymentTransaction`: `@Entity @Getter @Builder @AllArgsConstructor @Table
-  @NoArgsConstructor(access = PROTECTED)`, `SEQUENCE` ids with a named generator and an explicit
-  `allocationSize = 50` matching the Liquibase `incrementBy: 50`, an explicit `@Column(name = ...)` on every
-  non-id field, `@Enumerated(STRING)`, and static factories plus intent-named mutators instead of setters.
-  Hibernate runs `ddl-auto: validate`, so an entity change and its migration land in the same commit.
-- A comment gives the local why in a few lines: what a reader at that spot cannot get from the code and needs in
-  order to change it safely (a local invariant, a trap, a non-obvious ordering). Delete comments that restate the
-  code. A decision that spans files, with its rejected alternatives, lives in an ADR under `docs/adr/`, and the
-  comment links it with `See docs/adr/NNNN-slug.md.` A new cross-cutting decision gets a new ADR. An accepted
-  ADR is superseded by a new one rather than rewritten; only a factual correction, such as a renamed class, is
-  edited in place. Format, numbering and index: [ADR 0001](docs/adr/0001-record-architecture-decisions.md).
-- Javadoc always uses the multi-line form, never a one-line `/** ... */`. Public Javadoc keeps `@param`,
-  `@return` and `@throws` only where they tell the caller something the signature does not.
-- Test names are sentences describing the behaviour, and a comment says which failure the test guards against.
-- Wrapped argument lists chop down one per line; no blank line after a class opening brace.
-- Conventional commits (`fix(wallet): …`, `docs: …`) with a body that explains the reason for the change.
 
 ## Traps already hit
 

@@ -3,7 +3,7 @@
 This file explains how FlowWallet works: the module layout, the deposit flow, the transactional
 outbox, the wallet's idempotent consumer, transfers between wallets, and the identity and security
 model. For what the project is and its status, see [README.md](README.md); to run, configure and test it,
-see [docs/development.md](docs/development.md). ADRs in
+see [docs/development.md](docs/development.md); to change it, see [CONTRIBUTING.md](CONTRIBUTING.md). ADRs in
 [docs/adr/](docs/adr/) record each design decision along with its rejected alternatives and
 consequences.
 

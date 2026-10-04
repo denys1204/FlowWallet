@@ -87,6 +87,7 @@ the wallet consumer and the identity model.
 | [docs/data-model.md](docs/data-model.md) | The database schema for each service |
 | [docs/events.md](docs/events.md) | The Kafka topics and event contracts |
 | [docs/development.md](docs/development.md) | How to run, configure and test the project |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | How to change the code: commands, conventions, and what has to change together |
 
 ## Tech stack
 

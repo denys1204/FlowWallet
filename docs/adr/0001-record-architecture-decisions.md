@@ -1,6 +1,7 @@
 # 0001. Record architecture decisions
 
-- Status: Accepted
+- Status: Accepted, CLAUDE.md home of commands and conventions superseded by
+  [0029](0029-working-rules-live-in-contributing.md)
 - Date: 2026-09-27
 
 ## Context

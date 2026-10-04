@@ -7,9 +7,8 @@
  * evolution rules rather than whatever the compiler happens to accept:
  * <ul>
  *   <li>add optional fields only;</li>
- *   <li>never rename or remove a field — add the replacement, then drop the old one once
- *       every consumer has moved;</li>
- *   <li>never change a field's type;</li>
+ *   <li>never rename, remove or retype a field in place: add the replacement, then drop the old one
+ *       once every consumer has moved;</li>
  *   <li>keep enums off the wire — an unknown constant fails deserialization on older consumers.</li>
  * </ul>
  * Every event opens with the envelope fields {@code eventId} and {@code schemaVersion}.

@@ -3,7 +3,8 @@
 This file explains how to set up FlowWallet locally, configure it, and run its tests. For what the
 project is and its current status, see [README.md](../README.md). For how the system works, see
 [ARCHITECTURE.md](../ARCHITECTURE.md). The other reference docs cover the [API](api.md), the
-[data model](data-model.md) and [Kafka topics and events](events.md).
+[data model](data-model.md) and [Kafka topics and events](events.md). How to change the code, and what has to change
+with it, is in [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ## Getting started
 

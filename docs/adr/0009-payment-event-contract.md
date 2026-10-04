@@ -20,7 +20,8 @@ second, different event for the same payment, and it cannot count on the order i
 The evolution rules sit in the `package-info` of `flow-wallet-contract`:
 
 - add optional fields only;
-- never rename, remove or retype a field; add the replacement and drop the old one once every consumer has moved;
+- never rename, remove or retype a field in place; add the replacement and drop the old one once every consumer has
+  moved;
 - keep enums off the wire.
 
 Consumers ignore fields they do not know. `schemaVersion` comes from `KafkaConstants.PAYMENT_EVENT_SCHEMA_VERSION`

@@ -8,7 +8,7 @@ decision unchanged, such as a renamed class, is edited in place.
 
 | Number | Title | Status |
 | --- | --- | --- |
-| [0001](0001-record-architecture-decisions.md) | Record architecture decisions | Accepted |
+| [0001](0001-record-architecture-decisions.md) | Record architecture decisions | Accepted, CLAUDE.md home of commands and conventions superseded by [0029](0029-working-rules-live-in-contributing.md) |
 | [0002](0002-module-boundaries.md) | Services share only a platform module and a wire contract | Accepted |
 | [0003](0003-caller-identity-and-trust-boundary.md) | The caller is an opaque X-User-Id taken on trust behind a network boundary | Accepted, extended by [0027](0027-user-ids-stay-out-of-logs-and-provider-metadata.md) |
 | [0004](0004-wallet-addressed-by-owner-and-currency.md) | A wallet is addressed by owner and currency and opened only on request | Accepted |
@@ -36,3 +36,4 @@ decision unchanged, such as a renamed class, is edited in place.
 | [0026](0026-problem-details-never-quote-rejected-input.md) | A problem detail never quotes the value it rejects | Accepted, extends [0016](0016-error-model-and-status-codes.md) |
 | [0027](0027-user-ids-stay-out-of-logs-and-provider-metadata.md) | User ids stay out of logs and provider metadata | Accepted, supersedes the logging detail of [0014](0014-transfers-in-one-local-transaction.md), extends [0003](0003-caller-identity-and-trust-boundary.md) |
 | [0028](0028-deposits-accept-cards-only.md) | Deposits accept cards only, from a payment-method list in configuration | Accepted, extends [0013](0013-deposit-initiation.md) |
+| [0029](0029-working-rules-live-in-contributing.md) | Working rules live in CONTRIBUTING.md, which CLAUDE.md imports | Accepted, supersedes the CLAUDE.md home of commands and conventions in [0001](0001-record-architecture-decisions.md) |
