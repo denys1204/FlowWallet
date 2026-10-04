@@ -27,7 +27,8 @@ class TransferResponseTest {
         // a lost response that something else happened. The first answer is built the way the handler builds
         // it: a wallet loaded from NUMERIC(19,4) at 100.0000, a request amount of 25.00 brought to the
         // ledger's scale, and the in-memory leg. The replay is built from a row as the database hands it back,
-        // with an id and a creation time that must not reach the body.
+        // with an id and a creation time that must not reach the body. Both print the amounts as strings at
+        // the currency's scale, never the ledger's (docs/adr/0030-amounts-in-responses-are-decimal-strings.md).
         Wallet sender = Wallet.builder()
                 .id(11L)
                 .userId(SENDER)
@@ -55,7 +56,7 @@ class TransferResponseTest {
 
         assertThat(first).isEqualTo(replay);
         String json = new String(first, StandardCharsets.UTF_8);
-        assertThat(json).contains("\"amount\":25.0000", "\"balanceAfter\":75.0000");
+        assertThat(json).contains("\"amount\":\"25.00\"", "\"balanceAfter\":\"75.00\"");
         assertThat(mapper.readTree(json).propertyNames())
                 .containsExactlyInAnyOrder("reference", "to", "amount", "currency", "balanceAfter");
     }

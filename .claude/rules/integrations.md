@@ -5,10 +5,6 @@ paths:
   - "**/flow-wallet-contract/**"
   - "**/*Listener.java"
   - "**/*Mapper.java"
-  - "**/wallet/dto/*Response.java"
-  - "**/wallet/balance/Wallet.java"
-  - "**/wallet/balance/BalanceHistory.java"
-  - "**/WalletServiceTest.java"
   - "**/KafkaConsumerConfig.java"
 ---
 
@@ -18,8 +14,10 @@ paths:
   silently does nothing; use `spring-boot-starter-liquibase` / `spring-boot-starter-kafka`. Class names written
   as strings in YAML can also rot unnoticed after an upgrade.
 - The build passes `-Amapstruct.unmappedTargetPolicy=IGNORE` (root `pom.xml`), so a field renamed on either
-  side of a mapper silently drops out of the response. Pin a mapped field with a test that uses the real
-  mapper (see `WalletServiceTest`).
+  side of a mapper silently drops out of its target. Pin a mapped field with a test that uses the real
+  mapper (see `PaymentEventMapperTest`). Wallet Service has no mapper: its responses are built by static
+  factories, because MapStruct would turn a `BigDecimal` into a `String` with `toString`, at the ledger's scale
+  ([ADR 0030](../../docs/adr/0030-amounts-in-responses-are-decimal-strings.md)).
 - Jackson 3 is `tools.jackson.*`. Messages on the topic are JSON strings, so consumers use
   `StringDeserializer` and parse themselves.
 - Stripe minor units come from the explicit table in `StripeCurrencyRules`; never derive them from

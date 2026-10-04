@@ -16,7 +16,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.mapstruct.factory.Mappers;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Limit;
@@ -41,8 +40,7 @@ import static org.mockito.Mockito.*;
 class WalletServiceTest {
     private final WalletRepository wallets = mock(WalletRepository.class);
     private final BalanceHistoryRepository movements = mock(BalanceHistoryRepository.class);
-    private final WalletService service =
-            new WalletService(wallets, movements, Mappers.getMapper(WalletMapper.class));
+    private final WalletService service = new WalletService(wallets, movements);
     private final Logger logger = (Logger) LoggerFactory.getLogger(WalletService.class);
     private final ListAppender<ILoggingEvent> logs = new ListAppender<>();
 
@@ -216,10 +214,35 @@ class WalletServiceTest {
     }
 
     @Test
+    void aZeroDecimalWalletAndItsHistoryShowNoDecimals() {
+        // Guards a response factory that ignores the wallet's currency, or a history built with the wrong one:
+        // 1000 JPY must read "1000" with decimals 0, never "1000.00" or the ledger's "1000.0000"
+        // (docs/adr/0030-amounts-in-responses-are-decimal-strings.md).
+        Wallet kenji = Wallet.builder()
+                .id(2L)
+                .userId("kenji")
+                .currency("JPY")
+                .balance(new BigDecimal("1000.0000"))
+                .build();
+        when(wallets.findByUserIdAndCurrency("kenji", "JPY")).thenReturn(Optional.of(kenji));
+        when(movements.findNewest(any(), any())).thenReturn(List.of(
+                BalanceHistory.deposit(kenji, "ref-1", "evt-1", new BigDecimal("1000.0000"), new BigDecimal("0.0000"))
+        ));
+
+        WalletResponse wallet = service.read("kenji", "JPY");
+        BalanceHistoryResponse item = service.history("kenji", "JPY", null, 20).items().getFirst();
+
+        assertThat(wallet.balance()).isEqualTo("1000");
+        assertThat(wallet.decimals()).isZero();
+        assertThat(item.amount()).isEqualTo("1000");
+        assertThat(item.balanceBefore()).isEqualTo("0");
+        assertThat(item.balanceAfter()).isEqualTo("1000");
+    }
+
+    @Test
     void historyShowsWhoIsOnTheOtherSideOfATransfer() {
-        // The build sets MapStruct's unmappedTargetPolicy to IGNORE, so a rename on either side would silently
-        // drop the counterparty from every history item instead of failing the build. This uses the real
-        // mapper, as the rest of the class does. A deposit has no user on the other side and must show null.
+        // Guards the counterparty being dropped on its way to a history item: each transfer leg shows the other
+        // user's id, and a deposit has no user on the other side and must show null.
         Wallet erin = Wallet.builder()
                 .id(1L)
                 .userId("erin")
@@ -246,10 +269,10 @@ class WalletServiceTest {
 
     @Test
     void everyFieldOfAWalletAndOfAMovementReachesItsResponse() {
-        // The build sets MapStruct's unmappedTargetPolicy to IGNORE, so a field renamed on either side of the
-        // mapper comes back null instead of failing the build. Each expected record is built from every field,
-        // so a field that stops mapping fails the equality, and a field added to a response fails to compile
-        // here until it is pinned too.
+        // Guards a field dropped on its way to a response, and money printed at the ledger's scale of 4 instead
+        // of the currency's. Each expected record is built from every field, so a field that stops reaching the
+        // response fails the equality, and a field added to a response fails to compile here until it is
+        // pinned too.
         Instant opened = Instant.parse("2026-09-01T10:00:00Z");
         Instant changed = Instant.parse("2026-09-02T11:30:00Z");
         Wallet erin = Wallet.builder()
@@ -277,17 +300,15 @@ class WalletServiceTest {
         when(wallets.findByUserIdAndCurrency("erin", "USD")).thenReturn(Optional.of(erin));
         when(movements.findNewest(any(), any())).thenReturn(List.of(sent));
 
-        assertThat(service.read("erin", "USD")).isEqualTo(
-                new WalletResponse(new BigDecimal("75.0000"), "USD", opened, changed)
-        );
+        assertThat(service.read("erin", "USD")).isEqualTo(new WalletResponse("75.00", "USD", 2, opened, changed));
         assertThat(service.history("erin", "USD", null, 20).items()).containsExactly(new BalanceHistoryResponse(
                 2L,
                 "ref-2",
                 "TRANSFER_OUT",
                 "frank",
-                new BigDecimal("25.0000"),
-                new BigDecimal("100.0000"),
-                new BigDecimal("75.0000"),
+                "25.00",
+                "100.00",
+                "75.00",
                 changed
         ));
     }

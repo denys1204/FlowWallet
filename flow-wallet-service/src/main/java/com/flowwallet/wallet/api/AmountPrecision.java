@@ -20,7 +20,8 @@ public final class AmountPrecision {
     private static final int MAX_INTEGER_DIGITS = 15;
 
     /**
-     * The ledger's scale, so the amount a response prints matches the one a replay reads back.
+     * The ledger's scale: amounts are stored and compared at it, and responses render them at the currency's scale
+     * instead (see {@link #render}).
      */
     private static final int LEDGER_SCALE = 4;
 
@@ -89,6 +90,32 @@ public final class AmountPrecision {
     public static boolean fitsLedger(BigDecimal amount) {
         BigDecimal stripped = amount.stripTrailingZeros();
         return fitsIntegerDigits(stripped) && stripped.scale() <= LEDGER_SCALE;
+    }
+
+    /**
+     * How many decimals the currency's amounts carry on the grid: 0 for the zero-decimal currencies and ISK, 2 for
+     * every other. The three-decimal currencies such as KWD get 2, because the grid caps them there, so ISO's
+     * {@code java.util.Currency} would disagree.
+     *
+     * @param currency an ISO code in either case
+     */
+    public static int decimals(String currency) {
+        return acceptedScale(currency.toUpperCase(Locale.ROOT));
+    }
+
+    /**
+     * Writes an amount as a plain decimal string at its currency's scale: 25.0000 USD as {@code "25.00"} and
+     * 1000.0000 JPY as {@code "1000"}. Every response renders money through here, so a first answer built in memory
+     * and a replay read back from the ledger come out the same whatever scale each value holds. A value finer than
+     * the grid keeps its extra digits instead of being rounded; only a row written before its currency's grid
+     * existed can hold one. See docs/adr/0030-amounts-in-responses-are-decimal-strings.md.
+     *
+     * @param currency an ISO code in either case
+     */
+    public static String render(BigDecimal amount, String currency) {
+        BigDecimal stripped = amount.stripTrailingZeros();
+        int scale = Math.max(decimals(currency), stripped.scale());
+        return stripped.setScale(scale, RoundingMode.UNNECESSARY).toPlainString();
     }
 
     private static boolean fitsIntegerDigits(BigDecimal stripped) {

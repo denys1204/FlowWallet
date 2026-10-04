@@ -15,6 +15,8 @@ import java.math.BigDecimal;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -37,7 +39,7 @@ class TransferControllerTest {
         mockMvc = ControllerMockMvc.of(new TransferController(transfers));
 
         when(transfers.transfer(anyString(), anyString(), anyString(), any())).thenReturn(new TransferResponse(
-                KEY, RECIPIENT, new BigDecimal("25.0000"), "USD", new BigDecimal("75.0000")
+                KEY, RECIPIENT, "25.00", "USD", "75.00"
         ));
     }
 
@@ -182,5 +184,51 @@ class TransferControllerTest {
                 .andExpect(jsonPath("$.to").value(RECIPIENT));
 
         verify(transfers).transfer(CALLER, "usd", KEY, new TransferRequest(RECIPIENT, new BigDecimal("25.00")));
+    }
+
+    @ParameterizedTest(name = "amount {0} is accepted")
+    @CsvSource(delimiter = '|', value = {"\"25.00\"", "\" 25.00 \"", "25.00", "2.5E+1"})
+    void anAmountIsAcceptedAsADecimalStringOrAJsonNumber(String amount) throws Exception {
+        // Guards the documented string form being refused, or the number form that existing clients send
+        // breaking. Responses print money as strings (docs/adr/0030-amounts-in-responses-are-decimal-strings.md),
+        // so a client that sends an amount back as it read it sends a string.
+        mockMvc.perform(transfer(body(RECIPIENT, amount))
+                        .header("X-User-Id", CALLER)
+                        .header("Idempotency-Key", KEY))
+                .andExpect(status().isOk());
+
+        verify(transfers).transfer(
+                eq(CALLER),
+                eq("usd"),
+                eq(KEY),
+                argThat(request -> request.amount().compareTo(new BigDecimal("25")) == 0)
+        );
+    }
+
+    @Test
+    void aBlankStringAmountIsRefusedAsMissing() throws Exception {
+        // Guards an empty string slipping through as some amount: Jackson reads "" as no value, so the request
+        // gets the same 400 as one without an amount.
+        mockMvc.perform(transfer(body(RECIPIENT, "\"\""))
+                        .header("X-User-Id", CALLER)
+                        .header("Idempotency-Key", KEY))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0]").value("amount Amount is required"));
+
+        verifyNoInteractions(transfers);
+    }
+
+    @Test
+    void anAmountThatIsNotANumberIsRefusedWithoutQuotingIt() throws Exception {
+        // Guards a string amount reaching the transfer, and the refusal echoing the caller's input into a detail
+        // that is logged (docs/adr/0026-problem-details-never-quote-rejected-input.md).
+        String answer = mockMvc.perform(transfer(body(RECIPIENT, "\"abc\""))
+                        .header("X-User-Id", CALLER)
+                        .header("Idempotency-Key", KEY))
+                .andExpect(status().isBadRequest())
+                .andReturn().getResponse().getContentAsString();
+
+        assertThat(answer).doesNotContain("abc");
+        verifyNoInteractions(transfers);
     }
 }

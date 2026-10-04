@@ -72,12 +72,6 @@
             <artifactId>spring-boot-starter-kafka</artifactId>
         </dependency>
 
-        <!-- MapStruct -->
-        <dependency>
-            <groupId>org.mapstruct</groupId>
-            <artifactId>mapstruct</artifactId>
-        </dependency>
-
         <!-- Actuator -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

@@ -4,6 +4,7 @@ import com.flowwallet.wallet.balance.BalanceHistory;
 import com.flowwallet.wallet.balance.BalanceHistoryRepository;
 import com.flowwallet.wallet.balance.Wallet;
 import com.flowwallet.wallet.balance.WalletRepository;
+import com.flowwallet.wallet.dto.BalanceHistoryResponse;
 import com.flowwallet.wallet.dto.HistoryPage;
 import com.flowwallet.wallet.dto.WalletResponse;
 import lombok.RequiredArgsConstructor;
@@ -25,11 +26,12 @@ import java.util.List;
 public class WalletService {
     private final WalletRepository wallets;
     private final BalanceHistoryRepository movements;
-    private final WalletMapper mapper;
 
     @Transactional(readOnly = true)
     public List<WalletResponse> listFor(String userId) {
-        return mapper.toResponses(wallets.findByUserIdOrderByCurrency(userId));
+        return wallets.findByUserIdOrderByCurrency(userId).stream()
+                .map(WalletResponse::of)
+                .toList();
     }
 
     /**
@@ -43,7 +45,7 @@ public class WalletService {
     public WalletResponse open(String userId, String currency) {
         String code = Currencies.normaliseForNewWallet(currency);
         try {
-            return mapper.toResponse(wallets.saveAndFlush(Wallet.open(userId, code)));
+            return WalletResponse.of(wallets.saveAndFlush(Wallet.open(userId, code)));
         } catch (DataIntegrityViolationException e) {
             // The violation has aborted this transaction, so nothing else is issued on it. No wallet was created,
             // so there is no wallet id to log, and the user id stays out of every log line
@@ -55,7 +57,7 @@ public class WalletService {
 
     @Transactional(readOnly = true)
     public WalletResponse read(String userId, String currency) {
-        return mapper.toResponse(require(userId, Currencies.normalise(currency)));
+        return WalletResponse.of(require(userId, Currencies.normalise(currency)));
     }
 
     /**
@@ -74,7 +76,9 @@ public class WalletService {
         List<BalanceHistory> page = hasOlder ? fetched.subList(0, limit) : fetched;
 
         return new HistoryPage(
-                mapper.toHistoryResponses(page),
+                page.stream()
+                        .map(movement -> BalanceHistoryResponse.of(movement, wallet.getCurrency()))
+                        .toList(),
                 hasOlder ? page.getLast().getEntryNo() : null
         );
     }

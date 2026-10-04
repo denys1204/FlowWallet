@@ -18,14 +18,21 @@ currency, and `X-User-Id` already names the owner, so the pair identifies the wa
 ([ADR 0004](adr/0004-wallet-addressed-by-owner-and-currency.md)). Currency is case-insensitive in the
 path and in the body.
 
+Money is a decimal string at the currency's scale in every response: `"75.00"` for USD, `"1000"` for JPY. The
+wallet's `decimals` says how many places its currency carries: 0 for the zero-decimal currencies and ISK, 2 for
+every other, KWD and BHD included. Parse money as a decimal, never as a float. A request takes an amount as a string
+or as a JSON number; the string is the documented form
+([ADR 0030](adr/0030-amounts-in-responses-are-decimal-strings.md)). A string amount is a plain decimal, surrounding
+whitespace is ignored, and an empty string counts as a missing amount.
+
 | Method & path | Request | Response |
 |---------------|---------|----------|
-| `GET /api/wallets` | (none) | `200` `[{balance, currency, createdAt, updatedAt}]`, ordered by currency; an empty list if none, never `404` |
+| `GET /api/wallets` | (none) | `200` `[{balance, currency, decimals, createdAt, updatedAt}]`, ordered by currency; an empty list if none, never `404` |
 | `POST /api/wallets` | `{"currency": "USD"}` | `201` the wallet; `400` not three letters (listed in `errors`), not an ISO 4217 code, or a code with no minor unit (XAU, XTS, XXX and the like); `409` a wallet in that currency already exists |
 | `GET /api/wallets/{currency}` | (none) | `200` the wallet; `400` invalid code; `404` the caller holds no such wallet (never `403`) |
 | `GET /api/wallets/{currency}/history?before={entryNo}&limit={n}` | (none) | `200` `{items, nextBefore}`, newest first |
-| `POST /api/wallets/{currency}/deposits` | `{"amount": 50.00}` + `Idempotency-Key` header | `200` `{reference, provider, providerData}` |
-| `POST /api/wallets/{currency}/transfers` | `{"to": "<user id>", "amount": 25.00}` + `Idempotency-Key` header | `200` `{reference, to, amount, currency, balanceAfter}` |
+| `POST /api/wallets/{currency}/deposits` | `{"amount": "50.00"}` + `Idempotency-Key` header | `200` `{reference, provider, providerData}` |
+| `POST /api/wallets/{currency}/transfers` | `{"to": "<user id>", "amount": "25.00"}` + `Idempotency-Key` header | `200` `{reference, to, amount, currency, balanceAfter}` |
 
 On every wallet endpoint a missing or invalid `X-User-Id` gets `401` before the body or any parameter is
 checked. `POST /api/wallets`, deposits and transfers produce only JSON, so an `Accept` header that rules it out
@@ -86,9 +93,9 @@ answer and every replay are `200` with the same body:
 {
   "reference": "7e1855b3-4d95-4a72-a0c9-ef0d78be2e44",
   "to": "018f3a2b-7c4d-7e5f-8a9b-0c1d2e3f4a5b",
-  "amount": 25.0000,
+  "amount": "25.00",
   "currency": "USD",
-  "balanceAfter": 75.0000
+  "balanceAfter": "75.00"
 }
 ```
 
@@ -187,6 +194,8 @@ Content-Type: application/json
   "providerName": "STRIPE"
 }
 ```
+
+This internal call keeps `amount` a JSON number. It is not part of the public API.
 
 It returns `{providerData, paymentIntentId, transactionReference}`, with `providerData.clientSecret` for
 Stripe. The intent offers only the payment methods in `STRIPE_PAYMENT_METHOD_TYPES`, cards by default

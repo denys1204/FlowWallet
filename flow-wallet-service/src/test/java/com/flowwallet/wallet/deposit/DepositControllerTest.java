@@ -9,10 +9,13 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.math.BigDecimal;
 import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
@@ -102,5 +105,26 @@ class DepositControllerTest {
 
         Assertions.assertThat(answer).isEqualTo(406);
         verifyNoInteractions(deposits);
+    }
+
+    @ParameterizedTest(name = "amount {0} is accepted")
+    @CsvSource(delimiter = '|', value = {"\"25.00\"", "\" 25.00 \"", "25.00", "2.5E+1"})
+    void anAmountIsAcceptedAsADecimalStringOrAJsonNumber(String amount) throws Exception {
+        // Guards the documented string form being refused, or the number form that existing clients send
+        // breaking (docs/adr/0030-amounts-in-responses-are-decimal-strings.md).
+        int status = mockMvc.perform(post("/api/wallets/USD/deposits")
+                        .header("X-User-Id", CALLER)
+                        .header("Idempotency-Key", CALLER)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amount\": " + amount + "}"))
+                .andReturn().getResponse().getStatus();
+
+        Assertions.assertThat(status).isEqualTo(200);
+        verify(deposits).start(
+                eq(CALLER),
+                eq("USD"),
+                eq(CALLER),
+                argThat(request -> request.amount().compareTo(new BigDecimal("25")) == 0)
+        );
     }
 }

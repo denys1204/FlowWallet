@@ -107,9 +107,9 @@ supersedes it, and only a factual correction is edited in place (see [ADRs](#adr
   that fits on one line stays on one line. A wrapped call chain puts one call per line. There is no blank line after
   a class header. Imports stay sorted in IntelliJ's order. Markdown prose wraps at 120 columns, and a table row
   stays on one line.
-- Rules that depend on the kind of file are in `.claude/rules/`: `web.md` for controllers, request DTOs and their
-  tests, `persistence.md` for migrations and configuration, `integrations.md` for the Maven build, Kafka, MapStruct,
-  Stripe and the shape of fake keys in tests. Read the one for the file you change.
+- Rules that depend on the kind of file are in `.claude/rules/`: `web.md` for controllers, request and response DTOs and
+  their tests, `persistence.md` for migrations and configuration, `integrations.md` for the Maven build, Kafka,
+  MapStruct, Stripe and the shape of fake keys in tests. Read the one for the file you change.
 
 ## Tests
 

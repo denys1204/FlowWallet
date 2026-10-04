@@ -298,7 +298,7 @@ class TransferHandlerTest {
     })
     void aTransferMovesTheMoneyAndWritesBothLegsUnderOneReference(String sender, String recipient) {
         // Guards balances drifting from the ledger, counterparties that are swapped or missing, and wrong
-        // before and after values on either leg. The receipt is the sender's, at the ledger's scale. Run both
+        // before and after values on either leg. The receipt is the sender's, at the currency's scale. Run both
         // ways, because a mix-up between the first-locked wallet and the recipient shows only when the sender
         // sorts last: the sender would pay itself and the recipient would get nothing.
         Wallet from = holds(11L, sender, "100.0000");
@@ -329,10 +329,8 @@ class TransferHandlerTest {
         assertThat(out.getValue().getTransactionReference()).isEqualTo(REFERENCE);
         assertThat(in.getValue().getTransactionReference()).isEqualTo(REFERENCE);
 
-        // Compared with equals, so the scale is pinned as well as the value.
-        assertThat(response).isEqualTo(new TransferResponse(
-                REFERENCE, recipient, new BigDecimal("25.0000"), "USD", new BigDecimal("75.0000")
-        ));
+        // Compared with equals, so the rendering at the currency's scale is pinned as well as the value.
+        assertThat(response).isEqualTo(new TransferResponse(REFERENCE, recipient, "25.00", "USD", "75.00"));
         // The balances change on the managed entities and reach the database through the flush.
         verify(wallets, never()).save(any());
         // Guards both sides' user ids leaking into the completed-transfer log line; the wallet ids already

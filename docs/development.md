@@ -98,7 +98,7 @@ curl -X POST localhost:8080/api/wallets \
 
 curl -X POST localhost:8080/api/wallets/USD/deposits \
   -H "X-User-Id: $USER" -H "Idempotency-Key: $(uuidgen)" \
-  -H 'Content-Type: application/json' -d '{"amount":50.00}'
+  -H 'Content-Type: application/json' -d '{"amount":"50.00"}'
 ```
 
 The deposit returns `providerData.clientSecret`. A real client would confirm the payment with Stripe.js. From
@@ -172,7 +172,7 @@ than replicas. A missing webhook secret doesn't stop it starting; it only disabl
 
 ## Testing
 
-There are 530 tests, all green: 255 in the payment service, 230 in the wallet service, 44 in platform and 1 in the
+There are 558 tests, all green: 255 in the payment service, 258 in the wallet service, 44 in platform and 1 in the
 gateway (it binds the gateway's own `application.yml` into Spring Cloud Gateway's `HttpClientProperties`, so a YAML
 regression that drops the response or connect timeout fails here rather than in a live request left waiting). The rest
 go after the parts most likely to be wrong rather than the ones easiest to reach. That means the asymmetric webhook
@@ -210,7 +210,8 @@ violation after the rollback, the `503` mapping, and the READ COMMITTED pin.
 For the ledger they cover entry numbers rising by one per wallet across credits and both transfer legs, a
 refused debit taking no number, history paged by entry number without skipping or repeating a movement while
 credits arrive, the history `limit` bounds (1 to 100) and a non-numeric cursor refused with `400`, and every
-field of the wallet and history responses through the real mapper.
+field of the wallet and history responses. Money in a response is a string at the currency's scale, and a scan of
+every response record fails on a numeric money field; a request amount is accepted as a string or a number.
 
 ```bash
 ./mvnw test

@@ -9,7 +9,6 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
-import java.math.BigDecimal;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -31,9 +30,7 @@ class WalletControllerTest {
     void aLowerCaseCurrencyInTheBodyReachesTheServiceLikeOneInThePath() throws Exception {
         // Guards a case-sensitive constraint on the body: /api/wallets/usd works, so "usd" in the body must reach
         // the service, which normalises both the same way, instead of being refused at the boundary.
-        when(wallets.open(CALLER, "usd")).thenReturn(
-                new WalletResponse(BigDecimal.ZERO, "USD", null, null)
-        );
+        when(wallets.open(CALLER, "usd")).thenReturn(new WalletResponse("0.00", "USD", 2, null, null));
 
         mockMvc.perform(post("/api/wallets")
                         .header("X-User-Id", CALLER)

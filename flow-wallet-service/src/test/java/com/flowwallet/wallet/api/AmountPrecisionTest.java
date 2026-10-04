@@ -108,4 +108,33 @@ class AmountPrecisionTest {
         // 0.00001 to 0.0000 and refuse 1E+15, which would send the refusal to the dead-letter topic.
         assertThat(AmountPrecision.fitsLedger(new BigDecimal(amount))).isEqualTo(fits);
     }
+
+    @ParameterizedTest(name = "{1} {0} renders as {2}")
+    @CsvSource({
+            "25.0000,   USD, 25.00",
+            "75,        USD, 75.00",
+            "1E+2,      USD, 100.00",
+            "0.0000,    USD, 0.00",
+            "1000.0000, JPY, 1000",
+            "0.0000,    JPY, 0",
+            "5000.0000, MGA, 5000",
+            "10.0000,   ISK, 10",
+            "50.0000,   KWD, 50.00",
+            "10.5000,   ISK, 10.5"
+    })
+    void anAmountRendersAtItsCurrencysScale(String amount, String currency, String rendered) {
+        // Guards money printed at the ledger's scale of 4, or rounded to fit the grid. MGA is here because ISO gives
+        // it two decimals and KWD because ISO gives it three, while the grid has none and two. The last case is an
+        // ISK row written before ISK became whole units: it keeps its fraction rather than being rounded or failing
+        // the page it is on.
+        assertThat(AmountPrecision.render(new BigDecimal(amount), currency)).isEqualTo(rendered);
+    }
+
+    @ParameterizedTest(name = "{0} carries {1} decimals")
+    @CsvSource({"USD, 2", "usd, 2", "JPY, 0", "ISK, 0", "MGA, 0", "KWD, 2"})
+    void decimalsFollowTheGridRatherThanIso(String currency, int decimals) {
+        // Guards decimals read from java.util.Currency, which a client would then use to format and check
+        // amounts the wallet refuses or prints differently.
+        assertThat(AmountPrecision.decimals(currency)).isEqualTo(decimals);
+    }
 }

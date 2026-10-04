@@ -3,8 +3,8 @@
 FlowWallet is an event-driven wallet on Java 25, Spring Boot 4.1, Kafka (KRaft), PostgreSQL and Stripe. It
 is an engineering showcase that runs against Stripe test mode only and never goes to production.
 
-Rules for one kind of file live in `.claude/rules/` and load when a matching file is read: `web.md` (controllers
-and request DTOs), `persistence.md` (Liquibase and configuration), `integrations.md` (the Maven build, Kafka,
+Rules for one kind of file live in `.claude/rules/` and load when a matching file is read: `web.md` (controllers,
+request and response DTOs), `persistence.md` (Liquibase and configuration), `integrations.md` (the Maven build, Kafka,
 MapStruct, Stripe).
 
 How to work in this repository is in `CONTRIBUTING.md`, imported below: the build and test commands, where each
@@ -95,6 +95,8 @@ Each invariant here is stated once and links the ADR that holds its reasoning.
   ([ADR 0015](docs/adr/0015-currency-precision-and-no-rounding.md),
   [ADR 0023](docs/adr/0023-isk-charged-in-whole-units.md)). A payment event's amount is held to the
   same grid and refused as `INVALID_AMOUNT` ([ADR 0019](docs/adr/0019-payment-event-amounts-on-the-grid.md)).
+  Responses print money as a string from `AmountPrecision.render`, at the currency's scale, never as a number
+  ([ADR 0030](docs/adr/0030-amounts-in-responses-are-decimal-strings.md)).
 - Problem responses carry no `type`, so on the transfer path each status points to a different kind of fix:
   401 fix the identity header, 400 fix the request, 404 open your wallet (only ever the caller's), 406 accept
   JSON, 409 use a new key (only key reuse), 422 lower the amount or top up (insufficient funds) or pick another
