@@ -83,8 +83,8 @@ flow-wallet (parent POM)
 Platform and contract are separate modules because they follow different rules. Platform is ordinary shared
 code, changed as freely as anything else. Contract is the boundary between services. Producer and consumer
 are deployed separately, so a topic always holds messages written by more than one version of the code, and
-changes there follow evolution rules: add optional fields only, never rename or retype, keep enums off the
-wire. A DTO that belongs to one service lives in that service. The module split is explained in
+changes there follow evolution rules: add optional fields only, never rename, remove or retype a field in place,
+keep enums off the wire. A DTO that belongs to one service lives in that service. The module split is explained in
 [ADR 0002](docs/adr/0002-module-boundaries.md) and the contract rules in
 [ADR 0009](docs/adr/0009-payment-event-contract.md).
 

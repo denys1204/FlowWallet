@@ -7,7 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * Sets the API key on the SDK's static holder, which {@code PaymentIntent.create} in {@code StripeClient} reads, and
+ * Sets the API key on the SDK's static holder, which the {@code PaymentIntent} calls in {@code StripeClient} read, and
  * reports at startup when webhooks are disabled for want of a signing secret.
  */
 @Slf4j

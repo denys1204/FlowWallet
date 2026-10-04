@@ -69,9 +69,9 @@ class AmountPrecisionTest {
             "1E+2,  JPY, 100.0000"
     })
     void anAcceptedAmountComesBackAtTheLedgersScale(String amount, String currency, String written) {
-        // A first answer is built from the amount in memory and a replay from the row, which NUMERIC(19,4)
-        // hands back at scale 4. Unless this returns scale 4 too, the first answer prints 25.00 or 1E+2 and
-        // every replay 25.0000 or 100.0000.
+        // Guards the contract that an accepted amount leaves at the ledger's scale, the form NUMERIC(19,4) hands
+        // back, so a value in memory equals the same value read from a row. Responses do not depend on it: they
+        // render through AmountPrecision.render.
         assertThat(AmountPrecision.canonical(new BigDecimal(amount), currency).toString()).isEqualTo(written);
     }
 

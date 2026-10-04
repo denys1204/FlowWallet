@@ -23,7 +23,9 @@ paths:
   `@ConfigurationProperties` class with `@Validated` checks that fail startup on nonsense, like
   `PaymentDepositProperties`, `StripeProperties`, `WalletPaymentProperties`, `OutboxProperties` or
   `PaymentEventsTopicProperties`. Older ones are not there yet: outbox schedules, the optimistic-lock retry and the
-  wallet dead-letter topic's partitions/replicas are read through `@Scheduled`/`@Retryable`/`@Value` placeholders. The
-  reconciler's interval is checked in `PaymentReconciliationProperties`, but `@Scheduled` reads it through a
-  placeholder, so its default sits in the YAML, the properties class and the annotation. New variables go in
-  `.env.example` too. Topic names are compile-time constants, not config.
+  wallet dead-letter topic's partitions/replicas are read through `@Scheduled`/`@Retryable`/`@Value` placeholders. A
+  switch that turns a bean on or off is read by `@ConditionalOnProperty`, which runs before binding, so
+  `payment.scheduling.enabled` (`SchedulingConfig`) has no properties class, and such a switch's default also sits in
+  `matchIfMissing`. The reconciler's interval is checked in `PaymentReconciliationProperties`, but `@Scheduled` reads
+  it through a placeholder, so its default sits in the YAML, the properties class and the annotation. New variables go
+  in `.env.example` too. Topic names are compile-time constants, not config.
