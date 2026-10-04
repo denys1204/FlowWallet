@@ -4,17 +4,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.context.ConfigurationPropertiesAutoConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
-import org.springframework.boot.env.YamlPropertySourceLoader;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.cloud.gateway.config.HttpClientProperties;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.core.env.MapPropertySource;
-import org.springframework.core.env.PropertySource;
-import org.springframework.core.io.ClassPathResource;
 
 import java.time.Duration;
-import java.util.List;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -32,7 +26,7 @@ class GatewayHttpClientPropertiesTest {
         ApplicationContextRunner runner = new ApplicationContextRunner()
                 .withConfiguration(AutoConfigurations.of(ConfigurationPropertiesAutoConfiguration.class))
                 .withUserConfiguration(HttpClientPropertiesConfig.class)
-                .withPropertyValues(applicationYamlProperties());
+                .withPropertyValues(ApplicationYaml.properties());
 
         runner.run(context -> {
             assertThat(context).hasNotFailed();
@@ -43,15 +37,6 @@ class GatewayHttpClientPropertiesTest {
             assertThat(httpClient.getResponseTimeout()).isEqualTo(Duration.ofSeconds(20));
             assertThat(httpClient.getConnectTimeout()).isEqualTo(2000);
         });
-    }
-
-    private static String[] applicationYamlProperties() throws Exception {
-        List<PropertySource<?>> sources = new YamlPropertySourceLoader()
-                .load("application", new ClassPathResource("application.yml"));
-        Map<String, Object> properties = ((MapPropertySource) sources.get(0)).getSource();
-        return properties.entrySet().stream()
-                .map(entry -> entry.getKey() + "=" + entry.getValue())
-                .toArray(String[]::new);
     }
 
     @Configuration

@@ -1,4 +1,8 @@
 server:
+  # Loopback by default: the gateway forwards X-User-Id as the client sent it, so it may listen wider only behind
+  # an authentication layer that sets the header. A container has to set 0.0.0.0, and BindAddressCheck then warns.
+  # See docs/adr/0031-callers-are-authenticated-in-front-of-the-gateway.md.
+  address: ${GATEWAY_ADDRESS:127.0.0.1}
   port: ${GATEWAY_PORT:8080}
 
 spring:

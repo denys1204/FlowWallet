@@ -129,7 +129,7 @@ set real test values for both. `.env.example` has the full list with comments. T
 | `GATEWAY_PORT` | `8080` | Gateway |
 | `WALLET_SERVICE_PORT` | `8081` | Wallet (listen port), Gateway (routing, unless `WALLET_SERVICE_URI` is set) |
 | `PAYMENT_SERVICE_PORT` | `8082` | Payment (listen port), Gateway (routing, unless `PAYMENT_SERVICE_URI` is set), Wallet (calls it, unless `WALLET_PAYMENT_BASE_URL` is set) |
-| `WALLET_SERVICE_ADDRESS` / `PAYMENT_SERVICE_ADDRESS` | `127.0.0.1` / `127.0.0.1` | Wallet, Payment: the interface each binds to. Loopback keeps their unauthenticated API and actuator off the LAN when run directly on a host; a container image sets these to `0.0.0.0` so the service is still reachable from other containers. The gateway is the intended public entry point and keeps listening on every interface |
+| `GATEWAY_ADDRESS` / `WALLET_SERVICE_ADDRESS` / `PAYMENT_SERVICE_ADDRESS` | `127.0.0.1` each | Gateway, Wallet, Payment: the interface each binds to. Loopback keeps their unauthenticated API and actuator off the LAN when run directly on a host; a container has to set these to `0.0.0.0` so the service is still reachable from other containers. The gateway logs a WARN at startup when it listens beyond loopback, because it must then sit behind an authentication layer that sets `X-User-Id` ([ADR 0031](adr/0031-callers-are-authenticated-in-front-of-the-gateway.md)) |
 | `GATEWAY_HTTPCLIENT_RESPONSE_TIMEOUT` / `_CONNECT_TIMEOUT_MS` | `20s` / `2000` | Gateway: how long it waits for an upstream response and a connection, before the elastic Netty pool would otherwise wait forever. `20s` sits above the wallet's own worst case for a deposit call to Payment Service (`WALLET_PAYMENT_CONNECT_TIMEOUT` + `WALLET_PAYMENT_READ_TIMEOUT`, `2s` + `10s`), so that timeout fires first in the ordinary case |
 | `DB_HOST` / `DB_PORT` | `localhost` / `5432` | Payment, Wallet; `DB_PORT` is also the host port Compose publishes Postgres on |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` | `flowadmin` / `flowsecret` | Payment, Wallet and Docker Compose |
@@ -172,29 +172,30 @@ than replicas. A missing webhook secret doesn't stop it starting; it only disabl
 
 ## Testing
 
-There are 558 tests, all green: 255 in the payment service, 258 in the wallet service, 44 in platform and 1 in the
-gateway (it binds the gateway's own `application.yml` into Spring Cloud Gateway's `HttpClientProperties`, so a YAML
-regression that drops the response or connect timeout fails here rather than in a live request left waiting). The rest
-go after the parts most likely to be wrong rather than the ones easiest to reach. That means the asymmetric webhook
-state machine (a later failure must not undo an earlier success, but a later success must override an earlier failure),
-the outbox's claim, retry and backoff boundaries, Stripe signature verification against payloads signed with a real
-secret (placeholder secrets and malformed headers refused, nothing parsed before the check), the webhook size cap, the
-check of a success against the stored amount and currency, the RFC 9457 status mapping (a database the service cannot
-reach answers `503`, any other data access failure `500`, and no detail quotes a rejected currency, provider,
-transaction reference or parameter value), the minor-unit conversion that decides how much money actually leaves a card,
-the currencies Stripe charges and its minimum charges checked before a row is reserved, a Stripe refusal told apart from
-a failure (400 against 502) and the wallet's three kinds of 502, a deposit that loses the reservation to its own twin, a
-second recording of the same Stripe answer, the Stripe call's timeouts and retries, the optimistic-lock retry on both
-webhook paths, the field names of the internal intent call on both sides of it, the identity and idempotency-key rules,
-and a log line never naming a user id or a Stripe refusal repeating its stack trace after the handler already logged it.
-Against each service's shipped `application.yml` they check that the datasource URL keeps Postgres' error detail out of
-exception messages and that a request waits at most five seconds for a pooled connection. For the wallet consumer they
-cover dispatch on the `eventType` header, dead-lettering of unreadable records, refusals (an event amount off its
-currency's grid among them), duplicate classification (by the `DEPOSIT` entry alone, since one reference can own one
-movement of each type), the barrier row being written before the wallet is loaded, failed payments never touching a
-wallet (a redelivered failure is acknowledged, any other violation is raised), and the error handler (an unreadable
-record dead-lettered at once, any other failure only after its retries, each dead letter counted, and the dead-letter
-topic created with unlimited retention).
+There are 566 tests, all green: 255 in the payment service, 258 in the wallet service, 44 in platform and 9 in the
+gateway. The gateway's tests bind its own `application.yml`, so a YAML regression that drops the response or connect
+timeout, or binds the gateway beyond loopback, fails there rather than in a live request; they also check that
+`BindAddressCheck` runs when the application is ready, warns for `0.0.0.0`, a LAN address and no address at all, and
+stays quiet for loopback. The rest go after the parts most likely to be wrong rather than the ones easiest to reach.
+That means the asymmetric webhook state machine (a later failure must not undo an earlier success, but a later success
+must override an earlier failure), the outbox's claim, retry and backoff boundaries, Stripe signature verification
+against payloads signed with a real secret (placeholder secrets and malformed headers refused, nothing parsed before the
+check), the webhook size cap, the check of a success against the stored amount and currency, the RFC 9457 status mapping
+(a database the service cannot reach answers `503`, any other data access failure `500`, and no detail quotes a rejected
+currency, provider, transaction reference or parameter value), the minor-unit conversion that decides how much money
+actually leaves a card, the currencies Stripe charges and its minimum charges checked before a row is reserved, a Stripe
+refusal told apart from a failure (400 against 502) and the wallet's three kinds of 502, a deposit that loses the
+reservation to its own twin, a second recording of the same Stripe answer, the Stripe call's timeouts and retries, the
+optimistic-lock retry on both webhook paths, the field names of the internal intent call on both sides of it, the
+identity and idempotency-key rules, and a log line never naming a user id or a Stripe refusal repeating its stack trace
+after the handler already logged it. Against each service's shipped `application.yml` they check that the datasource URL
+keeps Postgres' error detail out of exception messages and that a request waits at most five seconds for a pooled
+connection. For the wallet consumer they cover dispatch on the `eventType` header, dead-lettering of unreadable records,
+refusals (an event amount off its currency's grid among them), duplicate classification (by the `DEPOSIT` entry alone,
+since one reference can own one movement of each type), the barrier row being written before the wallet is loaded,
+failed payments never touching a wallet (a redelivered failure is acknowledged, any other violation is raised), and the
+error handler (an unreadable record dead-lettered at once, any other failure only after its retries, each dead letter
+counted, and the dead-letter topic created with unlimited retention).
 
 For transfers they cover the lock order in both directions, the key judged only after both locks, and no other wallet
 read in the transaction. With the sender sorting first and last, they cover a retry that still gets its receipt after

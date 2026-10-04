@@ -22,7 +22,7 @@ Service but only the webhook path of Payment Service.
 ```mermaid
 flowchart LR
     Client([Client])
-    GW["API Gateway<br/>(:8080, reactive)<br/>authentication: not yet"]
+    GW["API Gateway<br/>(:8080, reactive)<br/>loopback by default"]
     WS["Wallet Service<br/>(:8081)"]
     PS["Payment Service<br/>(:8082)"]
     Stripe([Stripe API])
@@ -330,11 +330,16 @@ comes back before the gateway's 20 s response timeout would answer `504`
 
 - User identity travels between services in the `X-User-Id` HTTP header and reaches controllers through the
   `@CurrentUserId` argument resolver, which `flow-wallet-platform` registers for servlet services.
-- Authentication isn't implemented yet. The plan is for the API gateway to authenticate the caller (with
-  Spring Security) and set `X-User-Id`, and the services trust that header. Nothing validates a token today.
+- FlowWallet doesn't authenticate the caller. An authentication layer in front of the gateway is meant to: it
+  authenticates the caller, sets `X-User-Id` and removes any value the client sent, and the services trust that
+  header. The gateway listens on
+  `127.0.0.1` by default (`GATEWAY_ADDRESS`) and logs a WARN at startup when it listens wider
+  ([ADR 0031](docs/adr/0031-callers-are-authenticated-in-front-of-the-gateway.md)).
 - That makes the network the trust boundary. The wallet and payment services read the header, the gateway
   doesn't, so the header must only be able to come from trusted parties. The gateway should be reachable
-  only through authentication, Wallet Service only from the gateway, and Payment Service only from the
+  only through authentication, except `/api/payments/webhooks/**`, which Stripe's signature protects
+  ([ADR 0017](docs/adr/0017-webhooks-verified-before-they-are-read.md)), Wallet Service only from the gateway, and
+  Payment Service only from the
   gateway (for Stripe webhooks) and from Wallet Service (which forwards `X-User-Id` when it starts a
   payment). In a cluster, neither service gets a public route.
 - `X-User-Id` must be a random-based UUID, version 4 or 7, and the resolver enforces it. An identity has to
@@ -348,7 +353,8 @@ comes back before the gateway's 20 s response timeout would answer `504`
 - While `X-User-Id` is unauthenticated, it is the only credential. Transfers move money out of a wallet, so
   anyone who can reach Wallet Service and knows a user's id can spend that user's balance. Every transfer
   also hands its recipient the sender's id. The network boundary described above is what is meant to prevent
-  this, and nothing enforces it yet.
+  this: each service binds to loopback by default, and a deployment that binds wider has to provide the boundary
+  itself. Only the gateway warns when it does.
 - There is no way to search for users, by design. A transfer names its recipient by user id, and you know
   someone's id because they shared it with you.
 - Each side of a transfer sees the other's user id. The recipient's `TRANSFER_IN` entry shows the sender's id

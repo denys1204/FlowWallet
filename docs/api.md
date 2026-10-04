@@ -10,6 +10,15 @@ wallet and payment services share. For how the services fit together, see
 
 The base URL through the gateway is `http://localhost:8080`. Every wallet endpoint needs `X-User-Id`.
 
+### Authentication
+
+FlowWallet does not authenticate callers. The caller's identity is the `X-User-Id` header, a version 4 or 7 UUID, and
+the services take it on trust ([ADR 0003](adr/0003-caller-identity-and-trust-boundary.md)). In a deployment, an
+authentication layer in front of the gateway authenticates the caller, sets `X-User-Id` and removes any value the client
+sent. The gateway forwards the header unchanged and listens on `127.0.0.1` by default (`GATEWAY_ADDRESS`), so without
+that layer only clients on the same machine reach it, and they send `X-User-Id` themselves. Stripe's webhooks are
+authenticated by their signature instead ([ADR 0031](adr/0031-callers-are-authenticated-in-front-of-the-gateway.md)).
+
 ### Wallet Service
 
 A wallet is addressed by its ISO 4217 currency and never by an id. A user holds at most one wallet per

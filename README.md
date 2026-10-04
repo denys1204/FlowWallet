@@ -49,7 +49,7 @@ confirms the payment.
 ```mermaid
 flowchart LR
     Client([Client])
-    GW["API Gateway<br/>(:8080, reactive)<br/>authentication: not yet"]
+    GW["API Gateway<br/>(:8080, reactive)<br/>loopback by default"]
     WS["Wallet Service<br/>(:8081)"]
     PS["Payment Service<br/>(:8082)"]
     Stripe([Stripe API])
@@ -139,6 +139,10 @@ Run all three services, each in its own terminal:
 ./mvnw -pl flow-wallet-payment spring-boot:run
 ./mvnw -pl flow-wallet-service spring-boot:run
 ```
+
+The gateway listens on `127.0.0.1` by default. It forwards `X-User-Id` as the client sent it, so it may listen wider
+(`GATEWAY_ADDRESS`) only behind an authentication layer that sets the header
+([ADR 0031](docs/adr/0031-callers-are-authenticated-in-front-of-the-gateway.md)).
 
 Forward Stripe webhooks:
 

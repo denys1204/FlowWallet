@@ -6,13 +6,15 @@ other operational behaviour are described in [ARCHITECTURE.md](../ARCHITECTURE.m
 
 ## Users and identity
 
-- Every wallet request acts as the user named in the `X-User-Id` header, a version 4 or 7 UUID. Nothing in
-  this repository authenticates the caller yet: the gateway forwards the header as the client sent it.
+- Every wallet request acts as the user named in the `X-User-Id` header, a version 4 or 7 UUID. FlowWallet
+  does not authenticate the caller: an authentication layer in front of the gateway sets the header. By
+  default the gateway listens only on its own machine.
 - No request names an owner, so a user can act only on their own wallets.
 - The wallet keeps no list of users. A sender gets the recipient's user id from the recipient.
 
 Details: [identity and security model](../ARCHITECTURE.md#identity--security-model). Reasoning:
-[ADR 0003](adr/0003-caller-identity-and-trust-boundary.md).
+[ADR 0003](adr/0003-caller-identity-and-trust-boundary.md),
+[ADR 0031](adr/0031-callers-are-authenticated-in-front-of-the-gateway.md).
 
 ## Wallets
 

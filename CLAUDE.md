@@ -80,12 +80,14 @@ Each invariant here is stated once and links the ADR that holds its reasoning.
   ([ADR 0022](docs/adr/0022-stripe-charge-rules-checked-before-the-reservation.md)). In the wallet ledger one
   reference can own several rows, so every `balance_history` lookup by reference names its type
   ([ADR 0012](docs/adr/0012-balances-and-append-only-ledger.md)).
-- `X-User-Id` must be a UUID version 4 or 7 (enforced in `CurrentUserIdResolver`) and is case-folded; a
-  transfer's `to` is checked with the same expression (`CurrentUserIdResolver.RANDOM_UUID_REGEX` in
-  `TransferRequest`). Services take it on trust and it is unauthenticated: the gateway has no filters and
-  forwards the client's header unchanged, so knowing a user's id is enough to spend their balance. Every
-  `TRANSFER_IN` shows the recipient the sender's id and key, and there is no user search endpoint by design
-  ([ADR 0003](docs/adr/0003-caller-identity-and-trust-boundary.md)).
+- `X-User-Id` must be a UUID version 4 or 7 (enforced in `CurrentUserIdResolver`) and is case-folded; a transfer's `to`
+  is checked with the same expression (`CurrentUserIdResolver.RANDOM_UUID_REGEX` in `TransferRequest`). Services take it
+  on trust and it is unauthenticated: the gateway has no filters and forwards the client's header unchanged, so knowing
+  a user's id is enough to spend their balance. An authentication layer in front of the gateway is meant to set it; the
+  gateway listens on loopback by default (`GATEWAY_ADDRESS`) and logs a startup WARN when it does not. Every
+  `TRANSFER_IN` shows the recipient the sender's id and key, and there is no user search endpoint by design ([ADR
+  0003](docs/adr/0003-caller-identity-and-trust-boundary.md), [ADR
+  0031](docs/adr/0031-callers-are-authenticated-in-front-of-the-gateway.md)).
 - A user id never appears in a log line, an exception message or Stripe metadata: a wallet-scoped line names the
   wallet id, a payment-scoped line the `transactionReference`, and the JDBC URLs turn off Postgres error detail,
   which would quote key values ([ADR 0027](docs/adr/0027-user-ids-stay-out-of-logs-and-provider-metadata.md)).

@@ -10,7 +10,7 @@ decision unchanged, such as a renamed class, is edited in place.
 | --- | --- | --- |
 | [0001](0001-record-architecture-decisions.md) | Record architecture decisions | Accepted, CLAUDE.md home of commands and conventions superseded by [0029](0029-working-rules-live-in-contributing.md) |
 | [0002](0002-module-boundaries.md) | Services share only a platform module and a wire contract | Accepted |
-| [0003](0003-caller-identity-and-trust-boundary.md) | The caller is an opaque X-User-Id taken on trust behind a network boundary | Accepted, extended by [0027](0027-user-ids-stay-out-of-logs-and-provider-metadata.md) |
+| [0003](0003-caller-identity-and-trust-boundary.md) | The caller is an opaque X-User-Id taken on trust behind a network boundary | Accepted, extended by [0027](0027-user-ids-stay-out-of-logs-and-provider-metadata.md), intended authentication model superseded by [0031](0031-callers-are-authenticated-in-front-of-the-gateway.md) |
 | [0004](0004-wallet-addressed-by-owner-and-currency.md) | A wallet is addressed by owner and currency and opened only on request | Accepted |
 | [0005](0005-client-supplied-idempotency-keys.md) | A client-supplied Idempotency-Key binds the terms of one money operation | Accepted, extended by [0022](0022-stripe-charge-rules-checked-before-the-reservation.md) and [0025](0025-unreachable-database-answers-503.md), concurrent-reservation consequence superseded by [0024](0024-deposit-initiation-settles-its-own-races.md) |
 | [0006](0006-short-transactions-across-bean-boundaries.md) | Transactions are short, database-only and entered across a bean boundary | Accepted |
@@ -38,3 +38,4 @@ decision unchanged, such as a renamed class, is edited in place.
 | [0028](0028-deposits-accept-cards-only.md) | Deposits accept cards only, from a payment-method list in configuration | Accepted, extends [0013](0013-deposit-initiation.md) |
 | [0029](0029-working-rules-live-in-contributing.md) | Working rules live in CONTRIBUTING.md, which CLAUDE.md imports | Accepted, supersedes the CLAUDE.md home of commands and conventions in [0001](0001-record-architecture-decisions.md) |
 | [0030](0030-amounts-in-responses-are-decimal-strings.md) | Amounts in responses are decimal strings at the currency's scale | Accepted, extends [0015](0015-currency-precision-and-no-rounding.md), supersedes the response scale of [0014](0014-transfers-in-one-local-transaction.md) and [0015](0015-currency-precision-and-no-rounding.md) |
+| [0031](0031-callers-are-authenticated-in-front-of-the-gateway.md) | Callers are authenticated in front of the gateway, which listens on loopback by default | Accepted, supersedes the intended authentication model of [0003](0003-caller-identity-and-trust-boundary.md) |
