@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -35,6 +36,7 @@ import static org.mockito.Mockito.when;
  */
 class PaymentTransactionHandlerTest {
     private static final Instant OCCURRED_AT = Instant.parse("2026-01-01T00:00:00Z");
+    private static final String REASON = "Payment failed via webhook";
 
     private PaymentTransactionRepository repository;
     private PaymentOutboxService outboxService;
@@ -54,7 +56,7 @@ class PaymentTransactionHandlerTest {
         when(repository.existsByProviderEventId("evt_fail")).thenReturn(false);
         when(repository.findByProviderTransactionId("pi_123")).thenReturn(Optional.of(tx));
 
-        handler.handleFailure(failure("pi_123", "evt_fail"));
+        handler.handleFailure(failure("pi_123", "evt_fail"), REASON);
 
         assertThat(tx.getStatus()).isEqualTo(TransactionStatus.SUCCESS);
         verify(repository, never()).save(any());
@@ -68,7 +70,7 @@ class PaymentTransactionHandlerTest {
         when(repository.existsByProviderEventId("evt_fail_2")).thenReturn(false);
         when(repository.findByProviderTransactionId("pi_123")).thenReturn(Optional.of(tx));
 
-        handler.handleFailure(failure("pi_123", "evt_fail_2"));
+        handler.handleFailure(failure("pi_123", "evt_fail_2"), REASON);
 
         assertThat(tx.getStatus()).isEqualTo(TransactionStatus.FAILED);
         verify(repository, never()).save(any());
@@ -82,11 +84,11 @@ class PaymentTransactionHandlerTest {
         when(repository.existsByProviderEventId("evt_fail")).thenReturn(false);
         when(repository.findByProviderTransactionId("pi_123")).thenReturn(Optional.of(tx));
 
-        handler.handleFailure(failure("pi_123", "evt_fail"));
+        handler.handleFailure(failure("pi_123", "evt_fail"), REASON);
 
         assertThat(tx.getStatus()).isEqualTo(TransactionStatus.FAILED);
         verify(repository).save(tx);
-        verify(outboxService).publishPaymentFailed(tx, "Payment failed via webhook", OCCURRED_AT);
+        verify(outboxService).publishPaymentFailed(tx, REASON, OCCURRED_AT);
     }
 
     @Test
@@ -161,7 +163,8 @@ class PaymentTransactionHandlerTest {
         when(repository.existsByProviderEventId("evt_fail")).thenReturn(false);
         when(repository.findByProviderTransactionId("pi_missing")).thenReturn(Optional.empty());
 
-        assertThatCode(() -> handler.handleFailure(failure("pi_missing", "evt_fail"))).doesNotThrowAnyException();
+        assertThatCode(() -> handler.handleFailure(failure("pi_missing", "evt_fail"), REASON))
+                .doesNotThrowAnyException();
         verify(repository, never()).save(any());
         verify(outboxService, never()).publishPaymentFailed(any(), anyString(), any());
     }
@@ -193,7 +196,7 @@ class PaymentTransactionHandlerTest {
                 OCCURRED_AT
         );
 
-        assertThatCode(() -> handler.handleSuccess(result)).doesNotThrowAnyException();
+        assertThat(handler.handleSuccess(result)).isFalse();
 
         assertThat(tx.getStatus()).isEqualTo(TransactionStatus.PENDING);
         assertThat(tx.getProviderEventId()).isNull();
@@ -224,18 +227,56 @@ class PaymentTransactionHandlerTest {
 
     @ParameterizedTest(name = "{0} retries on an optimistic-lock conflict inside its own transaction")
     @ValueSource(strings = {"handleSuccess", "handleFailure"})
-    void bothWebhookPathsRetryAnOptimisticLockConflict(String method) throws NoSuchMethodException {
+    void bothWebhookPathsRetryAnOptimisticLockConflict(String method) {
         // Guards the retry being dropped or narrowed. Two webhooks for one transaction collide on @Version, and
         // without the retry the loser answers 500, so Stripe redelivers an event that a second attempt would
         // have applied at once. @Transactional must sit on the same method, so each attempt gets a fresh
         // transaction and reads the winner's row.
-        Method handler = PaymentTransactionHandler.class.getMethod(method, WebhookResult.class);
+        Method handler = Arrays.stream(PaymentTransactionHandler.class.getMethods())
+                .filter(candidate -> candidate.getName().equals(method))
+                .findFirst()
+                .orElseThrow();
 
         Retryable retryable = AnnotatedElementUtils.findMergedAnnotation(handler, Retryable.class);
         assertThat(retryable).isNotNull();
         assertThat(retryable.retryFor()).containsExactly(ObjectOptimisticLockingFailureException.class);
         assertThat(retryable.maxAttemptsExpression()).isEqualTo("${payment.retry.optimistic-lock.max-attempts:3}");
         assertThat(AnnotatedElementUtils.findMergedAnnotation(handler, Transactional.class)).isNotNull();
+    }
+
+    @Test
+    void eachHandlerReportsWhetherItChangedThePayment() {
+        // Guards the reconciler's count of payments it completed, which trusts these answers: true only when the
+        // row moved and its event was written, false for a repeat, an event already seen or an unknown intent.
+        PaymentTransaction paid = transactionWith(TransactionStatus.PENDING);
+        PaymentTransaction declined = transactionWith(TransactionStatus.PENDING);
+        PaymentTransaction untouched = transactionWith(TransactionStatus.PENDING);
+        when(repository.findByProviderTransactionId("pi_123")).thenReturn(Optional.of(paid));
+        when(repository.findByProviderTransactionId("pi_456")).thenReturn(Optional.of(declined));
+        when(repository.findByProviderTransactionId("pi_789")).thenReturn(Optional.of(untouched));
+        when(repository.findByProviderTransactionId("pi_missing")).thenReturn(Optional.empty());
+        when(repository.existsByProviderEventId("evt_seen")).thenReturn(true);
+
+        assertThat(handler.handleSuccess(success("pi_123", "evt_ok"))).isTrue();
+        assertThat(handler.handleSuccess(success("pi_123", "evt_ok_again"))).isFalse();
+        assertThat(handler.handleFailure(failure("pi_456", "evt_fail"), REASON)).isTrue();
+        assertThat(handler.handleFailure(failure("pi_456", "evt_fail_again"), REASON)).isFalse();
+        assertThat(handler.handleSuccess(success("pi_missing", "evt_other"))).isFalse();
+        // A PENDING row, so only the event-id check can answer false here.
+        assertThat(handler.handleSuccess(success("pi_789", "evt_seen"))).isFalse();
+        assertThat(untouched.getStatus()).isEqualTo(TransactionStatus.PENDING);
+    }
+
+    @Test
+    void theFailureReasonIsTheCallersOwn() {
+        // Guards every failure being published as a webhook failure: the reconciler reports a canceled intent,
+        // and the event must say so.
+        PaymentTransaction tx = transactionWith(TransactionStatus.PENDING);
+        when(repository.findByProviderTransactionId("pi_123")).thenReturn(Optional.of(tx));
+
+        handler.handleFailure(failure("pi_123", "reconcile:pi_123"), "Payment canceled at the provider");
+
+        verify(outboxService).publishPaymentFailed(tx, "Payment canceled at the provider", OCCURRED_AT);
     }
 
     private static WebhookResult success(String providerTransactionId, String providerEventId) {

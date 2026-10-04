@@ -33,4 +33,16 @@ public interface PaymentProviderStrategy {
      * @return the classified event, or {@link WebhookResult#unknown()} for one this service ignores
      */
     WebhookResult handleWebhook(String payload, Map<String, String> headers);
+
+    /**
+     * Asks the provider where a payment stands, for a payment whose webhook may never have arrived. The answer is
+     * shaped like a webhook's, so the caller applies it through the same handler and the same checks.
+     * See docs/adr/0032-pending-payments-are-rechecked-with-the-provider.md.
+     *
+     * @param providerTransactionId the provider's id for the payment, recorded when it was initiated
+     * @return a success or a failure the provider has settled, or {@link WebhookResult#unknown()} while the
+     *         customer can still pay
+     * @throws com.flowwallet.payment.provider.exception.PaymentLookupException if the provider cannot be asked
+     */
+    WebhookResult checkPayment(String providerTransactionId);
 }

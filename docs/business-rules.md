@@ -124,8 +124,9 @@ Details: [data model](data-model.md), [API reference](api.md#wallet-service). Re
 
 ## Payment outcomes
 
-- Only a webhook signed with the configured Stripe signing secret can change a payment. Until that secret is
-  set, every webhook is refused and no deposit is credited.
+- A payment changes only on Stripe's word: a webhook signed with the configured Stripe signing secret, or
+  Stripe's own answer when Payment Service asks about a payment whose webhook has not arrived. Until the signing
+  secret is set, every webhook is refused.
 - Only two outcomes change a payment: the payment succeeded or it failed. Every other event, and every event
   about a payment FlowWallet did not start, is accepted and changes nothing.
 - The wallet credits the amount the deposit was started with. Stripe's figure is only compared with it: a
@@ -135,8 +136,10 @@ Details: [data model](data-model.md), [API reference](api.md#wallet-service). Re
   can retry the same payment.
 - A payment is credited at most once, however many times its events are delivered.
 - Because a failure moves no money, the order in which a payment's outcomes arrive does not matter.
-- Nothing expires or re-checks a pending payment. If Stripe's outcome never arrives, the deposit stays pending
-  and credits nothing until an operator steps in.
+- A deposit that is still pending, or that failed after a declined card, is checked with Stripe from 15 minutes
+  after it started until a day after, about every 15 minutes. A payment Stripe reports as succeeded is credited,
+  and one Stripe canceled fails; one that is not settled yet stays as it is. Nothing cancels a payment. A payment
+  that settles more than a day after it started and whose webhook is lost needs an operator.
 - An outcome the wallet cannot apply, such as a conflicting second completion for a payment already credited, a
   credit for a wallet it cannot find, or a credit whose amount is off its currency's grid, is recorded as
   rejected with its payload and changes no balance. Only an operator can act on it, by sending the payment again
@@ -145,4 +148,5 @@ Details: [data model](data-model.md), [API reference](api.md#wallet-service). Re
 Details: [webhooks](api.md#provider-webhook), [the wallet consumer](../ARCHITECTURE.md#the-wallet-consumer),
 [events](events.md). Reasoning: [ADR 0017](adr/0017-webhooks-verified-before-they-are-read.md),
 [ADR 0009](adr/0009-payment-event-contract.md), [ADR 0010](adr/0010-idempotent-payment-event-consumer.md),
-[ADR 0019](adr/0019-payment-event-amounts-on-the-grid.md).
+[ADR 0019](adr/0019-payment-event-amounts-on-the-grid.md),
+[ADR 0032](adr/0032-pending-payments-are-rechecked-with-the-provider.md).

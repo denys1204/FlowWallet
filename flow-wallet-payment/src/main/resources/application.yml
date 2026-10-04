@@ -19,6 +19,12 @@ spring:
       - optional:file:../.env[.properties]
   application:
     name: flow-wallet-payment
+  task:
+    scheduling:
+      pool:
+        # One thread per scheduled job (outbox poller, reaper, cleanup, reconciler), so a slow provider call in the
+        # reconciler never holds back the outbox. Boot's default is a single thread for all of them.
+        size: 4
   servlet:
     multipart:
       # Nothing here takes uploads. With a multipart resolver, DispatcherServlet reads and spools a multipart
@@ -98,6 +104,17 @@ payment:
     max-amount: ${PAYMENT_MAX_DEPOSIT_AMOUNT:10000.00}
   webhook:
     max-payload-size: ${PAYMENT_WEBHOOK_MAX_PAYLOAD_SIZE:256KB}
+  # Off only for a test that drives the scheduled steps itself; it stops the outbox poller, reaper and cleanup too.
+  scheduling:
+    enabled: ${PAYMENT_SCHEDULING_ENABLED:true}
+  # Re-checks deposits whose webhook may have been lost.
+  # See docs/adr/0032-pending-payments-are-rechecked-with-the-provider.md.
+  reconciliation:
+    enabled: ${PAYMENT_RECONCILIATION_ENABLED:true}
+    interval-ms: ${PAYMENT_RECONCILIATION_INTERVAL_MS:300000}
+    min-age: ${PAYMENT_RECONCILIATION_MIN_AGE:15m}
+    max-age: ${PAYMENT_RECONCILIATION_MAX_AGE:24h}
+    batch-size: ${PAYMENT_RECONCILIATION_BATCH_SIZE:50}
 
 outbox:
   poll-interval-ms: ${OUTBOX_POLL_INTERVAL_MS:10000}

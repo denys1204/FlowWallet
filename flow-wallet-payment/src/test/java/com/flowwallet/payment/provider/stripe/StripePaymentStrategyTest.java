@@ -9,6 +9,7 @@ import com.flowwallet.payment.provider.dto.PaymentRequestContext;
 import com.flowwallet.payment.provider.dto.WebhookEventType;
 import com.flowwallet.payment.provider.dto.WebhookResult;
 import com.flowwallet.payment.provider.exception.PaymentInitiationException;
+import com.flowwallet.payment.provider.exception.PaymentLookupException;
 import com.flowwallet.payment.provider.exception.PaymentRefusedException;
 import com.flowwallet.payment.provider.stripe.client.StripeClient;
 import com.flowwallet.payment.provider.stripe.mapper.StripeRequestMapper;
@@ -31,6 +32,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
@@ -280,6 +282,74 @@ class StripePaymentStrategyTest {
         WebhookResult result = strategy.handleWebhook("payload", Map.of());
 
         assertThat(result.eventType()).isEqualTo(WebhookEventType.UNKNOWN);
+    }
+
+    @Test
+    void aSucceededIntentIsReportedAsASuccessUnderTheReconcilersOwnEventId() throws Exception {
+        // Guards a reconciled success the handler cannot check: like a webhook's, it carries the intent's amount in
+        // major units and its currency in upper case, and its event id cannot collide with one of Stripe's evt_ ids
+        // in the unique provider_event_id column.
+        when(stripeClient.retrievePaymentIntent("pi_1")).thenReturn(paymentIntent("succeeded", 5000L, "usd"));
+
+        WebhookResult result = strategy.checkPayment("pi_1");
+
+        assertThat(result.eventType()).isEqualTo(WebhookEventType.PAYMENT_SUCCESS);
+        assertThat(result.providerTransactionId()).isEqualTo("pi_1");
+        assertThat(result.providerEventId()).isEqualTo("reconcile:pi_1");
+        assertThat(result.amount()).isEqualByComparingTo("50.00");
+        assertThat(result.currency()).isEqualTo("USD");
+        assertThat(result.occurredAt()).isNotNull();
+    }
+
+    @Test
+    void aCanceledIntentIsReportedAsAFailureAtTheTimeStripeCanceledIt() throws Exception {
+        // Guards a canceled intent, which can never be paid, staying PENDING until it ages out of the window.
+        PaymentIntent canceled = paymentIntent("canceled", 5000L, "usd");
+        canceled.setCanceledAt(CREATED.getEpochSecond());
+        when(stripeClient.retrievePaymentIntent("pi_1")).thenReturn(canceled);
+
+        WebhookResult result = strategy.checkPayment("pi_1");
+
+        assertThat(result.eventType()).isEqualTo(WebhookEventType.PAYMENT_FAILURE);
+        assertThat(result.providerEventId()).isEqualTo("reconcile:pi_1");
+        assertThat(result.occurredAt()).isEqualTo(CREATED);
+    }
+
+    @ParameterizedTest(name = "an intent in {0} is left as it is")
+    @ValueSource(strings = {"requires_payment_method", "requires_confirmation", "requires_action", "processing"})
+    void anIntentTheCustomerCanStillPayIsLeftAsItIs(String status) throws Exception {
+        // Guards the reconciler settling a payment the customer can still complete, a declined card included.
+        when(stripeClient.retrievePaymentIntent("pi_1")).thenReturn(paymentIntent(status, 5000L, "usd"));
+
+        assertThat(strategy.checkPayment("pi_1")).isEqualTo(WebhookResult.unknown());
+        assertThat(logs.list).isEmpty();
+    }
+
+    @Test
+    void anIntentInAStatusNoDepositReachesIsLeftAsItIsAndLogged() throws Exception {
+        // requires_capture needs manual capture, which deposits never request. Guards it being taken as either
+        // outcome, and it going unnoticed.
+        when(stripeClient.retrievePaymentIntent("pi_1")).thenReturn(paymentIntent("requires_capture", 5000L, "usd"));
+
+        assertThat(strategy.checkPayment("pi_1")).isEqualTo(WebhookResult.unknown());
+        assertThat(logs.list).singleElement().satisfies(event -> {
+            assertThat(event.getLevel()).isEqualTo(Level.WARN);
+            assertThat(event.getFormattedMessage()).contains("pi_1", "requires_capture");
+        });
+    }
+
+    @Test
+    void aFailedLookupIsAPaymentLookupException() throws Exception {
+        // Guards a Stripe outage escaping as a checked exception the reconciler cannot count, or as a 5xx type
+        // meant for an HTTP caller, and a log line that cannot tell a bad key, a rate limit and an outage apart.
+        when(stripeClient.retrievePaymentIntent("pi_1")).thenThrow(new ApiConnectionException("connection reset"));
+
+        assertThatThrownBy(() -> strategy.checkPayment("pi_1"))
+                .isInstanceOf(PaymentLookupException.class)
+                .hasCauseInstanceOf(ApiConnectionException.class)
+                .hasMessageContaining("pi_1")
+                .hasMessageContaining("ApiConnectionException")
+                .hasMessageContaining("connection reset");
     }
 
     private PaymentRequestContext stripeCallFails(StripeException failure) throws StripeException {

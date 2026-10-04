@@ -7,6 +7,7 @@ import com.flowwallet.payment.provider.dto.PaymentRequestContext;
 import com.flowwallet.payment.provider.dto.WebhookEventType;
 import com.flowwallet.payment.provider.dto.WebhookResult;
 import com.flowwallet.payment.provider.exception.PaymentInitiationException;
+import com.flowwallet.payment.provider.exception.PaymentLookupException;
 import com.flowwallet.payment.provider.exception.PaymentRefusedException;
 import com.flowwallet.payment.provider.stripe.client.StripeClient;
 import com.flowwallet.payment.provider.stripe.mapper.StripeRequestMapper;
@@ -19,6 +20,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.Locale;
 import java.util.Map;
 
@@ -102,13 +104,62 @@ public class StripePaymentStrategy implements PaymentProviderStrategy {
             return WebhookResult.unknown();
         }
 
+        return resultFor(paymentIntent, eventType, event.eventId(), event.created());
+    }
+
+    /**
+     * Maps the intent's current status. A canceled intent can never be paid, so it counts as a failure. A status
+     * in which the customer can still pay leaves the payment as it is, and so does one this service does not
+     * expect, such as {@code requires_capture} with manual capture, which is logged.
+     * See docs/adr/0032-pending-payments-are-rechecked-with-the-provider.md.
+     */
+    @Override
+    public WebhookResult checkPayment(String providerTransactionId) {
+        PaymentIntent paymentIntent;
+        try {
+            paymentIntent = stripeClient.retrievePaymentIntent(providerTransactionId);
+        } catch (StripeException e) {
+            throw new PaymentLookupException(
+                    "Stripe could not be asked about %s: %s, status %s, %s".formatted(
+                            providerTransactionId,
+                            e.getClass().getSimpleName(),
+                            e.getStatusCode(),
+                            e.getMessage()
+                    ),
+                    e
+            );
+        }
+
+        String eventId = WebhookResult.RECONCILED_EVENT_PREFIX + paymentIntent.getId();
+        String status = paymentIntent.getStatus();
+        if (STATUS_SUCCEEDED.equals(status)) {
+            return resultFor(paymentIntent, WebhookEventType.PAYMENT_SUCCESS, eventId, Instant.now());
+        }
+        if (STATUS_CANCELED.equals(status)) {
+            Instant canceledAt = paymentIntent.getCanceledAt() == null
+                    ? Instant.now()
+                    : Instant.ofEpochSecond(paymentIntent.getCanceledAt());
+            return resultFor(paymentIntent, WebhookEventType.PAYMENT_FAILURE, eventId, canceledAt);
+        }
+        if (!STATUSES_NOT_SETTLED.contains(status)) {
+            log.warn("PaymentIntent {} is in status {}, which no deposit should reach", paymentIntent.getId(), status);
+        }
+        return WebhookResult.unknown();
+    }
+
+    private WebhookResult resultFor(
+            PaymentIntent paymentIntent,
+            WebhookEventType eventType,
+            String eventId,
+            Instant occurredAt
+    ) {
         return new WebhookResult(
                 paymentIntent.getId(),
-                event.eventId(),
+                eventId,
                 eventType,
                 majorUnitAmount(paymentIntent),
                 paymentIntent.getCurrency() == null ? null : paymentIntent.getCurrency().toUpperCase(Locale.ROOT),
-                event.created()
+                occurredAt
         );
     }
 

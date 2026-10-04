@@ -37,7 +37,7 @@ flowchart LR
     GW -->|/api/wallets/**| WS
     GW -->|/api/payments/webhooks/**| PS
     WS -->|POST /api/payments/intent<br/>direct HTTP, X-User-Id| PS
-    PS <-->|create PaymentIntent| Stripe
+    PS <-->|create / retrieve PaymentIntent| Stripe
     Stripe -->|webhook| GW
     PS -->|outbox → publish| T
     T -->|consume → credit / record failure| WS
@@ -160,6 +160,15 @@ the wallet stops waiting ([ADR 0024](docs/adr/0024-deposit-initiation-settles-it
 [ADR 0022](docs/adr/0022-stripe-charge-rules-checked-before-the-reservation.md) covers which refusals come
 before the reservation and how a refusal from Stripe itself is answered. The intent offers only the payment methods
 in `STRIPE_PAYMENT_METHOD_TYPES`, cards by default ([ADR 0028](docs/adr/0028-deposits-accept-cards-only.md)).
+
+The webhook is the usual way a payment settles, but not the only one. `PendingPaymentReconciler` runs every five
+minutes and asks Stripe about deposits that are still `PENDING`, or `FAILED` after a decline, 15 minutes to a day
+after they started. A succeeded intent is applied as a success and a canceled one as a failure, through the same
+`PaymentTransactionHandler` and checks as a webhook, so the wallet is credited even when the webhook is lost. Each
+row is claimed with a conditional update of `last_reconciled_at` before Stripe is called, so instances do not ask
+twice, and nothing is held open during the call. The reconciler never cancels an intent. Each payment it completes
+is logged at WARN, because it means a webhook was lost, and every outcome is counted in
+`payment.reconciliation.outcomes` ([ADR 0032](docs/adr/0032-pending-payments-are-rechecked-with-the-provider.md)).
 
 ## The Transactional Outbox
 

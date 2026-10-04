@@ -59,6 +59,14 @@ public class PaymentTransaction {
     @Column(name = "provider_metadata", columnDefinition = "jsonb")
     private java.util.Map<String, Object> providerMetadata;
 
+    /**
+     * When the reconciler last asked the provider about this payment. Only its conditional update writes the
+     * column, so a webhook that saves a copy of the row read earlier never moves it back.
+     * See docs/adr/0032-pending-payments-are-rechecked-with-the-provider.md.
+     */
+    @Column(name = "last_reconciled_at", insertable = false, updatable = false)
+    private Instant lastReconciledAt;
+
     @Version
     @Column(name = "version", nullable = false)
     private Long version;

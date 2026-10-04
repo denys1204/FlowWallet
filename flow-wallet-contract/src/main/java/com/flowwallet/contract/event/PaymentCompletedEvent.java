@@ -18,7 +18,8 @@ import java.time.Instant;
  * @param amount                amount in major currency units
  * @param currency              ISO 4217 code
  * @param userId                who paid; with {@code currency} this identifies the wallet to credit
- * @param completedAt           when the provider confirmed the payment
+ * @param completedAt           when the provider confirmed the payment; for a payment the reconciler settled, when
+ *                              the reconciler saw it succeed
  */
 public record PaymentCompletedEvent(
         String eventId,

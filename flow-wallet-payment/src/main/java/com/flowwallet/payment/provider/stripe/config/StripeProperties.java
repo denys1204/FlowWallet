@@ -94,8 +94,8 @@ public class StripeProperties {
         /**
          * How far a webhook's timestamp may be from ours before the signature is refused, in seconds. It is a
          * clock-skew allowance: set too small, a drifting host refuses genuine deliveries and their payments
-         * are not credited. stripe-java skips the replay check entirely for a value of zero or less, so one
-         * fails startup.
+         * wait for the reconciler. stripe-java skips the replay check entirely for a value of zero or less, so
+         * one fails startup.
          */
         @Positive(message = "stripe.webhook.tolerance-seconds must be greater than zero")
         private long toleranceSeconds = 300;

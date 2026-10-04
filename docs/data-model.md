@@ -12,8 +12,10 @@ events that connect these two databases.
 - `payment_transactions` holds `id`, `transaction_reference` (unique idempotency key), `provider_name`,
   `provider_transaction_id` (unique), `user_id`, `amount NUMERIC(19,4)`, `currency`,
   `status` (`PENDING`/`SUCCESS`/`FAILED`), `provider_event_id` (unique), `version` (optimistic lock),
-  `provider_metadata JSONB` and timestamps. The index behind the unique constraint on `provider_transaction_id`
-  serves the webhook's lookup by provider id.
+  `provider_metadata JSONB`, `last_reconciled_at` (when the reconciler last asked Stripe about the payment) and
+  timestamps. The index behind the unique constraint on `provider_transaction_id` serves the webhook's lookup by
+  provider id, and a partial index on `created_at` for initiated payments that have not succeeded serves the
+  reconciler's scan.
 - `outbox_events` holds `id`, `aggregate_type`, `aggregate_id`, `event_type`, `payload TEXT`, `status`,
   `retry_count`, `error_message` (the cause chain of the last failed send), `next_attempt_at` (backoff),
   `processing_started_at` (the claim time, set only while the row is `PROCESSING`; the reaper's age check and

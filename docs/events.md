@@ -51,7 +51,9 @@ can't be made additively. The contract's rules are in [ADR 0009](adr/0009-paymen
 
 `completedAt` and `failedAt` are the `created` time of the Stripe event that settled the payment, not the
 time Payment Service processed the webhook, so a delivery that Stripe retried hours later still carries the
-original time.
+original time. A payment the reconciler settled has no such event: its `completedAt` is when the reconciler saw it
+succeed, and its `failedAt` is when Stripe canceled the intent
+([ADR 0032](adr/0032-pending-payments-are-rechecked-with-the-provider.md)).
 
 Neither event names a wallet. A wallet is identified by its owner and its currency, which the events already
 carry ([ADR 0004](adr/0004-wallet-addressed-by-owner-and-currency.md)).

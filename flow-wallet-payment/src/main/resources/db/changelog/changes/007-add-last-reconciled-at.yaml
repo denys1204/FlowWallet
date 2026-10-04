@@ -1,0 +1,19 @@
+databaseChangeLog:
+  - changeSet:
+      id: 007-add-last-reconciled-at
+      author: flow-wallet
+      comment: >-
+        When the reconciler last asked the provider about a payment. Only its conditional update writes the
+        column, so it also serves as the claim between instances. The partial index serves the reconciler's scan,
+        which reads only initiated payments that have not succeeded.
+      changes:
+        - addColumn:
+            tableName: payment_transactions
+            columns:
+              - column:
+                  name: last_reconciled_at
+                  type: TIMESTAMP
+        - sql:
+            sql: >-
+              CREATE INDEX idx_payment_transactions_reconcilable ON payment_transactions (created_at)
+              WHERE provider_transaction_id IS NOT NULL AND status <> 'SUCCESS'

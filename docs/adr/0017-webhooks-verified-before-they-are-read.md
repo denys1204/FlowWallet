@@ -1,6 +1,7 @@
 # 0017. Webhooks are bounded and verified before they are read, and refused without a signing secret
 
-- Status: Accepted, extends [0016](0016-error-model-and-status-codes.md)
+- Status: Accepted, extends [0016](0016-error-model-and-status-codes.md), extended by
+  [0032](0032-pending-payments-are-rechecked-with-the-provider.md)
 - Date: 2026-09-27
 
 ## Context

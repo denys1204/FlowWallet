@@ -27,6 +27,13 @@ public class StripeClient {
     }
 
     /**
+     * Reads a PaymentIntent as Stripe holds it now. A read needs no idempotency key.
+     */
+    public PaymentIntent retrievePaymentIntent(String paymentIntentId) throws StripeException {
+        return PaymentIntent.retrieve(paymentIntentId, requestOptions(null));
+    }
+
+    /**
      * Sets the timeouts and retries on every call, so none of stripe-java's global defaults applies.
      * See docs/adr/0024-deposit-initiation-settles-its-own-races.md.
      */

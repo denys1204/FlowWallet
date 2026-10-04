@@ -43,7 +43,7 @@ class PaymentWebhookServiceTest {
         service.processWebhook("stripe", "payload", HEADERS);
 
         verify(transactionHandler).handleSuccess(result);
-        verify(transactionHandler, never()).handleFailure(any());
+        verify(transactionHandler, never()).handleFailure(any(), any());
     }
 
     @Test
@@ -54,7 +54,7 @@ class PaymentWebhookServiceTest {
 
         service.processWebhook("stripe", "payload", HEADERS);
 
-        verify(transactionHandler).handleFailure(result);
+        verify(transactionHandler).handleFailure(result, PaymentWebhookService.FAILURE_REASON);
         verify(transactionHandler, never()).handleSuccess(any());
     }
 

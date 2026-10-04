@@ -14,6 +14,11 @@ import java.util.Map;
 @Service
 @RequiredArgsConstructor
 public class PaymentWebhookService {
+    /**
+     * The reason a PaymentFailedEvent carries for a failure a webhook reported. Consumers do not branch on it.
+     */
+    static final String FAILURE_REASON = "Payment failed via webhook";
+
     private final PaymentTransactionHandler transactionHandler;
     private final PaymentProviderFactory factory;
 
@@ -24,7 +29,7 @@ public class PaymentWebhookService {
 
         switch (result.eventType()) {
             case PAYMENT_SUCCESS -> transactionHandler.handleSuccess(result);
-            case PAYMENT_FAILURE -> transactionHandler.handleFailure(result);
+            case PAYMENT_FAILURE -> transactionHandler.handleFailure(result, FAILURE_REASON);
             case UNKNOWN -> log.debug("Ignoring unknown webhook event: {}", result);
         }
     }

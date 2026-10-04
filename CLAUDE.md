@@ -37,7 +37,10 @@ In brief (the full flows are in `ARCHITECTURE.md`):
 - A deposit: `deposit/DepositService` checks the caller's wallet before anything is charged and calls payment
   directly on `:8082` through `PaymentIntentClient` ([ADR 0013](docs/adr/0013-deposit-initiation.md)); the
   signed Stripe webhook settles the payment and writes an `outbox_events` row in the same transaction
-  ([ADR 0008](docs/adr/0008-transactional-outbox.md)); `balance/PaymentEventListener` consumes `payment.events`
+  ([ADR 0008](docs/adr/0008-transactional-outbox.md)), and `PendingPaymentReconciler` applies Stripe's answer through
+  the same handler when the webhook is lost
+  ([ADR 0032](docs/adr/0032-pending-payments-are-rechecked-with-the-provider.md)); `balance/PaymentEventListener`
+  consumes `payment.events`
   and credits the wallet ([ADR 0010](docs/adr/0010-idempotent-payment-event-consumer.md)).
 - A transfer (`transfer/`) never leaves the wallet: one local transaction in `wallet_db`, with no payment
   service and no Kafka. `TransferService` is deliberately not `@Transactional`: it checks the request before
@@ -85,9 +88,9 @@ Each invariant here is stated once and links the ADR that holds its reasoning.
   on trust and it is unauthenticated: the gateway has no filters and forwards the client's header unchanged, so knowing
   a user's id is enough to spend their balance. An authentication layer in front of the gateway is meant to set it; the
   gateway listens on loopback by default (`GATEWAY_ADDRESS`) and logs a startup WARN when it does not. Every
-  `TRANSFER_IN` shows the recipient the sender's id and key, and there is no user search endpoint by design ([ADR
-  0003](docs/adr/0003-caller-identity-and-trust-boundary.md), [ADR
-  0031](docs/adr/0031-callers-are-authenticated-in-front-of-the-gateway.md)).
+  `TRANSFER_IN` shows the recipient the sender's id and key, and there is no user search endpoint by design
+  ([ADR 0003](docs/adr/0003-caller-identity-and-trust-boundary.md),
+  [ADR 0031](docs/adr/0031-callers-are-authenticated-in-front-of-the-gateway.md)).
 - A user id never appears in a log line, an exception message or Stripe metadata: a wallet-scoped line names the
   wallet id, a payment-scoped line the `transactionReference`, and the JDBC URLs turn off Postgres error detail,
   which would quote key values ([ADR 0027](docs/adr/0027-user-ids-stay-out-of-logs-and-provider-metadata.md)).
@@ -121,6 +124,10 @@ Each invariant here is stated once and links the ADR that holds its reasoning.
   webhook is refused. A success is applied only if the intent has succeeded and its amount and currency match
   the row
   ([ADR 0017](docs/adr/0017-webhooks-verified-before-they-are-read.md)).
+- The reconciler settles a payment only through `PaymentTransactionHandler`, the webhook's own checks and outbox
+  write; it claims a row with a conditional update of `last_reconciled_at` before calling Stripe, holds nothing open
+  during the call, and never cancels an intent
+  ([ADR 0032](docs/adr/0032-pending-payments-are-rechecked-with-the-provider.md)).
 - `FAILED` outbox rows are never deleted automatically; they are the dead-letter store
   ([ADR 0008](docs/adr/0008-transactional-outbox.md)).
 - A `PaymentFailedEvent` moves no money, which is why the consumer does not depend on event order

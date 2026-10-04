@@ -25,6 +25,10 @@ paths:
 - A deposit intent lists its payment methods (`stripe.payment-method-types`, cards only) instead of enabling
   automatic ones, so a server-side confirm needs no `return_url`
   ([ADR 0028](../../docs/adr/0028-deposits-accept-cards-only.md)).
+- `StripeClient` is the only class that calls Stripe, and every call goes through its `requestOptions`, so the
+  connect and read timeouts apply to reads such as the reconciler's as well; a read passes no idempotency key
+  ([ADR 0024](../../docs/adr/0024-deposit-initiation-settles-its-own-races.md),
+  [ADR 0032](../../docs/adr/0032-pending-payments-are-rechecked-with-the-provider.md)).
 - `StripeChargeLimits` (chargeable currencies, minimum charges) is a dated copy of Stripe's currency page, like
   the tables in `StripeCurrencyRules`; update the retrieval date with the lists. Only a 400
   `InvalidRequestException` or a 402 `CardException` from Stripe is a refusal (400); every other

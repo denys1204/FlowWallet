@@ -23,7 +23,7 @@ public class StripeConfig {
         if (!properties.getWebhook().hasSigningSecret()) {
             log.warn(
                     "Stripe webhooks are disabled: STRIPE_WEBHOOK_SECRET is not set to a signing secret (whsec_...), "
-                            + "so every webhook is refused with 400 and no payment is credited"
+                            + "so every webhook is refused with 400 and a paid deposit waits for the reconciler"
             );
         }
     }

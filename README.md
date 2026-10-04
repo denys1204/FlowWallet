@@ -64,7 +64,7 @@ flowchart LR
     GW -->|/api/wallets/**| WS
     GW -->|/api/payments/webhooks/**| PS
     WS -->|POST /api/payments/intent<br/>direct HTTP, X-User-Id| PS
-    PS <-->|create PaymentIntent| Stripe
+    PS <-->|create / retrieve PaymentIntent| Stripe
     Stripe -->|webhook| GW
     PS -->|outbox → publish| T
     T -->|consume → credit / record failure| WS
@@ -151,7 +151,8 @@ stripe listen --forward-to localhost:8080/api/payments/webhooks/stripe
 ```
 
 `stripe listen` prints a webhook signing secret (`whsec_...`). Put it in `STRIPE_WEBHOOK_SECRET` and restart
-Payment Service. Until you do, every webhook comes back `400` and nothing gets credited.
+Payment Service. Until you do, every webhook comes back `400`, and a deposit you pay is credited only when the
+reconciler finds it, 15 minutes or more later.
 
 See [docs/development.md](docs/development.md) for the full guide, configuration and testing.
 

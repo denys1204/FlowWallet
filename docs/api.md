@@ -176,7 +176,8 @@ the PaymentIntent's status is `succeeded` and its amount and currency match the 
 transaction is left as it is and Payment Service logs an ERROR.
 
 Until `STRIPE_WEBHOOK_SECRET` holds a real signing secret (`whsec_...`, not a placeholder), webhooks are
-disabled: every delivery gets `400` and nothing is credited.
+disabled: every delivery gets `400`, and a paid deposit is credited only when the reconciler finds it, 15 minutes or
+more after it started ([ADR 0032](adr/0032-pending-payments-are-rechecked-with-the-provider.md)).
 
 The status code of a webhook response is about delivery, not about the business outcome. `200` means
 received: the event was applied, was already processed, is of another type, concerns a PaymentIntent this

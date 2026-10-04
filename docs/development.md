@@ -80,11 +80,13 @@ unreachable, because they create their topics at startup. In separate terminals:
 stripe listen --forward-to localhost:8080/api/payments/webhooks/stripe
 ```
 
-When it starts, `stripe listen` prints a webhook signing secret (`whsec_...`) and signs every event it
-forwards with it. Put that value in `STRIPE_WEBHOOK_SECRET` and restart Payment Service. Until then webhooks
-are disabled: Payment Service logs a WARN at startup, refuses every webhook with `400` without checking it,
-and nothing gets credited. An empty value, a placeholder such as `whsec_dummy`, or anything that doesn't start
-with `whsec_` counts as unset ([ADR 0017](adr/0017-webhooks-verified-before-they-are-read.md)).
+When it starts, `stripe listen` prints a webhook signing secret (`whsec_...`) and signs every event it forwards with it.
+Put that value in `STRIPE_WEBHOOK_SECRET` and restart Payment Service. Until then webhooks are disabled: Payment Service
+logs a WARN at startup and refuses every webhook with `400` without checking it. A paid deposit is then credited only
+when the reconciler finds it, 15 minutes or more after it started
+([ADR 0032](adr/0032-pending-payments-are-rechecked-with-the-provider.md)). An empty value, a placeholder such as
+`whsec_dummy`, or anything that doesn't start with `whsec_` counts as unset
+([ADR 0017](adr/0017-webhooks-verified-before-they-are-read.md)).
 
 ### 6. Try a deposit
 
@@ -119,10 +121,11 @@ curl localhost:8080/api/wallets/USD/history -H "X-User-Id: $USER"
 
 ## Configuration
 
-Every setting except the webhook signing secret has a local default and can be overridden in `.env` or with
-an environment variable. The Stripe API key default (`sk_test_dummy`) only lets the services start, and
-`STRIPE_WEBHOOK_SECRET` has no default, so webhooks stay disabled until it is set: no payment works until you
-set real test values for both. `.env.example` has the full list with comments. The main ones:
+Every setting except the webhook signing secret has a local default and can be overridden in `.env` or with an
+environment variable. The Stripe API key default (`sk_test_dummy`) only lets the services start, and
+`STRIPE_WEBHOOK_SECRET` has no default, so webhooks stay disabled until it is set: no payment works without a real test
+API key, and without the signing secret a paid deposit waits for the reconciler. `.env.example` has the full list with
+comments. The main ones:
 
 | Variable | Default | Used by |
 |----------|---------|---------|
@@ -152,6 +155,8 @@ set real test values for both. `.env.example` has the full list with comments. T
 | `STRIPE_API_CONNECT_TIMEOUT` / `_READ_TIMEOUT` | `2s` / `6s` | Payment: how long a Stripe API call may take to connect and to answer |
 | `STRIPE_API_MAX_NETWORK_RETRIES` | `0` | Payment: how often stripe-java retries a failed call under the same idempotency key. Keep (1 + retries) × (connect + read), plus about 0.5s of backoff per retry, below `WALLET_PAYMENT_READ_TIMEOUT` |
 | `PAYMENT_WEBHOOK_MAX_PAYLOAD_SIZE` | `256KB` | Payment: a larger webhook body gets `413` |
+| `PAYMENT_RECONCILIATION_INTERVAL_MS` / `_MIN_AGE` / `_MAX_AGE` / `_BATCH_SIZE` | `300000` / `15m` / `24h` / `50` | Payment: how often the reconciler asks Stripe about deposits still pending or failed, from what age and until what age, and how many per run; `PAYMENT_RECONCILIATION_ENABLED` (`true`) turns it off ([ADR 0032](adr/0032-pending-payments-are-rechecked-with-the-provider.md)) |
+| `PAYMENT_SCHEDULING_ENABLED` | `true` | Payment: `false` stops every scheduled job, the outbox poller and the reconciler included; only for a test that drives those steps itself |
 | `PAYMENT_MIN_DEPOSIT_AMOUNT` / `PAYMENT_MAX_DEPOSIT_AMOUNT` | `1.00` / `10000.00` | Payment |
 | `OUTBOX_POLL_INTERVAL_MS` / `OUTBOX_BATCH_SIZE` | `10000` / `50` | Payment |
 | `OUTBOX_MAX_RETRIES` | `10` | Payment: send attempts, the first included, before a row becomes `FAILED`, with backoff from `OUTBOX_RETRY_BACKOFF_BASE_MS` (`1000`) doubling up to `_MAX_MS` (`60000`). The default spends about four minutes in backoff (1, 2, 4, 8, 16, 32 s, then 60 s three times); the poll interval and each send's wait on the broker (up to the producer's `max.block.ms`, 60 s by default, when it is unreachable) add to that |
@@ -167,12 +172,14 @@ Service timeout below 1ms, or a provider other than `STRIPE`. The payment servic
 is inverted, not positive, or too wide for `NUMERIC(19,4)`, a Stripe timeout below 1ms or a negative Stripe retry count,
 a webhook tolerance that isn't positive, a payment method list that is empty or names a method it doesn't know, a
 webhook size limit outside 1B to 16MB, an outbox batch size, attempt count, backoff, retention or stuck-processing
-threshold below 1, an outbox backoff base above its maximum, and a `payment.events` topic with more in-sync replicas
-than replicas. A missing webhook secret doesn't stop it starting; it only disables webhooks.
+threshold below 1, an outbox backoff base above its maximum, a reconciler interval below 1000 ms, a reconciler batch
+below 1, a reconciler `min-age` or `max-age` below 1s or a `min-age` that is not shorter than the `max-age`, and a
+`payment.events` topic with more in-sync replicas than replicas. A missing webhook secret doesn't stop it starting; it
+only disables webhooks.
 
 ## Testing
 
-There are 566 tests, all green: 255 in the payment service, 258 in the wallet service, 44 in platform and 9 in the
+There are 598 tests, all green: 287 in the payment service, 258 in the wallet service, 44 in platform and 9 in the
 gateway. The gateway's tests bind its own `application.yml`, so a YAML regression that drops the response or connect
 timeout, or binds the gateway beyond loopback, fails there rather than in a live request; they also check that
 `BindAddressCheck` runs when the application is ready, warns for `0.0.0.0`, a LAN address and no address at all, and
@@ -186,16 +193,18 @@ currency, provider, transaction reference or parameter value), the minor-unit co
 actually leaves a card, the currencies Stripe charges and its minimum charges checked before a row is reserved, a Stripe
 refusal told apart from a failure (400 against 502) and the wallet's three kinds of 502, a deposit that loses the
 reservation to its own twin, a second recording of the same Stripe answer, the Stripe call's timeouts and retries, the
-optimistic-lock retry on both webhook paths, the field names of the internal intent call on both sides of it, the
-identity and idempotency-key rules, and a log line never naming a user id or a Stripe refusal repeating its stack trace
-after the handler already logged it. Against each service's shipped `application.yml` they check that the datasource URL
-keeps Postgres' error detail out of exception messages and that a request waits at most five seconds for a pooled
-connection. For the wallet consumer they cover dispatch on the `eventType` header, dead-lettering of unreadable records,
-refusals (an event amount off its currency's grid among them), duplicate classification (by the `DEPOSIT` entry alone,
-since one reference can own one movement of each type), the barrier row being written before the wallet is loaded,
-failed payments never touching a wallet (a redelivered failure is acknowledged, any other violation is raised), and the
-error handler (an unreadable record dead-lettered at once, any other failure only after its retries, each dead letter
-counted, and the dead-letter topic created with unlimited retention).
+optimistic-lock retry on both webhook paths, the reconciler (each PaymentIntent status mapped, a row another instance
+claimed left alone, a run stopped after three failed lookups in a row, settings that cannot work refused, and the switch
+that turns scheduling off), the field names of the internal intent call on both sides of it, the identity and
+idempotency-key rules, and a log line never naming a user id or a Stripe refusal repeating its stack trace after the
+handler already logged it. Against each service's shipped `application.yml` they check that the datasource URL keeps
+Postgres' error detail out of exception messages and that a request waits at most five seconds for a pooled connection.
+For the wallet consumer they cover dispatch on the `eventType` header, dead-lettering of unreadable records, refusals
+(an event amount off its currency's grid among them), duplicate classification (by the `DEPOSIT` entry alone, since one
+reference can own one movement of each type), the barrier row being written before the wallet is loaded, failed payments
+never touching a wallet (a redelivered failure is acknowledged, any other violation is raised), and the error handler
+(an unreadable record dead-lettered at once, any other failure only after its retries, each dead letter counted, and the
+dead-letter topic created with unlimited retention).
 
 For transfers they cover the lock order in both directions, the key judged only after both locks, and no other wallet
 read in the transaction. With the sender sorting first and last, they cover a retry that still gets its receipt after
