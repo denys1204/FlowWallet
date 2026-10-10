@@ -1,12 +1,20 @@
-package com.flowwallet.payment.outbox;
+package com.flowwallet.outbox;
 
-import com.flowwallet.payment.config.OutboxProperties;
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.data.domain.Pageable;
+import org.springframework.scheduling.config.TaskManagementConfigUtils;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -22,6 +30,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class OutboxPollerTest {
+    private final Logger logger = (Logger) LoggerFactory.getLogger(OutboxPoller.class);
+    private final ListAppender<ILoggingEvent> logs = new ListAppender<>();
+
     private OutboxEventRepository repository;
     private OutboxMessageSender sender;
     private OutboxProperties properties;
@@ -33,6 +44,13 @@ class OutboxPollerTest {
         sender = mock(OutboxMessageSender.class);
         properties = new OutboxProperties();
         poller = new OutboxPoller(repository, sender, properties);
+        logs.start();
+        logger.addAppender(logs);
+    }
+
+    @AfterEach
+    void detachLogs() {
+        logger.detachAppender(logs);
     }
 
     @AfterEach
@@ -43,8 +61,8 @@ class OutboxPollerTest {
 
     @Test
     void cleanupDeletesOnlyCompletedRowsPastTheRetention() {
-        // A FAILED row is an event that never reached Kafka -- for a completed payment, a credit that never
-        // happened -- and it is the only record of it. The repository method can delete COMPLETED rows only.
+        // A FAILED row is an event that never reached Kafka, and it is the only record of it. The repository method
+        // can delete COMPLETED rows only.
         poller.cleanupOldEvents();
 
         ArgumentCaptor<Instant> cutoff = ArgumentCaptor.forClass(Instant.class);
@@ -80,7 +98,7 @@ class OutboxPollerTest {
 
     @Test
     void pollOutboxContinuesAfterAFailedAttempt() {
-        // One failing row must not block other payments' events.
+        // One failing row must not block other aggregates' events.
         givenDispatchable(event(1L), event(2L));
         doThrow(new OutboxMessageProcessingException("boom")).when(sender).processEvent(1L);
 
@@ -124,6 +142,35 @@ class OutboxPollerTest {
         verify(repository).resetAllProcessingToPending();
     }
 
+    @Test
+    void aServiceWithoutSchedulingIsWarnedThatFailedSendsAreNeverRetried() {
+        // Guards a service that adopts the module without enabling scheduling: the fast path hides the missing poller
+        // until a failed send stays PENDING, and the FAILED gauge never shows it.
+        poller.warnWhenNotScheduled(readyEvent(false));
+
+        assertThat(logs.list)
+                .filteredOn(line -> line.getLevel() == Level.WARN)
+                .extracting(ILoggingEvent::getFormattedMessage)
+                .singleElement()
+                .asString()
+                .contains("never retried");
+    }
+
+    @Test
+    void aScheduledServiceIsNotWarned() {
+        // Guards a warning on every start of a correctly set-up service, which teaches operators to ignore it.
+        poller.warnWhenNotScheduled(readyEvent(true));
+
+        assertThat(logs.list).noneMatch(line -> line.getLevel() == Level.WARN);
+    }
+
+    private static ApplicationReadyEvent readyEvent(boolean scheduled) {
+        ConfigurableApplicationContext context = mock(ConfigurableApplicationContext.class);
+        String processor = TaskManagementConfigUtils.SCHEDULED_ANNOTATION_PROCESSOR_BEAN_NAME;
+        when(context.containsBean(processor)).thenReturn(scheduled);
+        return new ApplicationReadyEvent(new SpringApplication(), new String[0], context, Duration.ZERO);
+    }
+
     private void givenDispatchable(OutboxEvent... events) {
         when(repository.findDispatchable(any(), any(Pageable.class))).thenReturn(List.of(events));
     }
@@ -131,9 +178,9 @@ class OutboxPollerTest {
     private OutboxEvent event(Long id) {
         return OutboxEvent.builder()
                 .id(id)
-                .aggregateType("PaymentTransaction")
+                .aggregateType("TestAggregate")
                 .aggregateId("ref-" + id)
-                .eventType("PaymentCompletedEvent")
+                .eventType("TestEvent")
                 .payload("{}")
                 .build();
     }

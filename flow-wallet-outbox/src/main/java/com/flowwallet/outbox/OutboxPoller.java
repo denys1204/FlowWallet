@@ -1,20 +1,18 @@
-package com.flowwallet.payment.outbox;
+package com.flowwallet.outbox;
 
-import com.flowwallet.payment.config.OutboxProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
-import org.springframework.stereotype.Component;
+import org.springframework.scheduling.config.TaskManagementConfigUtils;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 @Slf4j
-@Component
 @RequiredArgsConstructor
 public class OutboxPoller {
     private final OutboxEventRepository outboxEventRepository;
@@ -34,6 +32,24 @@ public class OutboxPoller {
 
         if (resetCount > 0) {
             log.info("Reset {} stuck outbox events from PROCESSING to PENDING on startup", resetCount);
+        }
+    }
+
+    /**
+     * The jobs below run only where the service enables scheduling. Without them the fast path still sends most
+     * rows, so nothing looks wrong, but a row whose first send failed stays PENDING for good and never reaches the
+     * FAILED count that {@code outbox.events.failed} reports.
+     * See docs/adr/0034-shared-outbox-and-the-wallet-withdrawals-command.md.
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    public void warnWhenNotScheduled(ApplicationReadyEvent event) {
+        boolean scheduled = event.getApplicationContext()
+                .containsBean(TaskManagementConfigUtils.SCHEDULED_ANNOTATION_PROCESSOR_BEAN_NAME);
+        if (!scheduled) {
+            log.warn(
+                    "Scheduling is off, so the outbox poller, reaper and cleanup do not run; a row the fast path "
+                            + "fails to send is never retried"
+            );
         }
     }
 
@@ -78,7 +94,7 @@ public class OutboxPoller {
             try {
                 outboxMessageSender.processEvent(event.getId());
             } catch (RuntimeException e) {
-                // Skip it, so one failing row cannot block other payments' events. Send order per reference is
+                // Skip it, so one failing row cannot block other aggregates' events. Send order per aggregate is
                 // therefore not guaranteed. See docs/adr/0008-transactional-outbox.md.
                 log.error("Fallback Poller: outbox event {} was not sent; moving on to the next", event.getId(), e);
             }
@@ -89,8 +105,8 @@ public class OutboxPoller {
     public void cleanupOldEvents() {
         Instant cutoff = Instant.now().minus(outboxProperties.getRetentionDays(), ChronoUnit.DAYS);
 
-        // COMPLETED only. A FAILED row is the only record of an event that never reached Kafka (for a completed
-        // payment, a credit that never happened), so it stays until an operator requeues it.
+        // COMPLETED only. A FAILED row is the only record of an event that never reached Kafka, so it stays until
+        // an operator requeues it.
         int deleted = outboxEventRepository.deleteCompletedBefore(cutoff);
 
         if (deleted > 0) {

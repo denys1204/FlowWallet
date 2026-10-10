@@ -1,4 +1,4 @@
-package com.flowwallet.payment.outbox;
+package com.flowwallet.outbox;
 
 public enum OutboxStatus {
     PENDING,

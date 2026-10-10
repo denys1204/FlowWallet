@@ -1,19 +1,18 @@
-package com.flowwallet.payment.config;
+package com.flowwallet.outbox;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.context.ConfigurationPropertiesAutoConfiguration;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.boot.validation.autoconfigure.ValidationAutoConfiguration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Four of these keys were absent from application.yml for a while, which meant the environment
- * variables documented for them did nothing at all — Spring binds what it recognises and says nothing
- * about the rest. A name that stops matching its field fails the same silent way, so it is worth a test
- * rather than a careful reading.
+ * Binds every documented key to its field. Spring binds what it recognises and says nothing about the rest, so a name
+ * that stops matching its field would silently turn its environment variable into a no-op.
  */
 class OutboxPropertiesTest {
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
@@ -21,7 +20,7 @@ class OutboxPropertiesTest {
                     ConfigurationPropertiesAutoConfiguration.class,
                     ValidationAutoConfiguration.class
             ))
-            .withUserConfiguration(OutboxProperties.class);
+            .withUserConfiguration(PropertiesConfig.class);
 
     @Test
     @DisplayName("every documented key reaches its field")
@@ -77,5 +76,9 @@ class OutboxPropertiesTest {
                 "outbox.retry-backoff-base-ms=60000",
                 "outbox.retry-backoff-max-ms=1000"
         ).run(context -> assertThat(context).hasFailed());
+    }
+
+    @EnableConfigurationProperties(OutboxProperties.class)
+    static class PropertiesConfig {
     }
 }

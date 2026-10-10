@@ -1,6 +1,7 @@
 package com.flowwallet.payment.config;
 
 import com.flowwallet.contract.constant.KafkaConstants;
+import com.flowwallet.outbox.OutboxTopic;
 import lombok.RequiredArgsConstructor;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.common.config.TopicConfig;
@@ -23,5 +24,14 @@ public class KafkaConfig {
                         String.valueOf(paymentEventsTopic.getMinInsyncReplicas())
                 )
                 .build();
+    }
+
+    /**
+     * The topic Payment Service's outbox publishes to.
+     * See docs/adr/0034-shared-outbox-and-the-wallet-withdrawals-command.md.
+     */
+    @Bean
+    public OutboxTopic outboxTopic() {
+        return new OutboxTopic(KafkaConstants.PAYMENT_EVENTS_TOPIC);
     }
 }

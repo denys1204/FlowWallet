@@ -16,8 +16,9 @@ second file.
 
 ## Architecture
 
-Five Maven modules. Services depend only on platform and contract, never on each other, and payment knows
-nothing about wallets ([ADR 0002](docs/adr/0002-module-boundaries.md)).
+Six Maven modules. Services depend only on platform, contract and outbox, never on each other, and payment knows
+nothing about wallets ([ADR 0002](docs/adr/0002-module-boundaries.md),
+[ADR 0034](docs/adr/0034-shared-outbox-and-the-wallet-withdrawals-command.md)).
 
 - `flow-wallet-contract`: only what crosses the wire: the Kafka events (`PaymentCompletedEvent`,
   `PaymentFailedEvent`), the topic name, the `eventType` header and its values, and the schema version. No
@@ -27,9 +28,14 @@ nothing about wallets ([ADR 0002](docs/adr/0002-module-boundaries.md)).
 - `flow-wallet-platform`: shared servlet-side infrastructure, auto-configured: the RFC 9457
   `GlobalExceptionHandler`, `ApiException` (each subclass carries its HTTP status), the `@CurrentUserId`
   resolver, `@Iso4217Currency`. Nothing domain-shaped: a DTO that belongs to one service lives in that service.
+- `flow-wallet-outbox`: the Transactional Outbox a service writes its events through, auto-configured: the
+  `outbox_events` entity and its claim queries, the after-commit send, the poller with its reaper and cleanup, the
+  `outbox` endpoint and the `outbox.events.failed` gauge. A service calls `Outbox.enqueue`, declares its
+  `OutboxTopic` bean with the contract's topic constant and owns the table in its own schema. Nothing domain-shaped.
 - `flow-wallet-gateway`: reactive Spring Cloud Gateway, path routing only. It routes `/api/wallets/**` to the
   wallet and **only** `/api/payments/webhooks/**` to payment, so a payment can only be started through a wallet.
-- `flow-wallet-payment`: Stripe, `payment_transactions`, webhooks, and the Transactional Outbox → Kafka.
+- `flow-wallet-payment`: Stripe, `payment_transactions`, webhooks, and the payment events it sends to Kafka through
+  the outbox.
 - `flow-wallet-service`: the Wallet Service. REST API, deposit initiation, transfers, and the Kafka consumer.
 
 In brief (the full flows are in `ARCHITECTURE.md`):

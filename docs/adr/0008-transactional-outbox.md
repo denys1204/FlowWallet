@@ -16,10 +16,10 @@ happens. A send also blocks on the broker, and a blocking network call does not 
 ## Decision
 
 Business logic never publishes to Kafka. `PaymentTransactionHandler.handleSuccess` and `handleFailure` are
-`@Transactional`, and inside that transaction `PaymentOutboxService` serialises the event and saves an `OutboxEvent` row
-to `outbox_events`, so the row exists if and only if the status change commits. The payload is stored as the final JSON
-string: the `eventId` is fixed when the row is written, and every send of the row carries it. `aggregate_id` holds the
-`transactionReference`, which becomes the record key.
+`@Transactional`, and inside that transaction `PaymentOutboxService` hands the event to `Outbox.enqueue`, which
+serialises it and saves an `OutboxEvent` row to `outbox_events`, so the row exists if and only if the status change
+commits. The payload is stored as the final JSON string: the `eventId` is fixed when the row is written, and every send
+of the row carries it. `aggregate_id` holds the `transactionReference`, which becomes the record key.
 
 `OutboxEventListener` is `@Async @TransactionalEventListener(phase = AFTER_COMMIT)` and sends the row as soon as the
 transaction commits. `OutboxPoller.pollOutbox` runs every `outbox.poll-interval-ms` and sends, oldest first and at

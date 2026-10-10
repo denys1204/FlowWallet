@@ -13,7 +13,7 @@ the ADRs it links.
 ## Build and test
 
 ```bash
-./mvnw clean install                 # build all five modules and run every test
+./mvnw clean install                 # build all six modules and run every test
 ./mvnw test                          # tests only (JUnit 6 + Mockito; no integration tests yet)
 ./mvnw install -DskipTests           # install modules so -pl builds can resolve siblings
 
@@ -135,8 +135,8 @@ supersedes it, and only a factual correction is edited in place (see [ADRs](#adr
 
 - Conventional commits: `type(scope): subject`, lower case and imperative, ideally within 72 characters. Types in
   use are `feat`, `fix`, `refactor`, `test`, `docs`, `style`, `chore` and `build`. The scope is the module or area:
-  `payment`, `wallet` (`flow-wallet-service`), `platform`, `gateway`, `contract`, `config`, `logging`, `infra`
-  (`docker-compose.yml`) or `deps`.
+  `payment`, `wallet` (`flow-wallet-service`), `platform`, `outbox`, `gateway`, `contract`, `config`, `logging`,
+  `infra` (`docker-compose.yml`) or `deps`.
 - The body explains why the change was made and names the ADRs and docs it updates.
 - One logical change per commit. Every commit that touches code builds and passes `./mvnw clean install` on its
   own; a commit that changes only Markdown skips the build.

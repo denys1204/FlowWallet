@@ -14,7 +14,7 @@ consequences.
 
 ## Architecture
 
-FlowWallet is a 5-module Maven reactor. A reactive API Gateway sits in front of two servlet-based domain
+FlowWallet is a 6-module Maven reactor. A reactive API Gateway sits in front of two servlet-based domain
 services. Wallet Service calls Payment Service over HTTP to start a deposit, directly rather than through
 the gateway, and Payment Service reports the outcome back over Kafka. The gateway exposes all of Wallet
 Service but only the webhook path of Payment Service.
@@ -66,6 +66,9 @@ flowchart LR
   its values, and the payload schema version. It declares no dependencies of its own and its code uses
   nothing outside the JDK, so it adds nothing to a consumer's classpath. The events are plain records, and a
   consumer brings its own serializer.
+- Outbox holds the transactional outbox: the `outbox_events` entity and its claim queries, the send after the
+  commit, the poller and the `outbox` actuator endpoint, auto-configured in a service that depends on it. Payment
+  Service sends its events through it.
 - Each service has its own database. `payment_db` and `wallet_db` are separate, and neither service touches
   the other's.
 
@@ -75,17 +78,19 @@ flowchart LR
 flow-wallet (parent POM)
 ├── flow-wallet-platform   error handling, @CurrentUserId, ISO 4217 validation, transport constants
 ├── flow-wallet-contract   Kafka events, topic, eventType header — nothing beyond the JDK
+├── flow-wallet-outbox     transactional outbox: outbox_events, sender, poller, outbox endpoint
 ├── flow-wallet-gateway    API Gateway (reactive) — routing + CORS
 ├── flow-wallet-service    Wallet Service — wallets, deposits, transfers, balance history, payment-event consumer
 └── flow-wallet-payment    Payment Service — Stripe, transactions, webhooks, outbox
 ```
 
-Platform and contract are separate modules because they follow different rules. Platform is ordinary shared
-code, changed as freely as anything else. Contract is the boundary between services. Producer and consumer
-are deployed separately, so a topic always holds messages written by more than one version of the code, and
-changes there follow evolution rules: add optional fields only, never rename, remove or retype a field in place,
-keep enums off the wire. A DTO that belongs to one service lives in that service. The module split is explained in
-[ADR 0002](docs/adr/0002-module-boundaries.md) and the contract rules in
+Platform and contract are separate modules because they follow different rules. Platform is ordinary shared code,
+changed as freely as anything else. Outbox is shared code too, kept out of platform because it brings persistence and
+Kafka ([ADR 0034](docs/adr/0034-shared-outbox-and-the-wallet-withdrawals-command.md)). Contract is the boundary between
+services. Producer and consumer are deployed separately, so a topic always holds messages written by more than one
+version of the code, and changes there follow evolution rules: add optional fields only, never rename, remove or retype
+a field in place, keep enums off the wire. A DTO that belongs to one service lives in that service. The module split is
+explained in [ADR 0002](docs/adr/0002-module-boundaries.md) and the contract rules in
 [ADR 0009](docs/adr/0009-payment-event-contract.md).
 
 | Module | Port | Responsibility |
@@ -94,6 +99,7 @@ keep enums off the wire. A DTO that belongs to one service lives in that service
 | `flow-wallet-service` | 8081 | List, open and read wallets; cursor-paged balance history; deposit initiation (calls Payment Service over HTTP); transfers between two users' wallets in one currency; Kafka consumer that credits balances idempotently, with a dead-letter topic. |
 | `flow-wallet-payment` | 8082 | Payment intents (internal), Stripe webhooks, transactional outbox → Kafka. |
 | `flow-wallet-platform` | (library) | RFC 9457 error handling, `@CurrentUserId` auto-configuration, `@Iso4217Currency`, the `X-User-Id` header constant. |
+| `flow-wallet-outbox` | (library) | Transactional outbox: the `outbox_events` entity and its claim queries, the send after the commit, the poller with its reaper and cleanup, the `outbox` endpoint and the `outbox.events.failed` gauge. |
 | `flow-wallet-contract` | (library) | `PaymentCompletedEvent`, `PaymentFailedEvent`, the `payment.events` topic, the `eventType` header and its values. |
 
 ## Architecture decisions
@@ -174,10 +180,12 @@ is logged at WARN, because it means a webhook was lost, and every outcome is cou
 
 Payment Service never publishes to Kafka straight from business logic. In the same database transaction
 that changes a transaction's status, it also writes a row to `outbox_events`, so the event exists if and
-only if the state change commits. `PaymentOutboxService`, which writes the row, requires that transaction
-(`Propagation.MANDATORY`) and fails when called without one. It also chooses the `eventType` header from the
-type of the event it serialises, in one place for both events. The reasoning is in
-[ADR 0008](docs/adr/0008-transactional-outbox.md).
+only if the state change commits. `PaymentOutboxService` builds the event and chooses the `eventType` header from
+its type, in one place for both events. It writes the row through `Outbox.enqueue` from the shared
+`flow-wallet-outbox` module, which requires that transaction (`Propagation.MANDATORY`) and fails when called without
+one. Payment Service owns the `outbox_events` table in `payment_db` and names its topic, `payment.events`, with an
+`OutboxTopic` bean. The reasoning is in [ADR 0008](docs/adr/0008-transactional-outbox.md) and the shared module in
+[ADR 0034](docs/adr/0034-shared-outbox-and-the-wallet-withdrawals-command.md).
 
 Delivery to Kafka goes two ways:
 

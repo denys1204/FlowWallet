@@ -30,7 +30,7 @@ After the request, the two services exchange withdrawals only through Kafka.
 The outbox lives in a sixth module, `flow-wallet-outbox`, and both services depend on it. The module holds the classes
 listed above and their tests, so the claim, retry, reaper, cleanup and dead-letter rules of
 [0008](0008-transactional-outbox.md) and [0018](0018-outbox-sends-own-their-claim.md) hold in both services as written.
-The entry point is `enqueue(aggregateType, aggregateId, eventType, payload)`. The topic a service publishes to comes
+The entry point is `enqueue(aggregateType, aggregateId, eventType, event)`. The topic a service publishes to comes
 from an `OutboxTopic` bean that the service declares with the contract's constant, and startup fails without one. It is
 not a property, because the environment can override any property (`OUTBOX_TOPIC` would), and topic names are
 compile-time constants. An auto-configuration carrying

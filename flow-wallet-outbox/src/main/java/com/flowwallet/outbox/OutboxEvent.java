@@ -1,4 +1,4 @@
-package com.flowwallet.payment.outbox;
+package com.flowwallet.outbox;
 
 import jakarta.persistence.*;
 import lombok.*;

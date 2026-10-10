@@ -1,13 +1,11 @@
-package com.flowwallet.payment.outbox;
+package com.flowwallet.outbox;
 
 import com.flowwallet.contract.constant.KafkaConstants;
-import com.flowwallet.payment.config.OutboxProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.errors.InterruptException;
 import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -19,12 +17,12 @@ import java.util.StringJoiner;
 import java.util.concurrent.ExecutionException;
 
 @Slf4j
-@Service
 @RequiredArgsConstructor
 public class OutboxMessageSender {
     private final OutboxEventRepository outboxEventRepository;
     private final KafkaTemplate<String, String> kafkaTemplate;
     private final OutboxProperties outboxProperties;
+    private final OutboxTopic outboxTopic;
 
     /**
      * Claims the row, sends it and records the outcome. A failed attempt is recorded and thrown as
@@ -73,7 +71,7 @@ public class OutboxMessageSender {
 
     private void send(OutboxEvent event) throws InterruptedException, ExecutionException {
         ProducerRecord<String, String> record = new ProducerRecord<>(
-                KafkaConstants.PAYMENT_EVENTS_TOPIC,
+                outboxTopic.name(),
                 event.getAggregateId(),
                 event.getPayload()
         );

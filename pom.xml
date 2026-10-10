@@ -31,6 +31,7 @@
     <modules>
         <module>flow-wallet-platform</module>
         <module>flow-wallet-contract</module>
+        <module>flow-wallet-outbox</module>
         <module>flow-wallet-gateway</module>
         <module>flow-wallet-service</module>
         <module>flow-wallet-payment</module>
@@ -77,6 +78,11 @@
             <dependency>
                 <groupId>com.flowwallet</groupId>
                 <artifactId>flow-wallet-contract</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.flowwallet</groupId>
+                <artifactId>flow-wallet-outbox</artifactId>
                 <version>${project.version}</version>
             </dependency>
 

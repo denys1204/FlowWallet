@@ -1,7 +1,6 @@
-package com.flowwallet.payment.outbox;
+package com.flowwallet.outbox;
 
 import com.flowwallet.contract.constant.KafkaConstants;
-import com.flowwallet.payment.config.OutboxProperties;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.errors.InterruptException;
@@ -34,6 +33,8 @@ import static org.mockito.Mockito.when;
 
 @SuppressWarnings("unchecked")
 class OutboxMessageSenderTest {
+    private static final OutboxTopic TOPIC = new OutboxTopic("test.events");
+
     private OutboxEventRepository repository;
     private KafkaTemplate<String, String> kafkaTemplate;
     private OutboxProperties properties;
@@ -45,7 +46,7 @@ class OutboxMessageSenderTest {
         kafkaTemplate = mock(KafkaTemplate.class);
         properties = new OutboxProperties();
         properties.setMaxRetries(3);
-        sender = new OutboxMessageSender(repository, kafkaTemplate, properties);
+        sender = new OutboxMessageSender(repository, kafkaTemplate, properties, TOPIC);
     }
 
     @AfterEach
@@ -132,7 +133,7 @@ class OutboxMessageSenderTest {
     void theStoredErrorNamesTheKafkaRootCauseAndNotOnlyTheWrapper() {
         // "KafkaProducerException: Failed to send" alone gives an operator nothing to act on before a requeue.
         givenClaimedEvent(pendingEvent(0));
-        ProducerRecord<String, String> failed = new ProducerRecord<>(KafkaConstants.PAYMENT_EVENTS_TOPIC, "v");
+        ProducerRecord<String, String> failed = new ProducerRecord<>(TOPIC.name(), "v");
         when(kafkaTemplate.send(any(ProducerRecord.class))).thenReturn(CompletableFuture.failedFuture(
                 new KafkaProducerException(failed, "Failed to send", new TimeoutException("Topic not in metadata"))
         ));
@@ -261,8 +262,9 @@ class OutboxMessageSenderTest {
     }
 
     @Test
-    void publishedRecordCarriesEventTypeHeaderAndTransactionReferenceKey() {
-        // The wallet dispatches on the header and Kafka orders by the key; losing either breaks the consumer.
+    void publishedRecordGoesToTheServicesTopicWithTheEventTypeHeaderAndTheAggregateKey() {
+        // The consumer dispatches on the header and Kafka orders by the key; losing either breaks the consumer, and
+        // a record on another service's topic would reach a consumer that does not expect it.
         givenClaimedEvent(pendingEvent(0));
         givenSendSucceeds();
 
@@ -272,12 +274,12 @@ class OutboxMessageSenderTest {
         verify(kafkaTemplate).send(sent.capture());
         ProducerRecord<String, String> record = sent.getValue();
 
-        assertThat(record.topic()).isEqualTo(KafkaConstants.PAYMENT_EVENTS_TOPIC);
+        assertThat(record.topic()).isEqualTo("test.events");
         assertThat(record.key()).isEqualTo("ref-1");
         assertThat(record.headers().lastHeader(KafkaConstants.HEADER_EVENT_TYPE))
                 .isNotNull()
                 .extracting(h -> new String(h.value(), StandardCharsets.UTF_8))
-                .isEqualTo(KafkaConstants.EVENT_TYPE_PAYMENT_COMPLETED);
+                .isEqualTo("TestEvent");
     }
 
     @Test
@@ -307,9 +309,9 @@ class OutboxMessageSenderTest {
     private OutboxEvent pendingEvent(int retryCount) {
         return OutboxEvent.builder()
                 .id(1L)
-                .aggregateType("PaymentTransaction")
+                .aggregateType("TestAggregate")
                 .aggregateId("ref-1")
-                .eventType(KafkaConstants.EVENT_TYPE_PAYMENT_COMPLETED)
+                .eventType("TestEvent")
                 .payload("{}")
                 .retryCount(retryCount)
                 .build();

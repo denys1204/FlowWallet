@@ -2,6 +2,7 @@
 paths:
   - "**/pom.xml"
   - "**/flow-wallet-payment/**"
+  - "**/flow-wallet-outbox/**"
   - "**/flow-wallet-contract/**"
   - "**/*Listener.java"
   - "**/*Mapper.java"

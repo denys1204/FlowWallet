@@ -1,4 +1,4 @@
-package com.flowwallet.payment.outbox;
+package com.flowwallet.outbox;
 
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -18,7 +18,7 @@ import java.util.List;
  */
 public interface OutboxEventRepository extends JpaRepository<OutboxEvent, Long> {
     @Query(
-            "SELECT e FROM OutboxEvent e WHERE e.status = com.flowwallet.payment.outbox.OutboxStatus.PENDING "
+            "SELECT e FROM OutboxEvent e WHERE e.status = com.flowwallet.outbox.OutboxStatus.PENDING "
                     + "AND (e.nextAttemptAt IS NULL OR e.nextAttemptAt <= :now) ORDER BY e.createdAt ASC"
     )
     List<OutboxEvent> findDispatchable(@Param("now") Instant now, Pageable pageable);
@@ -31,9 +31,9 @@ public interface OutboxEventRepository extends JpaRepository<OutboxEvent, Long> 
     @Modifying
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     @Query(
-            "UPDATE OutboxEvent e SET e.status = com.flowwallet.payment.outbox.OutboxStatus.PROCESSING, "
+            "UPDATE OutboxEvent e SET e.status = com.flowwallet.outbox.OutboxStatus.PROCESSING, "
                     + "e.processingStartedAt = :claimedAt "
-                    + "WHERE e.id = :id AND e.status = com.flowwallet.payment.outbox.OutboxStatus.PENDING"
+                    + "WHERE e.id = :id AND e.status = com.flowwallet.outbox.OutboxStatus.PENDING"
     )
     int claim(@Param("id") Long id, @Param("claimedAt") Instant claimedAt);
 
@@ -45,9 +45,9 @@ public interface OutboxEventRepository extends JpaRepository<OutboxEvent, Long> 
     @Modifying
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     @Query(
-            "UPDATE OutboxEvent e SET e.status = com.flowwallet.payment.outbox.OutboxStatus.COMPLETED, "
+            "UPDATE OutboxEvent e SET e.status = com.flowwallet.outbox.OutboxStatus.COMPLETED, "
                     + "e.processedAt = :processedAt, e.processingStartedAt = null "
-                    + "WHERE e.id = :id AND e.status = com.flowwallet.payment.outbox.OutboxStatus.PROCESSING "
+                    + "WHERE e.id = :id AND e.status = com.flowwallet.outbox.OutboxStatus.PROCESSING "
                     + "AND e.processingStartedAt = :claimedAt"
     )
     int markCompleted(
@@ -64,10 +64,10 @@ public interface OutboxEventRepository extends JpaRepository<OutboxEvent, Long> 
     @Modifying
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     @Query(
-            "UPDATE OutboxEvent e SET e.status = com.flowwallet.payment.outbox.OutboxStatus.PENDING, "
+            "UPDATE OutboxEvent e SET e.status = com.flowwallet.outbox.OutboxStatus.PENDING, "
                     + "e.retryCount = e.retryCount + 1, e.errorMessage = :errorMessage, "
                     + "e.nextAttemptAt = :nextAttemptAt, e.processingStartedAt = null "
-                    + "WHERE e.id = :id AND e.status = com.flowwallet.payment.outbox.OutboxStatus.PROCESSING "
+                    + "WHERE e.id = :id AND e.status = com.flowwallet.outbox.OutboxStatus.PROCESSING "
                     + "AND e.processingStartedAt = :claimedAt"
     )
     int scheduleRetry(
@@ -85,10 +85,10 @@ public interface OutboxEventRepository extends JpaRepository<OutboxEvent, Long> 
     @Modifying
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     @Query(
-            "UPDATE OutboxEvent e SET e.status = com.flowwallet.payment.outbox.OutboxStatus.FAILED, "
+            "UPDATE OutboxEvent e SET e.status = com.flowwallet.outbox.OutboxStatus.FAILED, "
                     + "e.retryCount = e.retryCount + 1, e.errorMessage = :errorMessage, "
                     + "e.nextAttemptAt = null, e.processingStartedAt = null "
-                    + "WHERE e.id = :id AND e.status = com.flowwallet.payment.outbox.OutboxStatus.PROCESSING "
+                    + "WHERE e.id = :id AND e.status = com.flowwallet.outbox.OutboxStatus.PROCESSING "
                     + "AND e.processingStartedAt = :claimedAt"
     )
     int markFailed(
@@ -105,9 +105,9 @@ public interface OutboxEventRepository extends JpaRepository<OutboxEvent, Long> 
     @Modifying
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     @Query(
-            "UPDATE OutboxEvent e SET e.status = com.flowwallet.payment.outbox.OutboxStatus.PENDING, "
+            "UPDATE OutboxEvent e SET e.status = com.flowwallet.outbox.OutboxStatus.PENDING, "
                     + "e.processingStartedAt = null "
-                    + "WHERE e.id = :id AND e.status = com.flowwallet.payment.outbox.OutboxStatus.PROCESSING "
+                    + "WHERE e.id = :id AND e.status = com.flowwallet.outbox.OutboxStatus.PROCESSING "
                     + "AND e.processingStartedAt = :claimedAt"
     )
     int releaseClaim(@Param("id") Long id, @Param("claimedAt") Instant claimedAt);
@@ -115,18 +115,18 @@ public interface OutboxEventRepository extends JpaRepository<OutboxEvent, Long> 
     @Modifying
     @Transactional
     @Query(
-            "UPDATE OutboxEvent e SET e.status = com.flowwallet.payment.outbox.OutboxStatus.PENDING, "
+            "UPDATE OutboxEvent e SET e.status = com.flowwallet.outbox.OutboxStatus.PENDING, "
                     + "e.processingStartedAt = null "
-                    + "WHERE e.status = com.flowwallet.payment.outbox.OutboxStatus.PROCESSING"
+                    + "WHERE e.status = com.flowwallet.outbox.OutboxStatus.PROCESSING"
     )
     int resetAllProcessingToPending();
 
     @Modifying
     @Transactional
     @Query(
-            "UPDATE OutboxEvent e SET e.status = com.flowwallet.payment.outbox.OutboxStatus.PENDING, "
+            "UPDATE OutboxEvent e SET e.status = com.flowwallet.outbox.OutboxStatus.PENDING, "
                     + "e.nextAttemptAt = null, e.processingStartedAt = null "
-                    + "WHERE e.status = com.flowwallet.payment.outbox.OutboxStatus.PROCESSING "
+                    + "WHERE e.status = com.flowwallet.outbox.OutboxStatus.PROCESSING "
                     + "AND e.processingStartedAt < :threshold"
     )
     int resetProcessingClaimedBefore(@Param("threshold") Instant threshold);
@@ -137,7 +137,7 @@ public interface OutboxEventRepository extends JpaRepository<OutboxEvent, Long> 
     @Modifying
     @Transactional
     @Query(
-            "DELETE FROM OutboxEvent e WHERE e.status = com.flowwallet.payment.outbox.OutboxStatus.COMPLETED "
+            "DELETE FROM OutboxEvent e WHERE e.status = com.flowwallet.outbox.OutboxStatus.COMPLETED "
                     + "AND e.createdAt < :before"
     )
     int deleteCompletedBefore(@Param("before") Instant before);
@@ -147,9 +147,9 @@ public interface OutboxEventRepository extends JpaRepository<OutboxEvent, Long> 
     @Modifying
     @Transactional
     @Query(
-            "UPDATE OutboxEvent e SET e.status = com.flowwallet.payment.outbox.OutboxStatus.PENDING, "
+            "UPDATE OutboxEvent e SET e.status = com.flowwallet.outbox.OutboxStatus.PENDING, "
                     + "e.retryCount = 0, e.errorMessage = null, e.nextAttemptAt = null, e.processingStartedAt = null "
-                    + "WHERE e.status = com.flowwallet.payment.outbox.OutboxStatus.FAILED"
+                    + "WHERE e.status = com.flowwallet.outbox.OutboxStatus.FAILED"
     )
     int requeueFailed();
 }

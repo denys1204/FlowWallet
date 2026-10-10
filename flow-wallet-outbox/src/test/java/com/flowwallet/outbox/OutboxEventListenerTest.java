@@ -1,4 +1,4 @@
-package com.flowwallet.payment.outbox;
+package com.flowwallet.outbox;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
@@ -38,7 +38,7 @@ class OutboxEventListenerTest {
 
     @Test
     void theFastPathSendsTheRowItWasToldAbout() {
-        // A wrong id would leave every event to the poller and add its interval to every credit.
+        // A wrong id would leave every event to the poller and add its interval to every delivery.
         listener.handleOutboxCreatedEvent(new OutboxCreatedEvent(7L));
 
         verify(sender).processEvent(7L);

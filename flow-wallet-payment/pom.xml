@@ -14,7 +14,7 @@
     <packaging>jar</packaging>
 
     <name>FlowWallet :: Payment Service</name>
-    <description>Anti-corruption layer — Stripe integration, webhooks, Kafka producer with Transactional Outbox</description>
+    <description>Anti-corruption layer: Stripe integration, webhooks, payment events sent through the shared outbox</description>
 
     <dependencies>
         <!-- Shared DTOs, Events, @CurrentUserId -->
@@ -25,6 +25,11 @@
         <dependency>
             <groupId>com.flowwallet</groupId>
             <artifactId>flow-wallet-contract</artifactId>
+        </dependency>
+        <!-- Transactional outbox: the outbox_events row, its sends and the outbox endpoint -->
+        <dependency>
+            <groupId>com.flowwallet</groupId>
+            <artifactId>flow-wallet-outbox</artifactId>
         </dependency>
 
         <!-- Web -->
