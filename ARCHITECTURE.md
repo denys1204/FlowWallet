@@ -52,8 +52,9 @@ flowchart LR
   waits for an upstream to answer or to connect (`GATEWAY_HTTPCLIENT_RESPONSE_TIMEOUT` /
   `_CONNECT_TIMEOUT_MS`), because Spring Cloud Gateway's Netty client otherwise never times out a response
   and its connection pool is unbounded.
-- Payment Service handles the Stripe integration, transaction persistence, webhooks and the outbox. It knows
-  nothing about wallets: it takes an instruction and answers.
+- Payment Service handles the Stripe integration, transaction persistence, webhooks, the outbox and the payouts it
+  accepts from Wallet Service's withdrawal commands. It knows nothing about wallets: it takes an instruction and
+  answers.
 - Wallet Service owns wallets, balances and balance history (`wallet_db`) and serves `/api/wallets`. It
   starts a deposit by checking that the wallet exists and then asking Payment Service for a PaymentIntent.
   It consumes `payment.events`, crediting each completed payment exactly once and recording failed ones
@@ -81,7 +82,7 @@ flow-wallet (parent POM)
 ├── flow-wallet-outbox     transactional outbox: outbox_events, sender, poller, outbox endpoint
 ├── flow-wallet-gateway    API Gateway (reactive) — routing + CORS
 ├── flow-wallet-service    Wallet Service — wallets, deposits, transfers, balance history, payment-event consumer
-└── flow-wallet-payment    Payment Service — Stripe, transactions, webhooks, outbox
+└── flow-wallet-payment    Payment Service — Stripe, transactions, webhooks, outbox, withdrawal-command consumer
 ```
 
 Platform and contract are separate modules because they follow different rules. Platform is ordinary shared code,
@@ -97,7 +98,7 @@ explained in [ADR 0002](docs/adr/0002-module-boundaries.md) and the contract rul
 |--------|------|----------------|
 | `flow-wallet-gateway` | 8080 | Route `/api/wallets/**` to Wallet Service and only `/api/payments/webhooks/**` to Payment Service; CORS. |
 | `flow-wallet-service` | 8081 | List, open and read wallets; cursor-paged balance history; deposit initiation (calls Payment Service over HTTP); transfers between two users' wallets in one currency; Kafka consumer that credits balances idempotently, with a dead-letter topic. |
-| `flow-wallet-payment` | 8082 | Payment intents (internal), Stripe webhooks, transactional outbox → Kafka. |
+| `flow-wallet-payment` | 8082 | Payment intents (internal), Stripe webhooks, transactional outbox → Kafka; Kafka consumer that accepts withdrawal commands as payouts, with a dead-letter topic. |
 | `flow-wallet-platform` | (library) | RFC 9457 error handling, `@CurrentUserId` auto-configuration, `@Iso4217Currency`, the `X-User-Id` header constant. |
 | `flow-wallet-outbox` | (library) | Transactional outbox: the `outbox_events` entity and its claim queries, the send after the commit, the poller with its reaper and cleanup, the `outbox` endpoint and the `outbox.events.failed` gauge. |
 | `flow-wallet-contract` | (library) | `PaymentCompletedEvent`, `PaymentFailedEvent`, the payout events and `WithdrawalRequestedEvent`, the `payment.events` and `wallet.withdrawals` topics, the `eventType` header and its values. |
@@ -178,13 +179,13 @@ is logged at WARN, because it means a webhook was lost, and every outcome is cou
 
 ## The Transactional Outbox
 
-Payment Service never publishes to Kafka straight from business logic. In the same database transaction
-that changes a transaction's status, it also writes a row to `outbox_events`, so the event exists if and
-only if the state change commits. `PaymentOutboxService` builds the event and chooses the `eventType` header from
-its type, in one place for both events. It writes the row through `Outbox.enqueue` from the shared
-`flow-wallet-outbox` module, which requires that transaction (`Propagation.MANDATORY`) and fails when called without
-one. Payment Service owns the `outbox_events` table in `payment_db` and names its topic, `payment.events`, with an
-`OutboxTopic` bean. The reasoning is in [ADR 0008](docs/adr/0008-transactional-outbox.md) and the shared module in
+Payment Service never publishes to Kafka straight from business logic. In the same database transaction that changes a
+transaction's status, it also writes a row to `outbox_events`, so the event exists if and only if the state change
+commits. `PaymentOutboxService` builds the event and chooses the `eventType` header from its type, in one place for both
+events, and `PayoutOutboxService` does the same for the payout events. It writes the row through `Outbox.enqueue` from
+the shared `flow-wallet-outbox` module, which requires that transaction (`Propagation.MANDATORY`) and fails when called
+without one. Payment Service owns the `outbox_events` table in `payment_db` and names its topic, `payment.events`, with
+an `OutboxTopic` bean. The reasoning is in [ADR 0008](docs/adr/0008-transactional-outbox.md) and the shared module in
 [ADR 0034](docs/adr/0034-shared-outbox-and-the-wallet-withdrawals-command.md).
 
 Delivery to Kafka goes two ways:

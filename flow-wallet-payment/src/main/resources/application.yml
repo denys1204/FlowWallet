@@ -64,11 +64,31 @@ spring:
       acks: all
       properties:
         enable.idempotence: true
+    consumer:
+      # Its own group name, not the wallet's KAFKA_CONSUMER_GROUP_ID: both services read the same .env.
+      group-id: ${PAYMENT_KAFKA_CONSUMER_GROUP_ID:flow-wallet-payment}
+      # Payment Service is deployed before Wallet Service sends any command, so a new group starts from the
+      # oldest record and reads the first commands once the wallet has created wallet.withdrawals.
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      enable-auto-commit: false
+      properties:
+        # Only Wallet Service, the producer, creates wallet.withdrawals, with its declared partitions. A consumer
+        # subscribing first would otherwise have the broker create it with the broker's defaults.
+        allow.auto.create.topics: false
+    listener:
+      concurrency: ${PAYMENT_KAFKA_LISTENER_CONCURRENCY:3}
+      ack-mode: RECORD
     admin:
       # Startup fails while the broker is unreachable. Otherwise KafkaAdmin logs "Could not configure topics"
-      # once and never retries, so payment.events is not created with its declared settings.
+      # once and never retries, so payment.events and the dead-letter topic are not created with their declared
+      # settings.
       fail-fast: true
     topic:
+      wallet-withdrawals-dlt:
+        partitions: ${KAFKA_TOPIC_WALLET_WITHDRAWALS_DLT_PARTITIONS:3}
+        replicas: ${KAFKA_TOPIC_WALLET_WITHDRAWALS_DLT_REPLICAS:1}
       payment-events:
         partitions: ${KAFKA_TOPIC_PAYMENT_EVENTS_PARTITIONS:3}
         replicas: ${KAFKA_TOPIC_PAYMENT_EVENTS_REPLICAS:1}
@@ -95,6 +115,18 @@ stripe:
     tolerance-seconds: ${STRIPE_WEBHOOK_TOLERANCE_SECONDS:300}
 
 payment:
+  # The terms of a withdrawal: the currencies it can be paid out in and each one's minimum. 1.0 offers PLN only.
+  # Another currency needs its own entry here. See docs/adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md.
+  payout:
+    currencies:
+      - code: ${PAYMENT_PAYOUT_CURRENCY:PLN}
+        min-amount: ${PAYMENT_PAYOUT_MIN_AMOUNT:5.00}
+  consumer:
+    retry:
+      max-attempts: ${PAYMENT_CONSUMER_RETRY_MAX_ATTEMPTS:3}
+      initial-interval-ms: ${PAYMENT_CONSUMER_RETRY_INITIAL_INTERVAL_MS:500}
+      max-interval-ms: ${PAYMENT_CONSUMER_RETRY_MAX_INTERVAL_MS:10000}
+      multiplier: ${PAYMENT_CONSUMER_RETRY_MULTIPLIER:2.0}
   retry:
     optimistic-lock:
       max-attempts: ${PAYMENT_OPTIMISTIC_LOCK_MAX_ATTEMPTS:3}

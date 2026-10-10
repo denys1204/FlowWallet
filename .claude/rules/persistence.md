@@ -17,10 +17,10 @@ paths:
 - Liquibase: `db.changelog-master.yaml` uses `includeAll`; files are `NNN-description.yaml`, author
   `flow-wallet`, sequences `incrementBy: 50`. `addCheckConstraint` is Liquibase Pro; use a raw `sql:` change.
 - Tunable values are `${ENV_VAR:working-local-default}` in `application.yml`; fixed wiring (serializers, `acks: all`,
-  `ack-mode: RECORD`, `ddl-auto: validate`, `spring.kafka.admin.fail-fast` and, in the wallet, `modify-topic-configs`
-  and `auto-offset-reset: earliest`) stays literal. The webhook signing secret has no working default:
-  `stripe.webhook.secret` is `${STRIPE_WEBHOOK_SECRET:}`, and an empty value disables webhooks
-  ([ADR 0017](../../docs/adr/0017-webhooks-verified-before-they-are-read.md)). New settings go in a
+  `ack-mode: RECORD`, `ddl-auto: validate`, `spring.kafka.admin.fail-fast`, `auto-offset-reset: earliest`, the wallet's
+  `modify-topic-configs` and Payment Service's `allow.auto.create.topics: false`) stays literal. The webhook signing
+  secret has no working default: `stripe.webhook.secret` is `${STRIPE_WEBHOOK_SECRET:}`, and an empty value disables
+  webhooks ([ADR 0017](../../docs/adr/0017-webhooks-verified-before-they-are-read.md)). New settings go in a
   `@ConfigurationProperties` class with `@Validated` checks that fail startup on nonsense, like
   `PaymentDepositProperties`, `StripeProperties`, `WalletPaymentProperties`, `OutboxProperties`,
   `PaymentEventsTopicProperties` or `WalletWithdrawalsTopicProperties`. Older ones are not there yet: outbox schedules,

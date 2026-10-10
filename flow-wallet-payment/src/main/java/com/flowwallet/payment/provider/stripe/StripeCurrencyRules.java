@@ -38,6 +38,13 @@ public final class StripeCurrencyRules {
      */
     private static final Set<String> THREE_DECIMAL = Set.of("BHD", "JOD", "KWD", "OMR", "TND");
 
+    /**
+     * Paid out in whole units, though charged in hundredths: Stripe takes a HUF or TWD payout amount in hundredths
+     * that must end in 00 (https://docs.stripe.com/currencies, retrieved on 2026-10-04). A charge rule set these
+     * aside in docs/adr/0023-isk-charged-in-whole-units.md, because they apply to payouts only.
+     */
+    private static final Set<String> PAYOUT_WHOLE_UNITS = Set.of("HUF", "TWD");
+
     private static final int DEFAULT_EXPONENT = 2;
 
     /**
@@ -54,6 +61,16 @@ public final class StripeCurrencyRules {
 
         int acceptedScale = WHOLE_UNITS_IN_HUNDREDTHS.contains(code) ? 0 : Math.min(exponent, MAX_ACCEPTED_SCALE);
         return new CurrencyRule(acceptedScale, exponent);
+    }
+
+    /**
+     * Most decimal places a payout amount in this currency may carry: whole units for HUF and TWD, the zero-decimal
+     * currencies and ISK, hundredths for every other one. Only a payout applies it, so the wallet's grid does not
+     * copy it. See docs/adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md.
+     */
+    public static int payoutScale(String currency) {
+        String code = currency.toUpperCase(Locale.ROOT);
+        return PAYOUT_WHOLE_UNITS.contains(code) ? 0 : of(code).acceptedScale();
     }
 
     /**

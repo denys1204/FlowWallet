@@ -11,13 +11,15 @@ error responses, see [docs/api.md](api.md), and for the database schema behind t
 |-------|-----------|----------|----------|
 | `payment.events` | 3 | Payment Service (via outbox) | Wallet Service, group `flow-wallet-service` |
 | `payment.events.wallet.DLT` | 3 | Wallet Service error handler | none; inspect or replay by hand |
-| `wallet.withdrawals` | 3 | Wallet Service (via outbox) | none yet; Payment Service's consumer comes with withdrawals |
+| `wallet.withdrawals` | 3 | Wallet Service (via outbox) | Payment Service, group `flow-wallet-payment` |
+| `wallet.withdrawals.payment.DLT` | 3 | Payment Service error handler | none; inspect or republish by hand |
 
-Every topic is declared as a bean by the service that owns it (`payment.events` by Payment Service, the dead-letter
-topic and `wallet.withdrawals` by Wallet Service), so they are created at startup with the configured partitions and
-replicas instead of relying on broker auto-creation. Both services set `spring.kafka.admin.fail-fast`, so neither starts
-while the broker is unreachable: without it, a service started too early logs "Could not configure topics" once and
-never creates its topic. Both producers use `acks=all` with idempotence enabled.
+Every topic is declared as a bean by the service that owns it (`payment.events` and `wallet.withdrawals.payment.DLT` by
+Payment Service, `payment.events.wallet.DLT` and `wallet.withdrawals` by Wallet Service), so they are created at startup
+with the configured partitions and replicas instead of relying on broker auto-creation. Both services set
+`spring.kafka.admin.fail-fast`, so neither starts while the broker is unreachable: without it, a service started too
+early logs "Could not configure topics" once and never creates its topic. Both producers use `acks=all` with idempotence
+enabled.
 
 `payment.events.wallet.DLT` is created with `retention.ms=-1` and keeps every record until an operator
 deletes it, because nothing else holds a payment that reached it. Wallet Service sets
@@ -39,10 +41,19 @@ topic with `kafka-configs`. `wallet.withdrawals` takes the same setting
 (`KAFKA_TOPIC_WALLET_WITHDRAWALS_MIN_INSYNC_REPLICAS`, default `1`) and fails startup the same way. Wallet Service sets
 `spring.kafka.admin.modify-topic-configs`, so a changed value also reaches an existing topic.
 
-Payment Service has no dead-letter topic of its own. The `FAILED` rows in `outbox_events` play that role, because a send
-fails almost only when the broker is unreachable, and a publish to another topic on the same broker would fail then too.
-The wallet's dead-letter topic carries failed consumer records, not outbox rows. Wallet Service's outbox works the same
-way for `wallet.withdrawals`: its `FAILED` rows are the dead-letter store for withdrawal commands.
+Payment Service's outbox has no dead-letter topic of its own. The `FAILED` rows in `outbox_events` play that role,
+because a send fails almost only when the broker is unreachable, and a publish to another topic on the same broker would
+fail then too. The wallet's dead-letter topic carries failed consumer records, not outbox rows. Wallet Service's outbox
+works the same way for `wallet.withdrawals`: its `FAILED` rows are the dead-letter store for withdrawal commands.
+
+Payment Service consumes `wallet.withdrawals` and accepts each command by inserting its payout under the unique
+reference. A redelivery with the same terms is acknowledged. A command with other terms under an accepted reference, an
+unreadable record and a command of an invalid shape go to `wallet.withdrawals.payment.DLT` at once; any other failure is
+retried first (`PAYMENT_CONSUMER_RETRY_*`). The topic is created with `retention.ms=-1`, each dead letter is logged at
+ERROR and counted in `payment.consumer.dead.letters`, and a record there is a debited withdrawal that waits for an
+operator to republish it unchanged to `wallet.withdrawals` once the cause is fixed. The consumer sets
+`allow.auto.create.topics=false`, so only Wallet Service creates `wallet.withdrawals`, with its declared partitions
+([ADR 0034](adr/0034-shared-outbox-and-the-wallet-withdrawals-command.md)).
 
 Events are published as JSON strings keyed by `transactionReference`. Each record carries an `eventType` header set to
 the name of its event, such as `PaymentCompletedEvent` or `PaymentFailedEvent`. Consumers dispatch on that header and
@@ -73,9 +84,10 @@ copes with either order, because a failure moves no money.
 
 The contract also defines the events of a withdrawal
 ([ADR 0033](adr/0033-withdrawals-are-debited-under-the-lock-and-settled-by-payout-events.md),
-[ADR 0034](adr/0034-shared-outbox-and-the-wallet-withdrawals-command.md)). Wallet Service consumes the payout events;
-nothing publishes them yet, and nothing consumes `WithdrawalRequestedEvent`. They ship in this order: the contract, the
-consumers, then the producers, and withdrawals are switched on last.
+[ADR 0034](adr/0034-shared-outbox-and-the-wallet-withdrawals-command.md)). Payment Service consumes the commands and
+Wallet Service the payout events. Until the payout executor ships, Payment Service sends only the `PayoutReturnedEvent`
+of a command whose terms it refuses, and no command is sent before withdrawals are switched on. They ship in this order:
+the contract, the consumers, then the producers, and withdrawals are switched on last.
 
 - `WithdrawalRequestedEvent`, on `wallet.withdrawals` from Wallet Service to Payment Service, carries `eventId`, `schemaVersion`, `transactionReference`, `userId`, `amount`, `currency`.
 - `PayoutPaidEvent`, on `payment.events`, carries `eventId`, `schemaVersion`, `transactionReference`, `providerPayoutId`, `amount`, `currency`, `userId`, `paidAt`.

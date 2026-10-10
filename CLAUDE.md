@@ -34,8 +34,8 @@ nothing about wallets ([ADR 0002](docs/adr/0002-module-boundaries.md),
   `OutboxTopic` bean with the contract's topic constant and owns the table in its own schema. Nothing domain-shaped.
 - `flow-wallet-gateway`: reactive Spring Cloud Gateway, path routing only. It routes `/api/wallets/**` to the
   wallet and **only** `/api/payments/webhooks/**` to payment, so a payment can only be started through a wallet.
-- `flow-wallet-payment`: Stripe, `payment_transactions`, webhooks, and the payment events it sends to Kafka through
-  the outbox.
+- `flow-wallet-payment`: Stripe, `payment_transactions`, webhooks, the payment events it sends to Kafka through the
+  outbox, and the `payouts` it accepts from `wallet.withdrawals`.
 - `flow-wallet-service`: the Wallet Service. REST API, deposit initiation, transfers, and the Kafka consumer.
 
 In brief (the full flows are in `ARCHITECTURE.md`):
@@ -123,6 +123,12 @@ Each invariant here is stated once and links the ADR that holds its reasoning.
   retries go to `payment.events.wallet.DLT` ([ADR 0010](docs/adr/0010-idempotent-payment-event-consumer.md)). That topic
   keeps records without a time limit, and each dead letter is logged at ERROR and counted in
   `wallet.consumer.dead.letters` ([ADR 0020](docs/adr/0020-wallet-dead-letters-kept-and-counted.md)).
+- Payment Service accepts a withdrawal command by inserting its `payouts` row, and the unique reference decides a
+  repeat: the same terms are acknowledged, other terms are dead-lettered. A command whose terms the configuration
+  no longer allows is stored as `RETURNED` with its `PayoutReturnedEvent` in the same transaction, never dead-lettered.
+  Unreadable and invalid commands go to `wallet.withdrawals.payment.DLT` at once and other failures after the retries;
+  that topic keeps records without a time limit, and each dead letter is counted in `payment.consumer.dead.letters`
+  ([ADR 0034](docs/adr/0034-shared-outbox-and-the-wallet-withdrawals-command.md)).
 - A webhook's status reports delivery, not the business outcome: an event for an intent this service never
   created gets 200, not 404 ([ADR 0016](docs/adr/0016-error-model-and-status-codes.md)).
 - A webhook body is size-capped and its signature verified before it is parsed; never call

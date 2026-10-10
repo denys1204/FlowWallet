@@ -24,4 +24,20 @@ class StripeCurrencyRulesTest {
         // decimals, and UGX stays zero-decimal although Stripe's page also describes it in hundredths.
         assertThat(StripeCurrencyRules.of(currency)).isEqualTo(new CurrencyRule(acceptedScale, exponent));
     }
+
+    @ParameterizedTest(name = "a {0} payout carries at most {1} decimals")
+    @CsvSource({
+            "PLN, 2",
+            "HUF, 0",
+            "TWD, 0",
+            "huf, 0",
+            "JPY, 0",
+            "ISK, 0",
+            "KWD, 2",
+    })
+    void aPayoutUsesItsOwnGridWhereStripeDiffersFromItsCharges(String currency, int payoutScale) {
+        // Guards HUF and TWD payouts in hundredths, which Stripe refuses at the payout step after the transfer, and
+        // the payout grid drifting from the charge grid for every other currency.
+        assertThat(StripeCurrencyRules.payoutScale(currency)).isEqualTo(payoutScale);
+    }
 }

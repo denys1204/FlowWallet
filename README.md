@@ -103,7 +103,7 @@ the wallet consumer and the identity model.
 | Payments | Stripe (`stripe-java` 33.1.0), test mode |
 | JSON | Jackson 3 (`tools.jackson`) |
 | Mapping | MapStruct 1.6.3 + Lombok |
-| Resilience | Spring Retry (payment); Spring Kafka `DefaultErrorHandler` + dead-letter topic (wallet) |
+| Resilience | Spring Retry (payment); Spring Kafka `DefaultErrorHandler` + a dead-letter topic per consumer (wallet and payment) |
 | Build & infra | Maven multi-module, Docker Compose |
 
 ## Quickstart

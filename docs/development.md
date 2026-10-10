@@ -146,6 +146,9 @@ comments. The main ones:
 | `KAFKA_TOPIC_WALLET_WITHDRAWALS_PARTITIONS` / `_REPLICAS` / `_MIN_INSYNC_REPLICAS` | `3` / `1` / `1` | Wallet: applied when `wallet.withdrawals` is created; on an existing topic only a higher partition count and, because the wallet sets `modify-topic-configs`, a changed `_MIN_INSYNC_REPLICAS` take effect |
 | `KAFKA_CONSUMER_GROUP_ID` | `flow-wallet-service` | Wallet |
 | `KAFKA_LISTENER_CONCURRENCY` | `3` | Wallet |
+| `PAYMENT_KAFKA_CONSUMER_GROUP_ID` / `PAYMENT_KAFKA_LISTENER_CONCURRENCY` | `flow-wallet-payment` / `3` | Payment: its consumer of `wallet.withdrawals`, under names of its own because both services read the same `.env` |
+| `PAYMENT_CONSUMER_RETRY_MAX_ATTEMPTS` / `_INITIAL_INTERVAL_MS` / `_MAX_INTERVAL_MS` / `_MULTIPLIER` | `3` / `500` / `10000` / `2.0` | Payment: retries before a withdrawal command is dead-lettered, with the same bounds as the wallet's |
+| `KAFKA_TOPIC_WALLET_WITHDRAWALS_DLT_PARTITIONS` / `_REPLICAS` | `3` / `1` | Payment: applied when `wallet.withdrawals.payment.DLT` is created; on an existing topic only a higher partition count takes effect |
 | `WALLET_CONSUMER_RETRY_MAX_ATTEMPTS` | `3` | Wallet: retries before dead-lettering, with backoff from `WALLET_CONSUMER_RETRY_INITIAL_INTERVAL_MS` (`500`) up to `_MAX_INTERVAL_MS` (`10000`, at most `60000`) by `_MULTIPLIER` (`2.0`). The backoff sleeps on the consumer thread without polling, so the cap stays well below Kafka's `max.poll.interval.ms` (`300000`) |
 | `WALLET_PAYMENT_BASE_URL` | `http://localhost:${PAYMENT_SERVICE_PORT}` | Wallet (Payment Service's own address, not the gateway's) |
 | `WALLET_PAYMENT_CONNECT_TIMEOUT` / `_READ_TIMEOUT` | `2s` / `10s` | Wallet; at least 1ms each |
@@ -158,6 +161,7 @@ comments. The main ones:
 | `PAYMENT_WEBHOOK_MAX_PAYLOAD_SIZE` | `256KB` | Payment: a larger webhook body gets `413` |
 | `PAYMENT_RECONCILIATION_INTERVAL_MS` / `_MIN_AGE` / `_MAX_AGE` / `_BATCH_SIZE` | `300000` / `15m` / `24h` / `50` | Payment: how often the reconciler asks Stripe about deposits still pending or failed, from what age and until what age, and how many per run; `PAYMENT_RECONCILIATION_ENABLED` (`true`) turns it off ([ADR 0032](adr/0032-pending-payments-are-rechecked-with-the-provider.md)) |
 | `PAYMENT_SCHEDULING_ENABLED` | `true` | Payment: `false` stops every scheduled job, the outbox poller and the reconciler included; only for a test that drives those steps itself |
+| `PAYMENT_PAYOUT_CURRENCY` / `PAYMENT_PAYOUT_MIN_AMOUNT` | `PLN` / `5.00` | Payment: the currency a withdrawal is paid out in and its minimum ([ADR 0035](adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md)) |
 | `WALLET_SCHEDULING_ENABLED` | `true` | Wallet: `false` stops the outbox poller, reaper and cleanup; only for a test that drives those steps itself |
 | `PAYMENT_MIN_DEPOSIT_AMOUNT` / `PAYMENT_MAX_DEPOSIT_AMOUNT` | `1.00` / `10000.00` | Payment |
 | `OUTBOX_POLL_INTERVAL_MS` / `OUTBOX_BATCH_SIZE` | `10000` / `50` | Payment, Wallet |
@@ -176,12 +180,15 @@ base above its maximum. The payment service does the same for a deposit range th
 wide for `NUMERIC(19,4)`, a Stripe timeout below 1ms or a negative Stripe retry count, a webhook tolerance that isn't
 positive, a payment method list that is empty or names a method it doesn't know, a webhook size limit outside 1B to
 16MB, the same outbox values, a reconciler interval below 1000 ms, a reconciler batch below 1, a reconciler `min-age` or
-`max-age` below 1s or a `min-age` that is not shorter than the `max-age`, and a `payment.events` topic with more in-sync
-replicas than replicas. A missing webhook secret doesn't stop it starting; it only disables webhooks.
+`max-age` below 1s or a `min-age` that is not shorter than the `max-age`, a `payment.events` topic with more in-sync
+replicas than replicas, a `wallet.withdrawals.payment.DLT` topic with fewer than one partition or replica, consumer
+retry values the wallet would refuse, and a payout currency list that is empty, names a code that is not an upper-case
+ISO 4217 code, or has a minimum that is missing, not positive or off the payout grid. A missing webhook secret doesn't
+stop it starting; it only disables webhooks.
 
 ## Testing
 
-There are 780 tests, all green: 353 in the payment service, 321 in the wallet service, 53 in the outbox module, 44 in
+There are 841 tests, all green: 414 in the payment service, 321 in the wallet service, 53 in the outbox module, 44 in
 platform and 9 in the gateway. The gateway's tests bind its own `application.yml`, so a YAML regression that drops the
 response or connect timeout, or binds the gateway beyond loopback, fails there rather than in a live request; they also
 check that `BindAddressCheck` runs when the application is ready, warns for `0.0.0.0`, a LAN address and no address at
@@ -211,6 +218,12 @@ raised), payout events reaching their own steps, a Paid event refused without it
 with its reason, a second return refused as `DUPLICATE_REFERENCE`, a withdrawal status that only rises, the payout
 handler pinned to READ COMMITTED, and the error handler (an unreadable record dead-lettered at once, any other failure
 only after its retries, each dead letter counted, and the dead-letter topic created with unlimited retention).
+
+For Payment Service's consumer of withdrawal commands they cover the `eventType` header and the shape of a command (an
+unreadable or invalid one dead-lettered at once), a redelivery with the same terms acknowledged and one with other terms
+dead-lettered, a command the payout terms refuse returned with `TERMS_REFUSED` and its `PayoutReturnedEvent` written
+after the row, any other failure dead-lettered only after its retries, each dead letter counted, and the dead-letter
+topic created with unlimited retention.
 
 For transfers they cover the lock order in both directions, the key judged only after both locks, and no other wallet
 read in the transaction. With the sender sorting first and last, they cover a retry that still gets its receipt after
