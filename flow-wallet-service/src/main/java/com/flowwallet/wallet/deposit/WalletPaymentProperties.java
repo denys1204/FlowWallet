@@ -38,7 +38,7 @@ public class WalletPaymentProperties {
 
     /**
      * Long enough for Payment Service's own call to the provider, whose budget ({@code STRIPE_API_*}) is set to
-     * end first. A bank account request makes up to four such calls and can outlast it; each Stripe write is keyed,
+     * end first. A bank account request makes up to five such calls and can outlast it; each Stripe write is keyed,
      * so the caller's retry is safe. A wedged service accepts the connection and never answers, so only this bound
      * ends the wait.
      * See docs/adr/0024-deposit-initiation-settles-its-own-races.md.

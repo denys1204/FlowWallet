@@ -5,6 +5,7 @@ import com.flowwallet.payment.provider.PayoutProvider;
 import com.flowwallet.payment.provider.dto.PayoutAccountHolder;
 import com.flowwallet.payment.provider.dto.PayoutCallResult;
 import com.flowwallet.payment.provider.dto.ProviderBankAccount;
+import com.flowwallet.payment.provider.exception.PayoutLookupException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -64,6 +65,27 @@ public class PayoutAccountService {
         return refresh;
     }
 
+    /**
+     * Sets the state from the account once more after the record. Stripe can change the account between the attach's
+     * read and the record, such as turning payouts on, and an account event about it that arrived in between found no
+     * bank account to refresh, or a default the row did not hold yet, and changed nothing. A failed read keeps the
+     * recorded state, because the token is spent; the next account event or a new token corrects it.
+     * See docs/adr/0036-connect-webhooks-have-their-own-endpoint-and-secret.md.
+     */
+    private PayoutAccount readAgain(PayoutAccount recorded, String stripeAccountId) {
+        try {
+            refreshBankState(stripeAccountId);
+        } catch (PayoutLookupException e) {
+            log.warn(
+                    "Payout account {} could not be read again after its bank account was set: {}",
+                    recorded.getAccountKey(),
+                    e.toString()
+            );
+            return recorded;
+        }
+        return store.findByStripeAccount(stripeAccountId).orElse(recorded);
+    }
+
     public PayoutAccountResponse bankAccount(String userId) {
         return store.findByUser(userId)
                 .map(PayoutAccountService::toResponse)
@@ -84,7 +106,7 @@ public class PayoutAccountService {
             case PayoutCallResult.Done<ProviderBankAccount>(ProviderBankAccount bankAccount) -> {
                 PayoutAccount recorded = store.recordBankAccount(account.getId(), token, inPayoutTerms(bankAccount));
                 log.info("Payout account {} has a bank account, {}", account.getAccountKey(), recorded.getBankState());
-                yield toResponse(recorded);
+                yield toResponse(readAgain(recorded, stripeAccountId));
             }
             case PayoutCallResult.Refused<ProviderBankAccount>(_, String code) -> {
                 log.info("Stripe refused the bank token for payout account {} ({})", account.getAccountKey(), code);

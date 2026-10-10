@@ -94,8 +94,9 @@ Reasoning: [ADR 0014](adr/0014-transfers-in-one-local-transaction.md),
   the user's connected account at Stripe.
 - A new token replaces the bank account for its currency. A token works once: a refused token needs a new one, and
   repeating the token that was last applied returns the stored answer.
-- A bank account is ready when Stripe can pay out to it now. When Stripe reports a change to the connected account or
-  its bank account, FlowWallet reads the account again and sets the state from what it reads.
+- A bank account is ready when Stripe can pay out to it now. Right after a bank account is set, and whenever Stripe
+  reports a change to the connected account or its bank account, FlowWallet reads the account again and sets the state
+  from what it reads.
 - A payout that fails at the bank makes that bank account not ready, and the user sets one again before the next
   withdrawal. A canceled payout leaves the bank account as it is.
 

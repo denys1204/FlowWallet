@@ -295,8 +295,10 @@ digits and `currency` its currency. A caller with no bank account gets `NOT_SET`
 - `tosAccepted` must be `true`: the user accepts Stripe's Connected Account Agreement, which opening their
   connected account needs. Anything else is a `400`.
 - The first request opens the user's connected account. Every request with another token attaches it as the default bank
-  account for the token's currency, replacing the previous one. A request with the token last applied is answered from
-  the stored row, because Stripe accepts a token once.
+  account for the token's currency, replacing the previous one. After it records the bank account, the request reads the
+  connected account once more and answers with the state that read sets, so a change Stripe made in between, such as
+  turning payouts on, is not lost; if that read fails, it answers with the recorded state. A request with the token last
+  applied is answered from the stored row, because Stripe accepts a token once.
 - `400` when Stripe refuses the token (it does not exist, it was used already, or the bank account cannot take
   payouts): create a new token. `502` when Stripe gives no answer that settles it: retry with the same token.
 

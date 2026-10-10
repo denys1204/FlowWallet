@@ -158,7 +158,7 @@ their reconcilers. `.env.example` has the full list with comments. The main ones
 | `KAFKA_TOPIC_WALLET_WITHDRAWALS_DLT_PARTITIONS` / `_REPLICAS` | `3` / `1` | Payment: applied when `wallet.withdrawals.payment.DLT` is created; on an existing topic only a higher partition count takes effect |
 | `WALLET_CONSUMER_RETRY_MAX_ATTEMPTS` | `3` | Wallet: retries before dead-lettering, with backoff from `WALLET_CONSUMER_RETRY_INITIAL_INTERVAL_MS` (`500`) up to `_MAX_INTERVAL_MS` (`10000`, at most `60000`) by `_MULTIPLIER` (`2.0`). The backoff sleeps on the consumer thread without polling, so the cap stays well below Kafka's `max.poll.interval.ms` (`300000`) |
 | `WALLET_PAYMENT_BASE_URL` | `http://localhost:${PAYMENT_SERVICE_PORT}` | Wallet (Payment Service's own address, not the gateway's) |
-| `WALLET_PAYMENT_CONNECT_TIMEOUT` / `_READ_TIMEOUT` | `2s` / `10s` | Wallet; at least 1ms each. A bank account request makes up to four Stripe calls in a row and can outlast the read timeout; the wallet then answers `502`, and the retry with the same token is safe, because each Stripe write is keyed and a read changes nothing |
+| `WALLET_PAYMENT_CONNECT_TIMEOUT` / `_READ_TIMEOUT` | `2s` / `10s` | Wallet; at least 1ms each. A bank account request makes up to five Stripe calls in a row and can outlast the read timeout; the wallet then answers `502`, and the retry with the same token is safe, because each Stripe write is keyed and a read changes nothing |
 | `WALLET_PAYMENT_PROVIDER` | `STRIPE` | Wallet; `STRIPE` is the only accepted value |
 | `STRIPE_API_KEY` / `STRIPE_WEBHOOK_SECRET` | `sk_test_dummy` / none (webhooks disabled) | Payment: only a test-mode key (`sk_test_` or `rk_test_`) starts |
 | `STRIPE_CONNECT_WEBHOOK_SECRET` | none (Connect webhooks disabled) | Payment: the secret of the endpoint for connected accounts, `/api/payments/webhooks/stripe/connect`; under `stripe listen` the same value as `STRIPE_WEBHOOK_SECRET` ([ADR 0036](adr/0036-connect-webhooks-have-their-own-endpoint-and-secret.md)) |
@@ -207,7 +207,7 @@ endpoint's webhooks.
 
 ## Testing
 
-There are 1819 tests, all green: 1374 in the payment service, 339 in the wallet service, 53 in the outbox module, 44 in
+There are 1823 tests, all green: 1378 in the payment service, 339 in the wallet service, 53 in the outbox module, 44 in
 platform and 9 in the gateway. The gateway's tests bind its own `application.yml`, so a YAML regression that drops the
 response or connect timeout, or binds the gateway beyond loopback, fails there rather than in a live request; they also
 check that `BindAddressCheck` runs when the application is ready, warns for `0.0.0.0`, a LAN address and no address at

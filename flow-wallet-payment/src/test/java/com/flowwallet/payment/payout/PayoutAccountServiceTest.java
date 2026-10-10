@@ -396,4 +396,72 @@ class PayoutAccountServiceTest {
 
         assertThat(output.getAll()).contains("key-1").doesNotContain(USER);
     }
+
+    @Test
+    void aStateStripeChangedBeforeTheRecordIsReadAgainAndAnswered() {
+        // Guards the first request's state outliving an account event lost in between: the attach read payouts off,
+        // Stripe turned them on, and the event found no bank account to refresh, so only a second read sets READY.
+        ProviderBankAccount notReady = new ProviderBankAccount("ba_1", "2874", "PLN", false);
+        PayoutAccount recorded = withStoredBank("PLN", "ba_1", BankAccountState.NOT_SET);
+        PayoutAccount ready = withStoredBank("PLN", "ba_1", BankAccountState.READY);
+        when(store.findByUser(USER)).thenReturn(Optional.of(opened()));
+        when(provider.attachBankAccount("acct_1", "key-1", "btok_1")).thenReturn(new PayoutCallResult.Done<>(notReady));
+        when(store.recordBankAccount(7L, "btok_1", notReady)).thenReturn(recorded);
+        when(store.findByStripeAccount("acct_1")).thenReturn(Optional.of(recorded), Optional.of(ready));
+        when(provider.findDefaultBankAccount("acct_1", "PLN")).thenReturn(Optional.of(READY_BANK));
+        when(store.applyBankState(7L, 4L, "ba_1", BankAccountState.READY)).thenReturn(BankRefresh.CHANGED);
+
+        PayoutAccountResponse response = service.setBankAccount(USER, "btok_1");
+
+        assertThat(response).isEqualTo(new PayoutAccountResponse("READY", "2874", "PLN"));
+        verify(store).applyBankState(7L, 4L, "ba_1", BankAccountState.READY);
+    }
+
+    @Test
+    void aRacedReadAfterTheRecordAnswersWithTheRowAsItStands() {
+        // Guards answering with a state another writer replaced between the record and the second read.
+        PayoutAccount recorded = withStoredBank("PLN", "ba_1", BankAccountState.READY);
+        PayoutAccount changed = withStoredBank("PLN", "ba_1", BankAccountState.NOT_SET);
+        when(store.findByUser(USER)).thenReturn(Optional.of(opened()));
+        when(provider.attachBankAccount("acct_1", "key-1", "btok_1"))
+                .thenReturn(new PayoutCallResult.Done<>(READY_BANK));
+        when(store.recordBankAccount(7L, "btok_1", READY_BANK)).thenReturn(recorded);
+        when(store.findByStripeAccount("acct_1")).thenReturn(Optional.of(recorded), Optional.of(changed));
+        when(provider.findDefaultBankAccount("acct_1", "PLN")).thenReturn(Optional.of(READY_BANK));
+        when(store.applyBankState(7L, 4L, "ba_1", BankAccountState.READY)).thenReturn(BankRefresh.RACED);
+
+        assertThat(service.setBankAccount(USER, "btok_1"))
+                .isEqualTo(new PayoutAccountResponse("NOT_SET", "2874", "PLN"));
+    }
+
+    @Test
+    void aFailedReadAfterTheRecordAnswersWithTheRecordedState(CapturedOutput output) {
+        // Guards a spent token answered with 502 when the bank account is set and only the second read failed, and a
+        // user id in the line that says so.
+        PayoutAccount recorded = withStoredBank("PLN", "ba_1", BankAccountState.READY);
+        when(store.findByUser(USER)).thenReturn(Optional.of(opened()));
+        when(provider.attachBankAccount("acct_1", "key-1", "btok_1"))
+                .thenReturn(new PayoutCallResult.Done<>(READY_BANK));
+        when(store.recordBankAccount(7L, "btok_1", READY_BANK)).thenReturn(recorded);
+        when(store.findByStripeAccount("acct_1")).thenReturn(Optional.of(recorded));
+        when(provider.findDefaultBankAccount("acct_1", "PLN"))
+                .thenThrow(new PayoutLookupException("Stripe did not answer", new RuntimeException("timeout")));
+
+        PayoutAccountResponse response = service.setBankAccount(USER, "btok_1");
+
+        assertThat(response).isEqualTo(new PayoutAccountResponse("READY", "2874", "PLN"));
+        verify(store, never()).applyBankState(any(), any(), any(), any());
+        assertThat(output.getAll()).contains("key-1").contains("could not be read again").doesNotContain(USER);
+    }
+
+    @Test
+    void aRefusedTokenIsNotFollowedByASecondRead() {
+        // Guards a Stripe read spent on a request that set nothing.
+        when(store.findByUser(USER)).thenReturn(Optional.of(opened()));
+        when(provider.attachBankAccount("acct_1", "key-1", "btok_1"))
+                .thenReturn(new PayoutCallResult.Refused<>(PayoutRefusal.BANK_ACCOUNT, "resource_missing"));
+
+        assertThatThrownBy(() -> service.setBankAccount(USER, "btok_1")).isInstanceOf(BankTokenRefusedException.class);
+        verify(provider, never()).findDefaultBankAccount(anyString(), anyString());
+    }
 }
