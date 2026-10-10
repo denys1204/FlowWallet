@@ -9,9 +9,9 @@ import com.flowwallet.contract.event.PayoutReturnedEvent;
 import com.flowwallet.wallet.api.AmountPrecision;
 import com.flowwallet.wallet.enums.RejectionReason;
 import com.flowwallet.wallet.enums.TransactionType;
+import com.flowwallet.wallet.withdrawal.UnknownWithdrawalException;
 import com.flowwallet.wallet.withdrawal.WithdrawalEventHandler;
 import com.flowwallet.wallet.withdrawal.WithdrawalMismatchException;
-import com.flowwallet.wallet.withdrawal.WithdrawalNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -167,7 +167,7 @@ public class PaymentEventListener {
             transaction.run();
         } catch (UnknownWalletException e) {
             reject(envelope, RejectionReason.WALLET_NOT_FOUND, payload);
-        } catch (WithdrawalNotFoundException e) {
+        } catch (UnknownWithdrawalException e) {
             reject(envelope, RejectionReason.WITHDRAWAL_NOT_FOUND, payload);
         } catch (WithdrawalMismatchException e) {
             reject(envelope, RejectionReason.WITHDRAWAL_MISMATCH, payload);

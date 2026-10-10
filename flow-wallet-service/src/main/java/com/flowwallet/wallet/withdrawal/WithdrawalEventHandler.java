@@ -99,7 +99,7 @@ public class WithdrawalEventHandler {
 
         Withdrawal withdrawal = withdrawals.findByTransactionReference(envelope.transactionReference())
                 .filter(found -> found.getStatus() != WithdrawalStatus.REFUSED)
-                .orElseThrow(WithdrawalNotFoundException::new);
+                .orElseThrow(UnknownWithdrawalException::new);
         if (!withdrawal.hasTerms(wallet.getId(), envelope.amount())) {
             throw new WithdrawalMismatchException();
         }

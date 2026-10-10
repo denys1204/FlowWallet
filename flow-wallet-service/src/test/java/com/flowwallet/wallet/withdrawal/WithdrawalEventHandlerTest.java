@@ -191,7 +191,7 @@ class WithdrawalEventHandlerTest {
         when(withdrawals.findByTransactionReference(REFERENCE)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> handler.creditReturn(returned("evt-3")))
-                .isInstanceOf(WithdrawalNotFoundException.class);
+                .isInstanceOf(UnknownWithdrawalException.class);
 
         Withdrawal refused = Withdrawal.refused(
                 wallet,
@@ -202,7 +202,7 @@ class WithdrawalEventHandlerTest {
         when(withdrawals.findByTransactionReference(REFERENCE)).thenReturn(Optional.of(refused));
 
         assertThatThrownBy(() -> handler.creditReturn(returned("evt-3")))
-                .isInstanceOf(WithdrawalNotFoundException.class);
+                .isInstanceOf(UnknownWithdrawalException.class);
         verify(balanceHistory, never()).saveAndFlush(any());
         assertThat(wallet.getBalance()).isEqualByComparingTo("25.0000");
     }

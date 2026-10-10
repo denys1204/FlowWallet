@@ -8,9 +8,9 @@ import com.flowwallet.contract.event.PayoutPaidEvent;
 import com.flowwallet.contract.event.PayoutReturnedEvent;
 import com.flowwallet.wallet.enums.RejectionReason;
 import com.flowwallet.wallet.enums.TransactionType;
+import com.flowwallet.wallet.withdrawal.UnknownWithdrawalException;
 import com.flowwallet.wallet.withdrawal.WithdrawalEventHandler;
 import com.flowwallet.wallet.withdrawal.WithdrawalMismatchException;
-import com.flowwallet.wallet.withdrawal.WithdrawalNotFoundException;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -367,7 +367,7 @@ class PaymentEventListenerTest {
                         RejectionReason.WALLET_NOT_FOUND
                 ),
                 Arguments.of(
-                        (Supplier<RuntimeException>) WithdrawalNotFoundException::new,
+                        (Supplier<RuntimeException>) UnknownWithdrawalException::new,
                         RejectionReason.WITHDRAWAL_NOT_FOUND
                 ),
                 Arguments.of(
