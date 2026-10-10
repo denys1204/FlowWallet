@@ -143,6 +143,7 @@ comments. The main ones:
 | `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` | Payment, Wallet |
 | `KAFKA_TOPIC_PAYMENT_EVENTS_PARTITIONS` / `_REPLICAS` / `_MIN_INSYNC_REPLICAS` | `3` / `1` / `1` | Payment: applied when the topic is created. A three-broker cluster uses `3` / `2` for the last two; see [events.md](events.md) |
 | `KAFKA_TOPIC_PAYMENT_EVENTS_DLT_PARTITIONS` / `_REPLICAS` | `3` / `1` | Wallet |
+| `KAFKA_TOPIC_WALLET_WITHDRAWALS_PARTITIONS` / `_REPLICAS` / `_MIN_INSYNC_REPLICAS` | `3` / `1` / `1` | Wallet: applied when `wallet.withdrawals` is created; on an existing topic only a higher partition count and, because the wallet sets `modify-topic-configs`, a changed `_MIN_INSYNC_REPLICAS` take effect |
 | `KAFKA_CONSUMER_GROUP_ID` | `flow-wallet-service` | Wallet |
 | `KAFKA_LISTENER_CONCURRENCY` | `3` | Wallet |
 | `WALLET_CONSUMER_RETRY_MAX_ATTEMPTS` | `3` | Wallet: retries before dead-lettering, with backoff from `WALLET_CONSUMER_RETRY_INITIAL_INTERVAL_MS` (`500`) up to `_MAX_INTERVAL_MS` (`10000`, at most `60000`) by `_MULTIPLIER` (`2.0`). The backoff sleeps on the consumer thread without polling, so the cap stays well below Kafka's `max.poll.interval.ms` (`300000`) |
@@ -157,29 +158,30 @@ comments. The main ones:
 | `PAYMENT_WEBHOOK_MAX_PAYLOAD_SIZE` | `256KB` | Payment: a larger webhook body gets `413` |
 | `PAYMENT_RECONCILIATION_INTERVAL_MS` / `_MIN_AGE` / `_MAX_AGE` / `_BATCH_SIZE` | `300000` / `15m` / `24h` / `50` | Payment: how often the reconciler asks Stripe about deposits still pending or failed, from what age and until what age, and how many per run; `PAYMENT_RECONCILIATION_ENABLED` (`true`) turns it off ([ADR 0032](adr/0032-pending-payments-are-rechecked-with-the-provider.md)) |
 | `PAYMENT_SCHEDULING_ENABLED` | `true` | Payment: `false` stops every scheduled job, the outbox poller and the reconciler included; only for a test that drives those steps itself |
+| `WALLET_SCHEDULING_ENABLED` | `true` | Wallet: `false` stops the outbox poller, reaper and cleanup; only for a test that drives those steps itself |
 | `PAYMENT_MIN_DEPOSIT_AMOUNT` / `PAYMENT_MAX_DEPOSIT_AMOUNT` | `1.00` / `10000.00` | Payment |
-| `OUTBOX_POLL_INTERVAL_MS` / `OUTBOX_BATCH_SIZE` | `10000` / `50` | Payment |
-| `OUTBOX_MAX_RETRIES` | `10` | Payment: send attempts, the first included, before a row becomes `FAILED`, with backoff from `OUTBOX_RETRY_BACKOFF_BASE_MS` (`1000`) doubling up to `_MAX_MS` (`60000`). The default spends about four minutes in backoff (1, 2, 4, 8, 16, 32 s, then 60 s three times); the poll interval and each send's wait on the broker (up to the producer's `max.block.ms`, 60 s by default, when it is unreachable) add to that |
-| `OUTBOX_REAPER_INTERVAL_MS` / `OUTBOX_STUCK_PROCESSING_THRESHOLD_MS` | `60000` / `300000` | Payment |
-| `OUTBOX_RETENTION_DAYS` / `OUTBOX_CLEANUP_CRON` | `7` / `0 0 3 * * *` | Payment (`COMPLETED` rows only) |
-| `ACTUATOR_EXPOSED_ENDPOINTS` | Payment `health,info,metrics,outbox`; Wallet `health,info,metrics`; Gateway `health,info` | All three. It is one shared name, so a value set in `.env` replaces all three defaults at once; the template leaves it commented for that reason |
+| `OUTBOX_POLL_INTERVAL_MS` / `OUTBOX_BATCH_SIZE` | `10000` / `50` | Payment, Wallet |
+| `OUTBOX_MAX_RETRIES` | `10` | Payment, Wallet: send attempts, the first included, before a row becomes `FAILED`, with backoff from `OUTBOX_RETRY_BACKOFF_BASE_MS` (`1000`) doubling up to `_MAX_MS` (`60000`). The default spends about four minutes in backoff (1, 2, 4, 8, 16, 32 s, then 60 s three times); the poll interval and each send's wait on the broker (up to the producer's `max.block.ms`, 60 s by default, when it is unreachable) add to that |
+| `OUTBOX_REAPER_INTERVAL_MS` / `OUTBOX_STUCK_PROCESSING_THRESHOLD_MS` | `60000` / `300000` | Payment, Wallet |
+| `OUTBOX_RETENTION_DAYS` / `OUTBOX_CLEANUP_CRON` | `7` / `0 0 3 * * *` | Payment, Wallet (`COMPLETED` rows only) |
+| `ACTUATOR_EXPOSED_ENDPOINTS` | Payment and Wallet `health,info,metrics,outbox`; Gateway `health,info` | All three. It is one shared name, so a value set in `.env` replaces all three defaults at once; the template leaves it commented for that reason |
 | `LOG_LEVEL` / `APP_LOG_LEVEL` | `INFO` / `DEBUG` | Payment, Wallet |
 | `KAFKA_EXTERNAL_PORT` / `KAFKA_UI_PORT` | `9092` / `8090` | Docker Compose |
 
 The wallet service won't start with values that make no sense, such as a negative retry count, a retry multiplier below
 1.0, an initial interval above the maximum, a maximum interval above 60000 ms, a blank Payment Service URL, a Payment
-Service timeout below 1ms, or a provider other than `STRIPE`. The payment service does the same for a deposit range that
-is inverted, not positive, or too wide for `NUMERIC(19,4)`, a Stripe timeout below 1ms or a negative Stripe retry count,
-a webhook tolerance that isn't positive, a payment method list that is empty or names a method it doesn't know, a
-webhook size limit outside 1B to 16MB, an outbox batch size, attempt count, backoff, retention or stuck-processing
-threshold below 1, an outbox backoff base above its maximum, a reconciler interval below 1000 ms, a reconciler batch
-below 1, a reconciler `min-age` or `max-age` below 1s or a `min-age` that is not shorter than the `max-age`, and a
-`payment.events` topic with more in-sync replicas than replicas. A missing webhook secret doesn't stop it starting; it
-only disables webhooks.
+Service timeout below 1ms, a provider other than `STRIPE`, a `wallet.withdrawals` topic with more in-sync replicas than
+replicas, or an outbox batch size, attempt count, backoff, retention or stuck-processing threshold below 1 or a backoff
+base above its maximum. The payment service does the same for a deposit range that is inverted, not positive, or too
+wide for `NUMERIC(19,4)`, a Stripe timeout below 1ms or a negative Stripe retry count, a webhook tolerance that isn't
+positive, a payment method list that is empty or names a method it doesn't know, a webhook size limit outside 1B to
+16MB, the same outbox values, a reconciler interval below 1000 ms, a reconciler batch below 1, a reconciler `min-age` or
+`max-age` below 1s or a `min-age` that is not shorter than the `max-age`, and a `payment.events` topic with more in-sync
+replicas than replicas. A missing webhook secret doesn't stop it starting; it only disables webhooks.
 
 ## Testing
 
-There are 623 tests, all green: 260 in the wallet service, 257 in the payment service, 53 in the outbox module, 44 in
+There are 651 tests, all green: 288 in the wallet service, 257 in the payment service, 53 in the outbox module, 44 in
 platform and 9 in the gateway. The gateway's tests bind its own `application.yml`, so a YAML regression that drops the
 response or connect timeout, or binds the gateway beyond loopback, fails there rather than in a live request; they also
 check that `BindAddressCheck` runs when the application is ready, warns for `0.0.0.0`, a LAN address and no address at

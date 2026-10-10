@@ -11,12 +11,13 @@ error responses, see [docs/api.md](api.md), and for the database schema behind t
 |-------|-----------|----------|----------|
 | `payment.events` | 3 | Payment Service (via outbox) | Wallet Service, group `flow-wallet-service` |
 | `payment.events.wallet.DLT` | 3 | Wallet Service error handler | none; inspect or replay by hand |
+| `wallet.withdrawals` | 3 | Wallet Service (via outbox) | none yet; Payment Service's consumer comes with withdrawals |
 
-Both topics are declared as beans (`payment.events` by Payment Service, the dead-letter topic by Wallet
-Service), so they are created at startup with the configured partitions and replicas instead of relying on
-broker auto-creation. Both services set `spring.kafka.admin.fail-fast`, so neither starts while the broker is
-unreachable: without it, a service started too early logs "Could not configure topics" once and never creates
-its topic. Both producers use `acks=all` with idempotence enabled.
+Every topic is declared as a bean by the service that owns it (`payment.events` by Payment Service, the dead-letter
+topic and `wallet.withdrawals` by Wallet Service), so they are created at startup with the configured partitions and
+replicas instead of relying on broker auto-creation. Both services set `spring.kafka.admin.fail-fast`, so neither starts
+while the broker is unreachable: without it, a service started too early logs "Could not configure topics" once and
+never creates its topic. Both producers use `acks=all` with idempotence enabled.
 
 `payment.events.wallet.DLT` is created with `retention.ms=-1` and keeps every record until an operator
 deletes it, because nothing else holds a payment that reached it. Wallet Service sets
@@ -28,18 +29,20 @@ on Wallet Service). An alert on that counter rising is the signal that a payment
 replay a dead letter is in [ARCHITECTURE.md](../ARCHITECTURE.md#the-wallet-consumer), and the reasoning in
 [ADR 0020](adr/0020-wallet-dead-letters-kept-and-counted.md).
 
-`payment.events` is also created with `min.insync.replicas` (`KAFKA_TOPIC_PAYMENT_EVENTS_MIN_INSYNC_REPLICAS`,
-default `1`). With more than one replica and the broker default of `1`, the leader alone can acknowledge an
-`acks=all` send and lose it with its disk. A three-broker cluster such as the lab uses 3 replicas with
-`min.insync.replicas=2`: a send still succeeds with one broker down, and with two down it fails instead of
-being acknowledged by the leader alone. Startup fails if the value exceeds the replica count. Kafka applies
-topic settings only when it creates the topic, and Payment Service does not set
-`spring.kafka.admin.modify-topic-configs`, so for an existing `payment.events` set it or change the topic
-with `kafka-configs`.
+`payment.events` is also created with `min.insync.replicas` (`KAFKA_TOPIC_PAYMENT_EVENTS_MIN_INSYNC_REPLICAS`, default
+`1`). With more than one replica and the broker default of `1`, the leader alone can acknowledge an `acks=all` send and
+lose it with its disk. A three-broker cluster such as the lab uses 3 replicas with `min.insync.replicas=2`: a send still
+succeeds with one broker down, and with two down it fails instead of being acknowledged by the leader alone. Startup
+fails if the value exceeds the replica count. Kafka applies topic settings only when it creates the topic, and Payment
+Service does not set `spring.kafka.admin.modify-topic-configs`, so for an existing `payment.events` set it or change the
+topic with `kafka-configs`. `wallet.withdrawals` takes the same setting
+(`KAFKA_TOPIC_WALLET_WITHDRAWALS_MIN_INSYNC_REPLICAS`, default `1`) and fails startup the same way. Wallet Service sets
+`spring.kafka.admin.modify-topic-configs`, so a changed value also reaches an existing topic.
 
-Payment Service has no dead-letter topic of its own. The `FAILED` rows in `outbox_events` play that role,
-because a send fails almost only when the broker is unreachable, and a publish to another topic on the same
-broker would fail then too. The wallet's dead-letter topic carries failed consumer records, not outbox rows.
+Payment Service has no dead-letter topic of its own. The `FAILED` rows in `outbox_events` play that role, because a send
+fails almost only when the broker is unreachable, and a publish to another topic on the same broker would fail then too.
+The wallet's dead-letter topic carries failed consumer records, not outbox rows. Wallet Service's outbox works the same
+way for `wallet.withdrawals`: its `FAILED` rows are the dead-letter store for withdrawal commands.
 
 Events are published as JSON strings keyed by `transactionReference`. Each record carries an `eventType` header set to
 the name of its event, such as `PaymentCompletedEvent` or `PaymentFailedEvent`. Consumers dispatch on that header and

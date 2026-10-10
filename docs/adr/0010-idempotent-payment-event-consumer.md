@@ -46,7 +46,7 @@ record that blocks its partition holds up about a third of all credits.
   `payment.events.wallet.DLT` at once: without an event id there is nothing to write a row under.
 - The container's `DefaultErrorHandler` retries any other failure with an `ExponentialBackOff`
   (`wallet.consumer.retry.*`; by default 3 retries from 500 ms, doubling, capped at 10,000 ms), then a
-  `DeadLetterPublishingRecoverer` publishes it to `payment.events.wallet.DLT`. It is the wallet's only retry mechanism.
+  `DeadLetterPublishingRecoverer` publishes it to `payment.events.wallet.DLT`. It is the wallet's only retry of a consumed record.
 - `KafkaConsumerConfig` declares the dead-letter topic as a `NewTopic` bean. The recoverer publishes with partition
   -1, so the producer's partitioner picks one, and the producer uses `acks=all` with idempotence. The topic is the
   wallet's own, apart from Payment Service's dead-letter store, the `FAILED` outbox rows.

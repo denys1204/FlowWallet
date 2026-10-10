@@ -21,7 +21,12 @@ public enum TransactionType {
      */
     TRANSFER_OUT,
     /**
-     * Money that goes out of the system: a payout to a card or bank account.
+     * Money that goes out of the system: a payout to the owner's bank account.
      */
-    WITHDRAWAL
+    WITHDRAWAL,
+    /**
+     * Money that came back from a withdrawal whose payout failed or was never made, under the withdrawal's
+     * reference. See docs/adr/0033-withdrawals-are-debited-under-the-lock-and-settled-by-payout-events.md.
+     */
+    WITHDRAWAL_RETURNED
 }

@@ -26,6 +26,11 @@
             <groupId>com.flowwallet</groupId>
             <artifactId>flow-wallet-contract</artifactId>
         </dependency>
+        <!-- Transactional outbox for the withdrawal command -->
+        <dependency>
+            <groupId>com.flowwallet</groupId>
+            <artifactId>flow-wallet-outbox</artifactId>
+        </dependency>
 
         <!-- Web -->
         <dependency>

@@ -4,6 +4,7 @@ import com.flowwallet.wallet.enums.TransactionType;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.util.Arrays;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -102,5 +103,40 @@ class BalanceHistoryTest {
                 .containsExactly(tuple(12L, 1L), tuple(12L, 2L), tuple(12L, 3L));
         assertThat(alice.getLastEntryNo()).isEqualTo(3L);
         assertThat(bob.getLastEntryNo()).isEqualTo(3L);
+    }
+
+    @Test
+    void aWithdrawalDebitsAndItsReturnCreditsUnderTheSameReference() {
+        // Guards a wrong sign in balanceAfter, a debit carrying an event id it never had, a return without the event
+        // that brought it, and the two rows under different references, which would break the ledger barrier.
+        Wallet alice = wallet(11L, "alice", "100.0000");
+        BigDecimal amount = new BigDecimal("75.0000");
+
+        BalanceHistory debit = BalanceHistory.withdrawal(alice, REFERENCE, amount, alice.debit(amount));
+        BalanceHistory back = BalanceHistory.withdrawalReturned(
+                alice,
+                REFERENCE,
+                "evt-1",
+                amount,
+                alice.credit(amount)
+        );
+
+        assertThat(debit.getType()).isEqualTo(TransactionType.WITHDRAWAL);
+        assertThat(debit.getBalanceAfter()).isEqualByComparingTo("25.0000");
+        assertThat(debit.getEventId()).isNull();
+        assertThat(back.getType()).isEqualTo(TransactionType.WITHDRAWAL_RETURNED);
+        assertThat(back.getBalanceBefore()).isEqualByComparingTo("25.0000");
+        assertThat(back.getBalanceAfter()).isEqualByComparingTo("100.0000");
+        assertThat(back.getEventId()).isEqualTo("evt-1");
+        assertThat(List.of(debit, back))
+                .extracting(BalanceHistory::getTransactionReference, BalanceHistory::getCounterpartyUserId)
+                .containsOnly(tuple(REFERENCE, null));
+        assertThat(List.of(debit.getEntryNo(), back.getEntryNo())).containsExactly(1L, 2L);
+    }
+
+    @Test
+    void everyTypeFitsItsColumn() {
+        // Guards a type added later that the VARCHAR(20) type column would refuse at the first insert.
+        assertThat(Arrays.stream(TransactionType.values()).map(Enum::name)).allMatch(name -> name.length() <= 20);
     }
 }

@@ -17,7 +17,7 @@ import org.springframework.util.backoff.ExponentialBackOff;
 /**
  * What happens to a record the listener could not handle: bounded retries, then the wallet's dead-letter topic.
  * The container's default recoverer would log the record and drop the payment. This error handler is the
- * wallet's only retry mechanism. See docs/adr/0010-idempotent-payment-event-consumer.md.
+ * wallet's only retry of a consumed record. See docs/adr/0010-idempotent-payment-event-consumer.md.
  */
 @Configuration
 public class KafkaConsumerConfig {

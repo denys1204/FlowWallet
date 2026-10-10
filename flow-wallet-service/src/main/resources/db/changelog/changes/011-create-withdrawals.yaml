@@ -1,0 +1,96 @@
+databaseChangeLog:
+  - changeSet:
+      id: 011-create-withdrawals-seq
+      author: flow-wallet
+      changes:
+        - createSequence:
+            sequenceName: withdrawals_seq
+            incrementBy: 50
+            startValue: 1
+  - changeSet:
+      id: 011-create-withdrawals-table
+      author: flow-wallet
+      comment: >-
+        One row per withdrawal request under its Idempotency-Key, refused or debited. The money moves in
+        balance_history: a WITHDRAWAL row debits the wallet and a WITHDRAWAL_RETURNED row credits it back under
+        the same reference. wallet_id has no foreign key, like balance_history's. See
+        docs/adr/0033-withdrawals-are-debited-under-the-lock-and-settled-by-payout-events.md.
+      changes:
+        - createTable:
+            tableName: withdrawals
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: wallet_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: transaction_reference
+                  type: VARCHAR(64)
+                  remarks: The client's Idempotency-Key, lower-cased; also the payout's reference in Payment Service.
+                  constraints:
+                    nullable: false
+                    unique: true
+                    uniqueConstraintName: withdrawals_reference_key
+              - column:
+                  name: amount
+                  type: NUMERIC(19,4)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: VARCHAR(20)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: refusal_reason
+                  type: VARCHAR(32)
+                  remarks: Why the wallet refused the request; set exactly when status is REFUSED.
+              - column:
+                  name: return_reason
+                  type: VARCHAR(32)
+                  remarks: >-
+                    Payment Service's reason code from the payout event that last raised the status, as it came
+                    when it is 1 to 32 capitals and underscores, else OTHER; set exactly when the withdrawal is on its
+                    way back or returned. Nothing branches on it.
+              - column:
+                  name: version
+                  type: BIGINT
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+  - changeSet:
+      id: 011-add-withdrawals-checks
+      author: flow-wallet
+      comment: >-
+        The amount is positive, as in the ledger. The status is one the wallet knows, and a refusal reason is set
+        exactly on a refused withdrawal, so a reader of the row never has to guess which column applies. A return
+        reason is set exactly on a withdrawal on its way back or returned. Written as raw SQL because
+        addCheckConstraint is a Liquibase Pro change type.
+      changes:
+        - sql:
+            sql: >-
+              ALTER TABLE withdrawals ADD CONSTRAINT withdrawals_amount_positive CHECK (amount > 0);
+              ALTER TABLE withdrawals ADD CONSTRAINT withdrawals_status_known
+              CHECK (status IN ('PENDING', 'PAID', 'RETURN_PENDING', 'RETURNED', 'REFUSED'));
+              ALTER TABLE withdrawals ADD CONSTRAINT withdrawals_refusal_reason_when_refused
+              CHECK ((status = 'REFUSED') = (refusal_reason IS NOT NULL));
+              ALTER TABLE withdrawals ADD CONSTRAINT withdrawals_return_reason_when_returning
+              CHECK ((status IN ('RETURN_PENDING', 'RETURNED')) = (return_reason IS NOT NULL))

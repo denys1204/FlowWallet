@@ -117,7 +117,7 @@ Each invariant here is stated once and links the ADR that holds its reasoning.
   SQLState class 08 or 57P0x) and any `TransientDataAccessException` (a query timeout, a lock failure) with that
   503, whose detail does not claim that nothing moved
   ([ADR 0025](docs/adr/0025-unreachable-database-answers-503.md)).
-- The consumer's `DefaultErrorHandler` is the only retry mechanism in the wallet; do not add Spring Retry there.
+- The consumer's `DefaultErrorHandler` is the wallet's only retry of a consumed record; do not add Spring Retry there.
   Refusals the wallet understands (invalid amount or envelope, unknown wallet, duplicate reference) are stored
   as acknowledged `REJECTED` rows with the payload; unreadable records and exhausted retries go to
   `payment.events.wallet.DLT` ([ADR 0010](docs/adr/0010-idempotent-payment-event-consumer.md)). That topic keeps

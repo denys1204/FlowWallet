@@ -1,0 +1,85 @@
+databaseChangeLog:
+  - changeSet:
+      id: 012-create-outbox-events-seq
+      author: flow-wallet
+      changes:
+        - createSequence:
+            sequenceName: outbox_events_seq
+            incrementBy: 50
+            startValue: 1
+  - changeSet:
+      id: 012-create-outbox-events-table
+      author: flow-wallet
+      comment: >-
+        The wallet's own outbox, read by the shared flow-wallet-outbox module. The schema is Payment Service's
+        changesets 002 to 004 in one table, because the module maps one OutboxEvent entity for both services. See
+        docs/adr/0034-shared-outbox-and-the-wallet-withdrawals-command.md.
+      changes:
+        - createTable:
+            tableName: outbox_events
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: aggregate_type
+                  type: VARCHAR(64)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: aggregate_id
+                  type: VARCHAR(64)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: event_type
+                  type: VARCHAR(128)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: payload
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: VARCHAR(20)
+                  defaultValue: 'PENDING'
+                  constraints:
+                    nullable: false
+              - column:
+                  name: retry_count
+                  type: INT
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: error_message
+                  type: TEXT
+              - column:
+                  name: processed_at
+                  type: TIMESTAMP
+              - column:
+                  name: next_attempt_at
+                  type: TIMESTAMP
+                  remarks: "Earliest time a PENDING event may be re-dispatched by the poller (retry backoff); NULL = eligible immediately."
+              - column:
+                  name: processing_started_at
+                  type: TIMESTAMP
+                  remarks: "When the event entered PROCESSING (set at lock time); used by the reaper to recover events stuck in PROCESSING after a crash."
+        - createIndex:
+            tableName: outbox_events
+            indexName: idx_outbox_events_status_created_at
+            columns:
+              - column:
+                  name: status
+              - column:
+                  name: created_at

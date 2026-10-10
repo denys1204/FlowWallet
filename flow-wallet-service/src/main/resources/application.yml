@@ -18,6 +18,12 @@ spring:
       - optional:file:../.env[.properties]
   application:
     name: flow-wallet-service
+  task:
+    scheduling:
+      pool:
+        # One thread per scheduled job (outbox poller, reaper, cleanup), so a cleanup run never holds back the
+        # poller that sends withdrawal commands. Boot's default is a single thread for all of them.
+        size: 3
   datasource:
     # logServerErrorDetail keeps Postgres' DETAIL line (the refused key values or the whole failing row, user ids
     # and balances among them) out of exception messages, which Hibernate, the error handler and the retry logs
@@ -56,8 +62,8 @@ spring:
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       enable-auto-commit: false
     producer:
-      # Only the dead-letter topic is produced to, but a failed credit is exactly the record that must not
-      # be lost on the way to it, so the guarantees match the payment service's.
+      # The outbox sends withdrawal commands and the error handler sends dead letters. Neither record may be lost
+      # on the way, so the guarantees match the payment service's.
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
       acks: all
@@ -68,13 +74,18 @@ spring:
       ack-mode: RECORD
     admin:
       # Startup fails while the broker is unreachable. Otherwise KafkaAdmin logs "Could not configure topics"
-      # once and never retries, so the dead-letter topic is never created, and on a broker with auto-creation
-      # off every dead-letter publish fails and the record is redelivered without end.
+      # once and never retries, so the dead-letter topic and wallet.withdrawals are never created, and on a broker
+      # with auto-creation off every dead-letter publish and every withdrawal command send fails.
       fail-fast: true
       # Kafka applies topic settings only when it creates a topic. This applies the dead-letter topic's
-      # unlimited retention to one that already exists.
+      # unlimited retention and wallet.withdrawals' min.insync.replicas to topics that already exist, and sets
+      # either back at the next start if someone changed it on the broker by hand.
       modify-topic-configs: true
     topic:
+      wallet-withdrawals:
+        partitions: ${KAFKA_TOPIC_WALLET_WITHDRAWALS_PARTITIONS:3}
+        replicas: ${KAFKA_TOPIC_WALLET_WITHDRAWALS_REPLICAS:1}
+        min-insync-replicas: ${KAFKA_TOPIC_WALLET_WITHDRAWALS_MIN_INSYNC_REPLICAS:1}
       payment-events-dlt:
         partitions: ${KAFKA_TOPIC_PAYMENT_EVENTS_DLT_PARTITIONS:3}
         replicas: ${KAFKA_TOPIC_PAYMENT_EVENTS_DLT_REPLICAS:1}
@@ -84,6 +95,9 @@ spring:
       sasl.jaas.config: ${KAFKA_SASL_JAAS_CONFIG:}
 
 wallet:
+  # Off only for a test that drives the scheduled steps itself; it stops the outbox poller, reaper and cleanup.
+  scheduling:
+    enabled: ${WALLET_SCHEDULING_ENABLED:true}
   payment:
     # Payment Service directly, not through the gateway: service-to-service traffic has no reason to leave
     # by the front door, and routing it there would make an internal call depend on the edge being up.
@@ -98,11 +112,27 @@ wallet:
       max-interval-ms: ${WALLET_CONSUMER_RETRY_MAX_INTERVAL_MS:10000}
       multiplier: ${WALLET_CONSUMER_RETRY_MULTIPLIER:2.0}
 
+outbox:
+  poll-interval-ms: ${OUTBOX_POLL_INTERVAL_MS:10000}
+  batch-size: ${OUTBOX_BATCH_SIZE:50}
+  max-retries: ${OUTBOX_MAX_RETRIES:10}
+  retention-days: ${OUTBOX_RETENTION_DAYS:7}
+  cleanup-cron: ${OUTBOX_CLEANUP_CRON:0 0 3 * * *}
+  reaper-interval-ms: ${OUTBOX_REAPER_INTERVAL_MS:60000}
+  retry-backoff-base-ms: ${OUTBOX_RETRY_BACKOFF_BASE_MS:1000}
+  retry-backoff-max-ms: ${OUTBOX_RETRY_BACKOFF_MAX_MS:60000}
+  # Must stay comfortably above the longest possible single send, or the reaper could
+  # reset a row a live instance is still publishing and the event goes out twice.
+  stuck-processing-threshold-ms: ${OUTBOX_STUCK_PROCESSING_THRESHOLD_MS:300000}
+
 management:
   endpoints:
     web:
       exposure:
-        include: ${ACTUATOR_EXPOSED_ENDPOINTS:health,info,metrics}
+        # outbox is on by default: a FAILED row is a debited withdrawal Payment Service never received, and its
+        # requeue is the only way out short of SQL.
+        # See docs/adr/0034-shared-outbox-and-the-wallet-withdrawals-command.md.
+        include: ${ACTUATOR_EXPOSED_ENDPOINTS:health,info,metrics,outbox}
 
 logging:
   level:

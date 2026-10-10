@@ -15,8 +15,8 @@ import java.time.Instant;
  * {@code (transactionReference, type)} is unique and the reference is NOT NULL. A reference owns at most one
  * movement of each type, so both legs of a transfer share one and every lookup by reference names its type.
  * {@code counterpartyUserId} is the other user of a transfer, which a CHECK requires on the transfer types and
- * forbids on the rest. {@code eventId} is null on both transfer legs, which never pass through
- * {@code payment.events}. See docs/adr/0012-balances-and-append-only-ledger.md.
+ * forbids on the rest. {@code eventId} is null on both transfer legs and on a withdrawal's debit, which never pass
+ * through {@code payment.events}. See docs/adr/0012-balances-and-append-only-ledger.md.
  * <p>
  * {@code entryNo} numbers a wallet's movements 1, 2, 3 in commit order and is unique per wallet; it orders the
  * history and is its cursor. The id comes from a pooled sequence and orders nothing. Each factory takes the
@@ -132,6 +132,51 @@ public class BalanceHistory {
                 .transactionReference(transactionReference)
                 .type(TransactionType.TRANSFER_IN)
                 .counterpartyUserId(senderUserId)
+                .amount(amount)
+                .balanceBefore(balanceBefore)
+                .balanceAfter(balanceBefore.add(amount))
+                .build();
+    }
+
+    /**
+     * Records the debit of a withdrawal. {@code balanceBefore} is the value {@link Wallet#debit(BigDecimal)}
+     * returned, and the amount stays positive: the type says the money left.
+     * See docs/adr/0033-withdrawals-are-debited-under-the-lock-and-settled-by-payout-events.md.
+     */
+    public static BalanceHistory withdrawal(
+            Wallet wallet,
+            String transactionReference,
+            BigDecimal amount,
+            BigDecimal balanceBefore
+    ) {
+        return BalanceHistory.builder()
+                .walletId(wallet.getId())
+                .entryNo(wallet.getLastEntryNo())
+                .transactionReference(transactionReference)
+                .type(TransactionType.WITHDRAWAL)
+                .amount(amount)
+                .balanceBefore(balanceBefore)
+                .balanceAfter(balanceBefore.subtract(amount))
+                .build();
+    }
+
+    /**
+     * Records a withdrawal's money coming back, under the withdrawal's reference and the {@code PayoutReturnedEvent}
+     * that brought it. {@code balanceBefore} is the value {@link Wallet#credit(BigDecimal)} returned.
+     */
+    public static BalanceHistory withdrawalReturned(
+            Wallet wallet,
+            String transactionReference,
+            String eventId,
+            BigDecimal amount,
+            BigDecimal balanceBefore
+    ) {
+        return BalanceHistory.builder()
+                .walletId(wallet.getId())
+                .entryNo(wallet.getLastEntryNo())
+                .transactionReference(transactionReference)
+                .eventId(eventId)
+                .type(TransactionType.WITHDRAWAL_RETURNED)
                 .amount(amount)
                 .balanceBefore(balanceBefore)
                 .balanceAfter(balanceBefore.add(amount))
