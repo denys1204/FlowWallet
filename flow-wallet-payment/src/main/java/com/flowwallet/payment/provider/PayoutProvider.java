@@ -1,5 +1,6 @@
 package com.flowwallet.payment.provider;
 
+import com.flowwallet.payment.provider.dto.ConnectEvent;
 import com.flowwallet.payment.provider.dto.PayoutAccountHolder;
 import com.flowwallet.payment.provider.dto.PayoutCallResult;
 import com.flowwallet.payment.provider.dto.ProviderBankAccount;
@@ -9,6 +10,8 @@ import com.flowwallet.payment.provider.dto.ProviderTransfer;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 /**
  * Opens the user's connected account and attaches their bank account, then moves a withdrawal's money out in three
@@ -37,6 +40,21 @@ public interface PayoutProvider {
      * @return the account's default bank account for that currency after the attach
      */
     PayoutCallResult<ProviderBankAccount> attachBankAccount(String accountId, String accountKey, String token);
+
+    /**
+     * The connected account's default bank account for the currency as the provider holds it now, with whether payouts
+     * can go to it; empty when the account has none for the currency.
+     */
+    Optional<ProviderBankAccount> findDefaultBankAccount(String accountId, String currency);
+
+    /**
+     * Verifies a webhook from the endpoint for connected accounts with that endpoint's own secret, and reduces it to
+     * its envelope.
+     *
+     * @throws com.flowwallet.payment.provider.exception.InvalidWebhookSignatureException for a missing or invalid
+     *         signature, or while no secret is configured
+     */
+    ConnectEvent readConnectEvent(String payload, Map<String, String> headers);
 
     /**
      * The platform's balance in the currency that a transfer can use now; zero when the provider holds none.

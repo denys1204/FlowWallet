@@ -48,6 +48,17 @@ public class PayoutProperties {
     @Valid
     private final Executor executor = new Executor();
 
+    @Valid
+    private final Reconciler reconciler = new Reconciler();
+
+    /**
+     * Whether Payment Service pays out in the currency at all.
+     */
+    public boolean paysOutIn(String currency) {
+        return currencies.stream()
+                .anyMatch(entry -> entry.getCode() != null && entry.getCode().equalsIgnoreCase(currency));
+    }
+
     /**
      * Checked here rather than on each currency, because Stripe's minimum depends on the connected account's country.
      * A currency Stripe documents no minimum for in that country is not checked.
@@ -216,6 +227,58 @@ public class PayoutProperties {
         public Duration unknownBackoffAfter(int attempts) {
             Duration doubled = unknownBackoff.multipliedBy(1L << Math.min(Math.max(attempts, 0), 20));
             return doubled.compareTo(unknownMaxBackoff) > 0 ? unknownMaxBackoff : doubled;
+        }
+    }
+
+    /**
+     * How {@code PayoutReconciler} asks Stripe about payouts whose webhook may be lost: a created payout from
+     * {@code created-min-age} on, at most that often, and a paid one every {@code paid-recheck} for
+     * {@code paid-period} after it was paid, since Stripe can fail a paid payout days later.
+     * See docs/adr/0036-connect-webhooks-have-their-own-endpoint-and-secret.md.
+     */
+    @Getter
+    @Setter
+    public static class Reconciler {
+        /**
+         * Whether the reconciler runs at all. Read by {@code @ConditionalOnProperty}, whose {@code matchIfMissing}
+         * holds the same default.
+         */
+        private boolean enabled = true;
+
+        /**
+         * Pause between two runs, in ms. {@code @Scheduled} reads it through a placeholder with the same default.
+         */
+        @Min(value = 1000, message = "payment.payout.reconciler.interval-ms must be at least 1000")
+        private long intervalMs = 60_000;
+
+        /**
+         * Rows asked about per run, created ones first. Each is one Stripe read.
+         */
+        @Min(value = 1, message = "payment.payout.reconciler.batch-size must be at least 1")
+        private int batchSize = 50;
+
+        @NotNull(message = "payment.payout.reconciler.run-budget is required")
+        @DurationMin(seconds = 1, message = "payment.payout.reconciler.run-budget must be at least 1s")
+        private Duration runBudget = Duration.ofSeconds(60);
+
+        /**
+         * How old a created payout must be before Stripe is asked about it, and the least gap between two looks.
+         */
+        @NotNull(message = "payment.payout.reconciler.created-min-age is required")
+        @DurationMin(seconds = 1, message = "payment.payout.reconciler.created-min-age must be at least 1s")
+        private Duration createdMinAge = Duration.ofMinutes(15);
+
+        @NotNull(message = "payment.payout.reconciler.paid-recheck is required")
+        @DurationMin(seconds = 1, message = "payment.payout.reconciler.paid-recheck must be at least 1s")
+        private Duration paidRecheck = Duration.ofHours(6);
+
+        @NotNull(message = "payment.payout.reconciler.paid-period is required")
+        @DurationMin(seconds = 1, message = "payment.payout.reconciler.paid-period must be at least 1s")
+        private Duration paidPeriod = Duration.ofDays(10);
+
+        @AssertTrue(message = "payment.payout.reconciler.paid-recheck must be shorter than paid-period")
+        public boolean isPaidRecheckShorterThanPeriod() {
+            return paidRecheck == null || paidPeriod == null || paidRecheck.compareTo(paidPeriod) < 0;
         }
     }
 

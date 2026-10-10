@@ -5,8 +5,9 @@ import org.jspecify.annotations.Nullable;
 import java.time.Instant;
 
 /**
- * What one executor step decided, for {@link PayoutStore#record} to apply. The step makes the Stripe calls and writes
- * nothing; the record applies the transition, its outbox event and the bookkeeping in one short transaction.
+ * What one executor step or one settlement decided, for {@link PayoutStore} to apply. The step makes the Stripe
+ * calls and writes nothing; the store applies the transition, its outbox event and the bookkeeping in one short
+ * transaction.
  * See docs/adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md.
  */
 public sealed interface StepOutcome {
@@ -30,8 +31,21 @@ public sealed interface StepOutcome {
 
     /**
      * A failed or canceled payout for the reference was found: it is recorded and its transfer reversed.
+     *
+     * @param failedDestinationId the bank account a failed payout was sent to, set back to {@code NOT_SET} if it is the
+     *                            stored one; null for a canceled payout, which says nothing about its bank account
      */
-    record FailedPayoutAdopted(String stripePayoutId, @Nullable String failureCode) implements StepOutcome {
+    record FailedPayoutAdopted(
+            String stripePayoutId,
+            @Nullable String failureCode,
+            @Nullable String failedDestinationId
+    ) implements StepOutcome {
+    }
+
+    /**
+     * Stripe paid the payout. Not final: a paid payout can still fail, which a later settlement applies.
+     */
+    record Paid() implements StepOutcome {
     }
 
     /**
@@ -105,6 +119,7 @@ public sealed interface StepOutcome {
             case Transferred _ -> "transferred";
             case Returned _ -> "returned";
             case PayoutCreated _ -> "payout_created";
+            case Paid _ -> "paid";
             case FailedPayoutAdopted _ -> "reversing";
             case ReversalStarted _ -> "reversing";
             case BankAccountRejected _ -> "reversing";

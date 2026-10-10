@@ -12,6 +12,7 @@ import com.flowwallet.payment.provider.exception.PaymentInitiationException;
 import com.flowwallet.payment.provider.exception.PaymentLookupException;
 import com.flowwallet.payment.provider.exception.PaymentRefusedException;
 import com.flowwallet.payment.provider.stripe.client.StripeClient;
+import com.flowwallet.payment.provider.stripe.config.StripeProperties;
 import com.flowwallet.payment.provider.stripe.mapper.StripeRequestMapper;
 import com.stripe.exception.ApiConnectionException;
 import com.stripe.exception.ApiException;
@@ -48,14 +49,18 @@ import static org.mockito.Mockito.*;
 
 class StripePaymentStrategyTest {
     private static final Instant CREATED = Instant.parse("2026-01-01T00:00:00Z");
+    private static final String SECRET = "whsec_unit-test-signing-secret";
+    private static final String CONNECT_SECRET = "whsec_unit-test-connect-secret";
 
     private final StripeRequestMapper requestMapper = mock(StripeRequestMapper.class);
     private final StripeClient stripeClient = mock(StripeClient.class);
     private final StripeWebhookParser webhookParser = mock(StripeWebhookParser.class);
+    private final StripeProperties properties = properties();
     private final StripePaymentStrategy strategy = new StripePaymentStrategy(
             requestMapper,
             webhookParser,
-            stripeClient
+            stripeClient,
+            properties
     );
     private final Logger logger = (Logger) LoggerFactory.getLogger(StripePaymentStrategy.class);
     private final ListAppender<ILoggingEvent> logs = new ListAppender<>();
@@ -194,8 +199,8 @@ class StripePaymentStrategyTest {
     void mapsSucceededWebhookToPaymentSuccessResult() {
         // The ordinary path: a genuinely succeeded intent must map to PAYMENT_SUCCESS with its real terms.
         PaymentIntent paymentIntent = paymentIntent("succeeded", 5000L, "usd");
-        when(webhookParser.parse("payload", Map.of())).thenReturn(
-                new ParsedStripeEvent("evt_1", "payment_intent.succeeded", CREATED, paymentIntent)
+        when(webhookParser.parse("payload", Map.of(), SECRET)).thenReturn(
+                new ParsedStripeEvent("evt_1", "payment_intent.succeeded", CREATED, null, paymentIntent)
         );
 
         WebhookResult result = strategy.handleWebhook("payload", Map.of());
@@ -208,6 +213,20 @@ class StripePaymentStrategyTest {
         assertThat(result.occurredAt()).isEqualTo(CREATED);
     }
 
+    @Test
+    void parsesWithThePlatformSecret() {
+        // Guards the deposit webhook being verified with the Connect secret: a delivery signed for the Connect
+        // endpoint would be accepted as a deposit, and every genuine deposit would be refused once the secrets differ.
+        when(webhookParser.parse("payload", Map.of(), SECRET)).thenReturn(
+                new ParsedStripeEvent("evt_1", "payment_intent.created", CREATED, null, mock(PaymentIntent.class))
+        );
+
+        strategy.handleWebhook("payload", Map.of());
+
+        verify(webhookParser).parse("payload", Map.of(), SECRET);
+        verify(webhookParser, never()).parse(anyString(), anyMap(), eq(CONNECT_SECRET));
+    }
+
     @ParameterizedTest(name = "{1} {2} is {0} in major units")
     @CsvSource({
             "50.00, 5000, usd",
@@ -218,8 +237,8 @@ class StripePaymentStrategyTest {
         // The amount is compared with the stored transaction before a success is applied. Converting with a
         // different exponent than the request used would refuse every genuine JPY or KWD payment.
         PaymentIntent intent = paymentIntent("succeeded", minor, currency);
-        when(webhookParser.parse("payload", Map.of())).thenReturn(
-                new ParsedStripeEvent("evt_1", "payment_intent.succeeded", CREATED, intent)
+        when(webhookParser.parse("payload", Map.of(), SECRET)).thenReturn(
+                new ParsedStripeEvent("evt_1", "payment_intent.succeeded", CREATED, null, intent)
         );
 
         WebhookResult result = strategy.handleWebhook("payload", Map.of());
@@ -231,8 +250,8 @@ class StripePaymentStrategyTest {
     void aSuccessEventWhoseIntentHasNotSucceededIsIgnored() {
         // A success event must describe a settled intent; one that does not must never credit a wallet.
         PaymentIntent intent = paymentIntent("requires_payment_method", 5000L, "usd");
-        when(webhookParser.parse("payload", Map.of())).thenReturn(
-                new ParsedStripeEvent("evt_1", "payment_intent.succeeded", CREATED, intent)
+        when(webhookParser.parse("payload", Map.of(), SECRET)).thenReturn(
+                new ParsedStripeEvent("evt_1", "payment_intent.succeeded", CREATED, null, intent)
         );
 
         WebhookResult result = strategy.handleWebhook("payload", Map.of());
@@ -244,8 +263,8 @@ class StripePaymentStrategyTest {
     void aSuccessEventWithoutAnAmountCarriesNone() {
         // A null amount reaches the handler as a difference, so it can never match a stored transaction.
         PaymentIntent intent = paymentIntent("succeeded", null, null);
-        when(webhookParser.parse("payload", Map.of())).thenReturn(
-                new ParsedStripeEvent("evt_1", "payment_intent.succeeded", CREATED, intent)
+        when(webhookParser.parse("payload", Map.of(), SECRET)).thenReturn(
+                new ParsedStripeEvent("evt_1", "payment_intent.succeeded", CREATED, null, intent)
         );
 
         WebhookResult result = strategy.handleWebhook("payload", Map.of());
@@ -260,8 +279,8 @@ class StripePaymentStrategyTest {
         // A webhook for an object type this strategy does not model (a charge, not a PaymentIntent) must be
         // acknowledged as UNKNOWN rather than fail with a cast error.
         StripeObject other = mock(StripeObject.class);
-        when(webhookParser.parse("payload", Map.of())).thenReturn(
-                new ParsedStripeEvent("evt_2", "charge.refunded", CREATED, other)
+        when(webhookParser.parse("payload", Map.of(), SECRET)).thenReturn(
+                new ParsedStripeEvent("evt_2", "charge.refunded", CREATED, null, other)
         );
 
         WebhookResult result = strategy.handleWebhook("payload", Map.of());
@@ -275,8 +294,8 @@ class StripePaymentStrategyTest {
         // success or a failure.
         PaymentIntent paymentIntent = mock(PaymentIntent.class);
 
-        when(webhookParser.parse("payload", Map.of())).thenReturn(
-                new ParsedStripeEvent("evt_3", "payment_intent.created", CREATED, paymentIntent)
+        when(webhookParser.parse("payload", Map.of(), SECRET)).thenReturn(
+                new ParsedStripeEvent("evt_3", "payment_intent.created", CREATED, null, paymentIntent)
         );
 
         WebhookResult result = strategy.handleWebhook("payload", Map.of());
@@ -381,5 +400,16 @@ class StripePaymentStrategyTest {
         paymentIntent.setAmount(amount);
         paymentIntent.setCurrency(currency);
         return paymentIntent;
+    }
+
+    /**
+     * The Connect secret differs from the platform one, so a deposit webhook verified with it would not match the
+     * parser's stub.
+     */
+    private static StripeProperties properties() {
+        StripeProperties properties = new StripeProperties();
+        properties.getWebhook().setSecret(SECRET);
+        properties.getConnectWebhook().setSecret(CONNECT_SECRET);
+        return properties;
     }
 }

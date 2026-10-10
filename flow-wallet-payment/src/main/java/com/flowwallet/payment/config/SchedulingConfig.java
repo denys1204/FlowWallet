@@ -5,8 +5,8 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
- * Turns on every scheduled job in the service: the outbox poller, reaper and cleanup, the reconciler and the payout
- * executor.
+ * Turns on every scheduled job in the service: the outbox poller, reaper and cleanup, the reconciler, the payout
+ * executor and the payout reconciler.
  * {@code payment.scheduling.enabled=false} turns them all off, so a test that drives those steps itself is not raced
  * by a background run.
  */

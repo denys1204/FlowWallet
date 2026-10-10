@@ -197,6 +197,36 @@ disabled, or the provider is unknown. `413` means the body is larger than the li
 signed payload couldn't be processed. The reasoning is in
 [ADR 0017](adr/0017-webhooks-verified-before-they-are-read.md).
 
+### Connect webhook
+
+```
+POST /api/payments/webhooks/stripe/connect
+```
+
+Register it in Stripe for connected accounts (`connect=true`) with the SDK's API version, `2026-06-24.dahlia`, and
+subscribe it to `payout.paid`, `payout.failed`, `payout.canceled`, `account.updated` and
+`account.external_account.updated`. It reads the body like the provider webhook, under the same size cap, and checks the
+signature with `STRIPE_CONNECT_WEBHOOK_SECRET` before it parses the body. Until that holds a real signing secret, every
+delivery gets `400` and payouts settle only when the payout reconciler asks Stripe about them. By default it first asks
+about a created payout 15 minutes after its withdrawal was accepted and then at most every 15 minutes, and about a paid
+one every 6 hours for 10 days after it was paid
+([ADR 0036](adr/0036-connect-webhooks-have-their-own-endpoint-and-secret.md)). Under `stripe listen` events arrive in
+the account's default API version; Payment Service still reads them and logs a WARN for each.
+
+An event only names the payout or the account that changed. Payment Service reads it from Stripe and applies its current
+status. `paid` marks the payout `PAID` and emits `PayoutPaidEvent`. `failed` or `canceled` starts the reversal of the
+transfer and emits `PayoutFailedEvent`, also for a payout that was already paid. A `failed` payout sent to the stored
+bank account sets that account back to `NOT_SET`; a `canceled` one leaves it alone. An account event sets the bank
+account's state from the account Stripe returns.
+
+The status code reports delivery, as on the provider webhook. `200` means received: the event was applied, was already
+applied, is of another type, lacks the account or the payout id it needs (logged at WARN), concerns a payout or an
+account this service does not know, or disagrees with the stored payout on its account, amount, currency, payout id or
+reference (logged at ERROR, and nothing changes). `400` means the signature is missing, malformed or invalid, or the
+Connect secret is not set. `413` means the body is larger than the limit. `500` means a correctly signed event couldn't
+be processed, a failed read from Stripe or a bank account refresh that raced another write included, so Stripe delivers
+it again. `503` means the database could not be reached, and Stripe delivers that event again too.
+
 ### Internal: Payment Service (`:8082` directly)
 
 Wallet Service calls this with `X-User-Id`. The gateway doesn't route it, and it isn't reachable through

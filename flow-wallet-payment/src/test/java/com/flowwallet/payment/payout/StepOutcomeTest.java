@@ -21,9 +21,18 @@ class StepOutcomeTest {
     @Test
     void everyMoveIntoReversingSharesOneMetricLabel() {
         // Guards a dashboard that misses reversals started from a found failed payout or a bank refusal.
-        assertThat(new StepOutcome.FailedPayoutAdopted("po_1", null).label()).isEqualTo("reversing");
+        assertThat(new StepOutcome.FailedPayoutAdopted("po_1", null, null).label()).isEqualTo("reversing");
         assertThat(new StepOutcome.ReversalStarted(PayoutReason.PAYOUT_FAILED, null).label()).isEqualTo("reversing");
         assertThat(new StepOutcome.BankAccountRejected("x", 1L, null).label()).isEqualTo("reversing");
         assertThat(new StepOutcome.Postponed(Instant.EPOCH, "x").label()).isEqualTo("postponed");
+    }
+
+    @Test
+    void aPaidSettlementIsLabelledPaidAndIsNotAFailure() {
+        // Guards a paid settlement counted under another label, or one that stops a run as if Stripe had not answered.
+        StepOutcome paid = new StepOutcome.Paid();
+
+        assertThat(paid.label()).isEqualTo("paid");
+        assertThat(paid.isFailure()).isFalse();
     }
 }

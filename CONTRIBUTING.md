@@ -26,7 +26,8 @@ docker compose up -d                 # Postgres 17 (wallet_db + payment_db), Kaf
 ./mvnw -pl flow-wallet-gateway spring-boot:run    # :8080
 ./mvnw -pl flow-wallet-payment spring-boot:run    # :8082
 ./mvnw -pl flow-wallet-service spring-boot:run    # :8081
-stripe listen --forward-to localhost:8080/api/payments/webhooks/stripe
+stripe listen --forward-to localhost:8080/api/payments/webhooks/stripe \
+  --forward-connect-to localhost:8080/api/payments/webhooks/stripe/connect
 ```
 
 - Never run two Maven builds at once in one checkout. They share `target/` and clobber each other.

@@ -22,9 +22,9 @@ spring:
   task:
     scheduling:
       pool:
-        # One thread per scheduled job (outbox poller, reaper, cleanup, reconciler, payout executor), so a slow
-        # provider call in one never holds back another. Boot's default is a single thread for all of them.
-        size: 5
+        # One thread per scheduled job (outbox poller, reaper, cleanup, reconciler, payout executor, payout
+        # reconciler), so a slow provider call in one never holds back another. Boot's default is one for all of them.
+        size: 6
   servlet:
     multipart:
       # Nothing here takes uploads. With a multipart resolver, DispatcherServlet reads and spools a multipart
@@ -113,6 +113,11 @@ stripe:
     # No working default: while this is empty or a placeholder, every webhook is refused with 400.
     secret: ${STRIPE_WEBHOOK_SECRET:}
     tolerance-seconds: ${STRIPE_WEBHOOK_TOLERANCE_SECONDS:300}
+  # The endpoint for connected accounts has its own secret, with no working default either; under `stripe listen`
+  # it is the same value as STRIPE_WEBHOOK_SECRET.
+  # See docs/adr/0036-connect-webhooks-have-their-own-endpoint-and-secret.md.
+  connect-webhook:
+    secret: ${STRIPE_CONNECT_WEBHOOK_SECRET:}
 
 payment:
   # The terms of a withdrawal: the currencies it can be paid out in and each one's minimum. 1.0 offers PLN only.
@@ -152,6 +157,17 @@ payment:
       payout-retry-attempts: ${PAYMENT_PAYOUT_EXECUTOR_PAYOUT_RETRY_ATTEMPTS:13}
       reversal-retry-interval: ${PAYMENT_PAYOUT_EXECUTOR_REVERSAL_RETRY_INTERVAL:30m}
       reversal-retry-attempts: ${PAYMENT_PAYOUT_EXECUTOR_REVERSAL_RETRY_ATTEMPTS:13}
+    # How PayoutReconciler asks Stripe about payouts whose Connect webhook may be lost: created ones from a minimum
+    # age on, paid ones every paid-recheck for paid-period after they were paid. paid-recheck must be shorter than
+    # paid-period. See docs/adr/0036-connect-webhooks-have-their-own-endpoint-and-secret.md.
+    reconciler:
+      enabled: ${PAYMENT_PAYOUT_RECONCILER_ENABLED:true}
+      interval-ms: ${PAYMENT_PAYOUT_RECONCILER_INTERVAL_MS:60000}
+      batch-size: ${PAYMENT_PAYOUT_RECONCILER_BATCH_SIZE:50}
+      run-budget: ${PAYMENT_PAYOUT_RECONCILER_RUN_BUDGET:60s}
+      created-min-age: ${PAYMENT_PAYOUT_RECONCILER_CREATED_MIN_AGE:15m}
+      paid-recheck: ${PAYMENT_PAYOUT_RECONCILER_PAID_RECHECK:6h}
+      paid-period: ${PAYMENT_PAYOUT_RECONCILER_PAID_PERIOD:10d}
   consumer:
     retry:
       max-attempts: ${PAYMENT_CONSUMER_RETRY_MAX_ATTEMPTS:3}
@@ -168,7 +184,7 @@ payment:
   webhook:
     max-payload-size: ${PAYMENT_WEBHOOK_MAX_PAYLOAD_SIZE:256KB}
   # Off only for a test that drives the scheduled steps itself; it stops the outbox poller, reaper and cleanup, the
-  # reconciler and the payout executor.
+  # reconciler, the payout executor and the payout reconciler.
   scheduling:
     enabled: ${PAYMENT_SCHEDULING_ENABLED:true}
   # Re-checks deposits whose webhook may have been lost.

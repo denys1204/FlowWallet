@@ -60,10 +60,11 @@ Agreement, which must be `true` or the request is a 400; the request that create
 `tos_accepted_at`. A token equal to the last one applied is answered from the row, because a token works once. A
 refused token is a 400 that does not quote it ([0026](0026-problem-details-never-quote-rejected-input.md)).
 
-A bank account is `READY` when the account has `payouts_enabled` and its default external account for the currency is
-not `errored`. Anything else is `NOT_SET`, including no row. A payout refused or failed for an external-account reason
-sets it back to `NOT_SET`, and a Connect event about the stored account makes Payment Service read the account again
-and set the state from it ([0036](0036-connect-webhooks-have-their-own-endpoint-and-secret.md)).
+A bank account is `READY` when the account has `payouts_enabled` and its default external account for the currency has a
+status Stripe pays out to (`new`, `validated` or `verified`; not `errored`, which a failed payout leaves). Anything else
+is `NOT_SET`, including no row. A payout refused or failed for an external-account reason sets it back to `NOT_SET`, and
+a Connect event about the stored account makes Payment Service read the account again and set the state from it
+([0036](0036-connect-webhooks-have-their-own-endpoint-and-secret.md)).
 
 `POST /api/payments/payouts/preflight` answers 400 for the terms Payment Service owns: a currency outside the configured
 list, an amount below its minimum, an amount off the payout grid. The list is indexed in configuration

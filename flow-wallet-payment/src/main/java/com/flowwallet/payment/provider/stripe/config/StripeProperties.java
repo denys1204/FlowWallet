@@ -11,6 +11,7 @@ import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.validator.constraints.time.DurationMax;
 import org.hibernate.validator.constraints.time.DurationMin;
+import org.jspecify.annotations.Nullable;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.validation.annotation.Validated;
@@ -30,6 +31,8 @@ public class StripeProperties {
 
     @Valid
     private final Api api = new Api();
+
+    private final ConnectWebhook connectWebhook = new ConnectWebhook();
 
     /**
      * The payment methods a deposit intent offers. A name {@link StripePaymentMethodType} does not list fails
@@ -117,19 +120,43 @@ public class StripeProperties {
         private String secret;
 
         /**
-         * How far a webhook's timestamp may be from ours before the signature is refused, in seconds. It is a
-         * clock-skew allowance: set too small, a drifting host refuses genuine deliveries and their payments
-         * wait for the reconciler. stripe-java skips the replay check entirely for a value of zero or less, so
-         * one fails startup.
+         * How far a webhook's timestamp may be from ours before the signature is refused, in seconds, on both
+         * endpoints. It is a clock-skew allowance: set too small, a drifting host refuses genuine deliveries, and their
+         * payments and payouts wait for their reconcilers. stripe-java skips the replay check entirely for a value of
+         * zero or less, so one fails startup.
          */
         @Positive(message = "stripe.webhook.tolerance-seconds must be greater than zero")
         private long toleranceSeconds = 300;
 
         public boolean hasSigningSecret() {
-            return secret != null
-                    && secret.startsWith(SECRET_PREFIX)
-                    && secret.length() > SECRET_PREFIX.length()
-                    && !PLACEHOLDERS.contains(secret);
+            return isSigningSecret(secret);
+        }
+
+        /**
+         * The rule every signing secret follows: a {@code whsec_} value that is not a known placeholder.
+         */
+        public static boolean isSigningSecret(@Nullable String value) {
+            return value != null
+                    && value.startsWith(SECRET_PREFIX)
+                    && value.length() > SECRET_PREFIX.length()
+                    && !PLACEHOLDERS.contains(value);
+        }
+    }
+
+    /**
+     * The secret of the endpoint registered for connected accounts, which receives the payout and account events.
+     * It has no default and follows {@link Webhook#isSigningSecret}: while it is not a signing secret, every Connect
+     * delivery is refused and payouts settle at the payout reconciler's pace. Under {@code stripe listen} it holds the
+     * same value as {@code stripe.webhook.secret}. The tolerance is the platform endpoint's.
+     * See docs/adr/0036-connect-webhooks-have-their-own-endpoint-and-secret.md.
+     */
+    @Getter
+    @Setter
+    public static class ConnectWebhook {
+        private String secret;
+
+        public boolean hasSigningSecret() {
+            return Webhook.isSigningSecret(secret);
         }
     }
 }

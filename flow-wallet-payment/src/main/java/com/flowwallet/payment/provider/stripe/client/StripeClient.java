@@ -148,34 +148,29 @@ public class StripeClient {
                 .build();
     }
 
-    public boolean isWebhookVerificationEnabled() {
-        return stripe.getWebhook().hasSigningSecret();
-    }
-
     /**
-     * Checks the signature over the raw body without parsing it. A malformed header can surface as a
-     * {@code RuntimeException} from the SDK's header parsing rather than as a {@link SignatureVerificationException}.
+     * Checks the signature over the raw body with the endpoint's own secret, without parsing it. A malformed header
+     * can surface as a {@code RuntimeException} from the SDK's header parsing rather than as a
+     * {@link SignatureVerificationException}.
      */
-    public void verifyWebhookSignature(String payload, String signature) throws SignatureVerificationException {
-        Webhook.Signature.verifyHeader(
-                payload,
-                signature,
-                stripe.getWebhook().getSecret(),
-                stripe.getWebhook().getToleranceSeconds()
-        );
+    public void verifyWebhookSignature(
+            String payload,
+            String signature,
+            String secret
+    ) throws SignatureVerificationException {
+        Webhook.Signature.verifyHeader(payload, signature, secret, stripe.getWebhook().getToleranceSeconds());
     }
 
     /**
      * Parses the body into an event. {@code Webhook.constructEvent} deserializes the body before it checks the
      * signature, so it is called only once {@link #verifyWebhookSignature} has accepted the same body and header.
      */
-    public Event constructVerifiedEvent(String payload, String signature) throws SignatureVerificationException {
-        return Webhook.constructEvent(
-                payload,
-                signature,
-                stripe.getWebhook().getSecret(),
-                stripe.getWebhook().getToleranceSeconds()
-        );
+    public Event constructVerifiedEvent(
+            String payload,
+            String signature,
+            String secret
+    ) throws SignatureVerificationException {
+        return Webhook.constructEvent(payload, signature, secret, stripe.getWebhook().getToleranceSeconds());
     }
 
     /**

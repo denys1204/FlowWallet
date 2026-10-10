@@ -32,13 +32,13 @@ class SchedulingConfigTest {
     @Test
     void theShippedPoolHasAThreadForEveryScheduledJob() throws Exception {
         // Guards Boot's single scheduler thread coming back: a reconciler run of sequential Stripe calls would then
-        // hold back the outbox poller that delivers payment events. Five jobs run on it: the outbox poller, reaper
-        // and cleanup, the reconciler and the payout executor.
+        // hold back the outbox poller that delivers payment events. Six jobs run on it: OutboxPoller's poll, reaper
+        // and cleanup, PendingPaymentReconciler, PayoutExecutor and PayoutReconciler.
         PropertySource<?> yaml = new YamlPropertySourceLoader()
                 .load("application", new ClassPathResource("application.yml"))
                 .getFirst();
 
         assertThat(Integer.parseInt(String.valueOf(yaml.getProperty("spring.task.scheduling.pool.size"))))
-                .isGreaterThanOrEqualTo(5);
+                .isGreaterThanOrEqualTo(6);
     }
 }

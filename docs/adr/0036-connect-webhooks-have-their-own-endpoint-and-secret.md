@@ -37,9 +37,10 @@ parses the body. `ParsedStripeEvent` carries `account`.
 
 For `payout.paid`, `payout.failed` and `payout.canceled`, the handler finds the payout by `stripe_payout_id`, or by its
 `flowwallet_withdrawal` metadata when the webhook arrives before the executor recorded the id. The event's `account`
-must equal the row's `stripe_account_id`, and the payout's amount and currency must match the row. On any difference the
-handler logs at ERROR, answers 200 and changes nothing. The event's type is not trusted. The handler reads the payout
-with `Payout.retrieve`, outside any transaction, and applies its current status through the guarded transitions of
+must equal the row's `stripe_account_id`, and the payout's amount and currency must match the row, as must its id when
+the row already holds one and its reference when its metadata carries one. On any difference the handler logs at ERROR,
+answers 200 and changes nothing. The event's type is not trusted. The handler reads the payout with `Payout.retrieve`,
+outside any transaction, and applies its current status through the guarded transitions of
 [0035](0035-payouts-run-as-a-step-machine-on-stripe-connect.md). A row found by metadata while still `TRANSFERRED`
 adopts the payout first, as the executor's lookup does: it records `stripe_payout_id` and moves to `PAYOUT_CREATED` with
 no event, and the status then applies in the same transaction, so a `failed` or `canceled` payout takes the row on to
@@ -57,8 +58,9 @@ moves nothing either. A payout this service does not know gets 200 and a WARN.
 `account.updated` and `account.external_account.updated` about a stored account make the handler retrieve that account
 through the pinned SDK and set the bank account's state from it by the rule of
 [0035](0035-payouts-run-as-a-step-machine-on-stripe-connect.md): `READY` when `payouts_enabled` holds and the default
-external account for the currency is not `errored`, `NOT_SET` otherwise. The event's data is not read. `transfer.*` is
-not handled, because a transfer and a reversal answer synchronously.
+external account for the currency has a status Stripe pays out to (`new`, `validated` or `verified`), `NOT_SET`
+otherwise. The event's data is not read. `transfer.*` is not handled, because a transfer and a reversal answer
+synchronously.
 
 A Connect webhook's status reports delivery, as in [0016](0016-error-model-and-status-codes.md): 200 for an event
 applied, repeated, of another type, about an unknown payout or with differing terms; 400 for a missing or invalid
@@ -113,7 +115,7 @@ stripe listen --forward-to localhost:8080/api/payments/webhooks/stripe \
 - Each payout or account webhook costs one Stripe read.
 - The order in which payout and account events arrive does not matter.
 - A failure that arrives after the polling period is missed if its webhook is lost as well.
-- An ERROR about a differing account, amount or currency means a verified event disagreed with a stored payout. The
-  row keeps its state until an operator looks.
+- An ERROR about a differing account, amount, currency, payout id or reference means a verified event disagreed with a
+  stored payout. The row keeps its state until an operator looks.
 - An account event sets the state from the account as Stripe holds it when the handler reads it, so an event about an
   external account the user has since replaced cannot mark the current one `NOT_SET`.

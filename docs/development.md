@@ -24,8 +24,8 @@ Copy the committed template. The real `.env` is git-ignored.
 cp .env.example .env
 ```
 
-Set `STRIPE_API_KEY`, `STRIPE_WEBHOOK_SECRET` (see step 5) and `POSTGRES_PASSWORD`. Everything else has a
-working local default.
+Set `STRIPE_API_KEY`, `STRIPE_WEBHOOK_SECRET` and `STRIPE_CONNECT_WEBHOOK_SECRET` (see step 5) and `POSTGRES_PASSWORD`.
+Everything else has a working local default.
 
 Docker Compose and all three services read this one file (the services import it through
 `spring.config.import`), so each value lives in one place. Exported environment variables override it. Keep
@@ -77,16 +77,23 @@ unreachable, because they create their topics at startup. In separate terminals:
 ### 5. Forward Stripe webhooks
 
 ```bash
-stripe listen --forward-to localhost:8080/api/payments/webhooks/stripe
+stripe listen --forward-to localhost:8080/api/payments/webhooks/stripe \
+  --forward-connect-to localhost:8080/api/payments/webhooks/stripe/connect
 ```
 
-When it starts, `stripe listen` prints a webhook signing secret (`whsec_...`) and signs every event it forwards with it.
-Put that value in `STRIPE_WEBHOOK_SECRET` and restart Payment Service. Until then webhooks are disabled: Payment Service
-logs a WARN at startup and refuses every webhook with `400` without checking it. A paid deposit is then credited only
-when the reconciler finds it, 15 minutes or more after it started
-([ADR 0032](adr/0032-pending-payments-are-rechecked-with-the-provider.md)). An empty value, a placeholder such as
-`whsec_dummy`, or anything that doesn't start with `whsec_` counts as unset
-([ADR 0017](adr/0017-webhooks-verified-before-they-are-read.md)).
+The first target receives the platform's events (deposits), the second the events of connected accounts (payouts and
+bank accounts). When it starts, `stripe listen` prints a webhook signing secret (`whsec_...`) and signs every event it
+forwards, to either target, with it. Put that value in both `STRIPE_WEBHOOK_SECRET` and `STRIPE_CONNECT_WEBHOOK_SECRET`
+and restart Payment Service. Endpoints registered in the Stripe Dashboard each have their own secret: the Connect one is
+registered for connected accounts with the SDK's API version, `2026-06-24.dahlia`, and its secret goes in
+`STRIPE_CONNECT_WEBHOOK_SECRET`. `stripe listen` delivers events in the account's default API version instead, and
+Payment Service logs a WARN for each one it reads that way
+([ADR 0036](adr/0036-connect-webhooks-have-their-own-endpoint-and-secret.md)). Until then that endpoint's webhooks are
+disabled: Payment Service logs a WARN at startup and refuses every delivery to it with `400` without checking it. A paid
+deposit is then credited only when the reconciler finds it, 15 minutes or more after it started
+([ADR 0032](adr/0032-pending-payments-are-rechecked-with-the-provider.md)), and a payout settles only when the payout
+reconciler asks Stripe about it. An empty value, a placeholder such as `whsec_dummy`, or anything that doesn't start
+with `whsec_` counts as unset ([ADR 0017](adr/0017-webhooks-verified-before-they-are-read.md)).
 
 ### 6. Try a deposit
 
@@ -121,11 +128,11 @@ curl localhost:8080/api/wallets/USD/history -H "X-User-Id: $USER"
 
 ## Configuration
 
-Every setting except the webhook signing secret has a local default and can be overridden in `.env` or with an
+Every setting except the two webhook signing secrets has a local default and can be overridden in `.env` or with an
 environment variable. The Stripe API key default (`sk_test_dummy`) only lets the services start, and
-`STRIPE_WEBHOOK_SECRET` has no default, so webhooks stay disabled until it is set: no payment works without a real test
-API key, and without the signing secret a paid deposit waits for the reconciler. `.env.example` has the full list with
-comments. The main ones:
+`STRIPE_WEBHOOK_SECRET` and `STRIPE_CONNECT_WEBHOOK_SECRET` have no default, so webhooks stay disabled until they are
+set: no payment works without a real test API key, and without the signing secrets a paid deposit and a payout wait for
+their reconcilers. `.env.example` has the full list with comments. The main ones:
 
 | Variable | Default | Used by |
 |----------|---------|---------|
@@ -154,16 +161,19 @@ comments. The main ones:
 | `WALLET_PAYMENT_CONNECT_TIMEOUT` / `_READ_TIMEOUT` | `2s` / `10s` | Wallet; at least 1ms each. A bank account request makes up to four Stripe calls in a row and can outlast the read timeout; the wallet then answers `502`, and the retry with the same token is safe, because each Stripe write is keyed and a read changes nothing |
 | `WALLET_PAYMENT_PROVIDER` | `STRIPE` | Wallet; `STRIPE` is the only accepted value |
 | `STRIPE_API_KEY` / `STRIPE_WEBHOOK_SECRET` | `sk_test_dummy` / none (webhooks disabled) | Payment: only a test-mode key (`sk_test_` or `rk_test_`) starts |
-| `STRIPE_WEBHOOK_TOLERANCE_SECONDS` | `300` | Payment: how old a webhook's signed timestamp may be |
+| `STRIPE_CONNECT_WEBHOOK_SECRET` | none (Connect webhooks disabled) | Payment: the secret of the endpoint for connected accounts, `/api/payments/webhooks/stripe/connect`; under `stripe listen` the same value as `STRIPE_WEBHOOK_SECRET` ([ADR 0036](adr/0036-connect-webhooks-have-their-own-endpoint-and-secret.md)) |
+| `STRIPE_WEBHOOK_TOLERANCE_SECONDS` | `300` | Payment: how old a webhook's signed timestamp may be, on both endpoints |
 | `STRIPE_PAYMENT_METHOD_TYPES` | `card` | Payment: the methods a deposit can be paid with. `card` is the only known one; any other name, or an empty value, fails startup |
 | `STRIPE_API_CONNECT_TIMEOUT` / `_READ_TIMEOUT` | `2s` / `6s` | Payment: how long a Stripe API call may take to connect and to answer |
 | `STRIPE_API_MAX_NETWORK_RETRIES` | `0` | Payment: how often stripe-java retries a failed call under the same idempotency key. Keep (1 + retries) × (connect + read), plus stripe-java's backoff of 0.5s doubling per retry, below `WALLET_PAYMENT_READ_TIMEOUT`; three such calls must fit `PAYMENT_PAYOUT_EXECUTOR_LEASE` |
 | `PAYMENT_WEBHOOK_MAX_PAYLOAD_SIZE` | `256KB` | Payment: a larger webhook body gets `413` |
 | `PAYMENT_RECONCILIATION_INTERVAL_MS` / `_MIN_AGE` / `_MAX_AGE` / `_BATCH_SIZE` | `300000` / `15m` / `24h` / `50` | Payment: how often the reconciler asks Stripe about deposits still pending or failed, from what age and until what age, and how many per run; `PAYMENT_RECONCILIATION_ENABLED` (`true`) turns it off ([ADR 0032](adr/0032-pending-payments-are-rechecked-with-the-provider.md)) |
-| `PAYMENT_SCHEDULING_ENABLED` | `true` | Payment: `false` stops every scheduled job, the outbox poller, the reconciler and the payout executor included; only for a test that drives those steps itself |
+| `PAYMENT_SCHEDULING_ENABLED` | `true` | Payment: `false` stops every scheduled job, the outbox poller, the reconciler, the payout executor and the payout reconciler included; only for a test that drives those steps itself |
 | `PAYMENT_PAYOUT_CURRENCY` / `PAYMENT_PAYOUT_MIN_AMOUNT` | `PLN` / `5.00` | Payment: the currency a withdrawal is paid out in and its minimum ([ADR 0035](adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md)) |
 | `PAYMENT_PAYOUT_EXECUTOR_ENABLED` / `_INTERVAL_MS` / `_BATCH_SIZE` / `_LEASE` | `true` / `10000` / `20` / `2m` | Payment: whether the payout executor runs, its pause between runs, rows per run, and how long a claim owns a row. The lease must cover three Stripe calls plus two 10s margins (44s with the defaults); instances' clocks must agree to within that margin. Outcomes are counted in `payment.payouts.executor.outcomes` (tags `step`, `outcome`) and hand-overs to an operator in `payment.payouts.needs.attention` (tags `from`, `cause`) |
 | `PAYMENT_PAYOUT_EXECUTOR_UNKNOWN_*` / `_PAYOUT_RETRY_*` / `_REVERSAL_RETRY_*` | see `.env.example` | Payment: how long an unknown outcome, a payout refused for funds or a limit, and a refused reversal are retried before the money comes back or an operator takes over (about 7 h, 24 h and 6 h by default) |
+| `PAYMENT_PAYOUT_RECONCILER_ENABLED` / `_INTERVAL_MS` / `_BATCH_SIZE` / `_RUN_BUDGET` | `true` / `60000` / `50` / `60s` | Payment: whether the payout reconciler runs, its pause between runs, payouts asked about per run (one Stripe read each) and how long a run may take. It settles a payout whose Connect webhook is lost; outcomes are counted in `payment.payouts.reconciler.outcomes` (tags `status`, `outcome`) ([ADR 0036](adr/0036-connect-webhooks-have-their-own-endpoint-and-secret.md)) |
+| `PAYMENT_PAYOUT_RECONCILER_CREATED_MIN_AGE` / `_PAID_RECHECK` / `_PAID_PERIOD` | `15m` / `6h` / `10d` | Payment: a created payout is asked about from this age on and at most this often; a paid one every `_PAID_RECHECK` for `_PAID_PERIOD` after it was paid, because Stripe can fail a paid payout days later. `_PAID_RECHECK` must be shorter than `_PAID_PERIOD` |
 | `WALLET_SCHEDULING_ENABLED` | `true` | Wallet: `false` stops the outbox poller, reaper and cleanup; only for a test that drives those steps itself |
 | `PAYMENT_MIN_DEPOSIT_AMOUNT` / `PAYMENT_MAX_DEPOSIT_AMOUNT` | `1.00` / `10000.00` | Payment |
 | `OUTBOX_POLL_INTERVAL_MS` / `OUTBOX_BATCH_SIZE` | `10000` / `50` | Payment, Wallet |
@@ -190,12 +200,14 @@ that is missing, not positive, below Stripe's minimum payout where `StripePayout
 country, or off the payout grid, and a connected account identity with a blank field, a date of birth that is not in the
 past, a country that is not two capital letters, a merchant category code that is not four digits or a terms IP that is
 not an IPv4 address, and a payout executor whose lease does not cover three Stripe calls under the Stripe timeouts and
-retries plus two 10s margins, or whose interval, lease, backoff or limits are out of range. A missing webhook secret
-doesn't stop it starting; it only disables webhooks.
+retries plus two 10s margins, or whose interval, lease, backoff or limits are out of range, and a payout reconciler
+interval below 1000 ms, a batch below 1, a run budget or an age below 1s, or a `paid-recheck` that is not shorter than
+the `paid-period`. A missing webhook secret, for either endpoint, doesn't stop it starting; it only disables that
+endpoint's webhooks.
 
 ## Testing
 
-There are 1085 tests, all green: 640 in the payment service, 339 in the wallet service, 53 in the outbox module, 44 in
+There are 1367 tests, all green: 922 in the payment service, 339 in the wallet service, 53 in the outbox module, 44 in
 platform and 9 in the gateway. The gateway's tests bind its own `application.yml`, so a YAML regression that drops the
 response or connect timeout, or binds the gateway beyond loopback, fails there rather than in a live request; they also
 check that `BindAddressCheck` runs when the application is ready, warns for `0.0.0.0`, a LAN address and no address at
@@ -278,6 +290,22 @@ an unsettled outcome seen while interrupted given up without counting a try but 
 at whole microseconds, the lease checked against three Stripe call budgets at startup, a claim that carries no user id,
 metrics, log lines naming the reference and Stripe's ids, and the executor's switch.
 
+For the Connect webhook and the payout reconciler they cover each endpoint verifying with its own secret (a body signed
+with the platform secret refused by the Connect one, an unset, blank or placeholder Connect secret refusing every
+delivery), the event's account and object id read from an event in another API version, the three payout types and the
+two account types handled and any other ignored, an event without an account or a payout id ignored with a defect, the
+`/stripe/connect` path never reaching the platform route, `400`, `413` and `500` as on the platform endpoint, a failed
+Stripe read or a raced refresh answered `500`, every row status against every Stripe status (`paid` moving a created
+payout once with one Paid event, `failed` or `canceled` reversing a payout however long ago it was paid with one Failed
+event, a redelivery writing nothing), a `TRANSFERRED` row found by its reference adopting the payout first, a
+`NEEDS_ATTENTION` row never adopting, a differing account, amount, currency, payout id or reference writing nothing, the
+bank account reset only for a failed payout sent to the stored one, the executor's record after a settlement taken by
+the transition, an account event setting the state from the default bank account Stripe holds (ready only in a payable
+status, with payouts enabled and in a payout currency; a replaced default or a changed row skipped), created payouts
+read first and paid ones filling the batch, each row claimed under its own status's cutoff before Stripe is read, a lost
+claim costing no read, a run stopped by three failures in a row, its budget or an interrupt, a move logged and counted,
+and the reconciler's settings, defaults and switch.
+
 For the wallet's bank account relay they cover the caller's token and acceptance reaching Payment Service, a refused
 token passed on as a `400` in Payment Service's words, any other refusal treated as the wallet's own fault and a `502`,
 a failure, a timeout or an unreadable answer answered `502` with a retry under the same token (and a plain retry for a
@@ -316,7 +344,8 @@ classification read any entry under the reference, and the lookup by the one exp
 history queries and the migration that numbers existing ledger rows were checked by hand on a scratch database seeded
 with interleaved ids: numbering follows id order within each wallet, `last_entry_no` equals each wallet's row count,
 history pages by entry number, and a later transfer takes the next number on both wallets. Payment changeset 006 ran by
-hand against a schema migrated through 005.
+hand against a schema migrated through 005. The payout reconciler's selections and its claim have run only against real
+Postgres in the live run, where the selection of created payouts used `idx_payouts_created`.
 
 For transfers the mocks pin the order of the calls and the decision after each one. What they can't show was
 checked by hand against real Postgres, through the running wallet service on a scratch database:

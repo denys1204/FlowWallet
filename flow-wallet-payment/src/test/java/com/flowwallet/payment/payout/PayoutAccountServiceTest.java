@@ -6,14 +6,19 @@ import com.flowwallet.payment.provider.dto.PayoutAccountHolder;
 import com.flowwallet.payment.provider.dto.PayoutCallResult;
 import com.flowwallet.payment.provider.dto.PayoutRefusal;
 import com.flowwallet.payment.provider.dto.ProviderBankAccount;
+import com.flowwallet.payment.provider.exception.PayoutLookupException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 
+import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -57,6 +62,29 @@ class PayoutAccountServiceTest {
         PayoutAccount account = opened();
         account.recordBankAccount(token, "ba_1", "2874", "pln", BankAccountState.READY);
         return account;
+    }
+
+    private static PayoutAccount withStoredBank(String currency, String externalAccountId, BankAccountState state) {
+        PayoutAccount account = PayoutAccount.builder()
+                .id(7L)
+                .userId(USER)
+                .accountKey("key-1")
+                .tosAcceptedAt(ACCEPTED_AT)
+                .bankState(BankAccountState.NOT_SET)
+                .version(4L)
+                .build();
+        account.recordStripeAccount("acct_1");
+        account.recordBankAccount("btok_1", externalAccountId, "2874", currency, state);
+        return account;
+    }
+
+    private PayoutAccountService servicePayingOutInPlnAndEur() {
+        PayoutProperties properties = new PayoutProperties();
+        properties.setCurrencies(List.of(
+                new PayoutProperties.PayoutCurrency("PLN", new BigDecimal("5.00")),
+                new PayoutProperties.PayoutCurrency("EUR", new BigDecimal("5.00"))
+        ));
+        return new PayoutAccountService(store, provider, properties);
     }
 
     @Test
@@ -199,6 +227,159 @@ class PayoutAccountServiceTest {
         when(store.findByUser(USER)).thenReturn(Optional.empty());
 
         assertThat(service.bankAccount(USER)).isEqualTo(new PayoutAccountResponse("NOT_SET", null, null));
+    }
+
+    @Test
+    void aBankAccountInAConfiguredPayoutCurrencyKeepsItsReadiness() {
+        // Guards a payout currency that is fixed in code instead of read from the configured list: a EUR bank
+        // account would be recorded as not ready on a platform that was set up to pay out in EUR.
+        ProviderBankAccount euro = new ProviderBankAccount("ba_9", "1234", "EUR", true);
+        when(store.findByUser(USER)).thenReturn(Optional.of(opened()));
+        when(provider.attachBankAccount("acct_1", "key-1", "btok_1")).thenReturn(new PayoutCallResult.Done<>(euro));
+        when(store.recordBankAccount(eq(7L), eq("btok_1"), any())).thenReturn(withBank("btok_1"));
+
+        servicePayingOutInPlnAndEur().setBankAccount(USER, "btok_1");
+
+        verify(store).recordBankAccount(7L, "btok_1", euro);
+    }
+
+    @Test
+    void refreshMakesAPayableDefaultReady() {
+        // Guards an account event that makes a bank account payable at Stripe, such as its verification, leaving the
+        // stored state NOT_SET, which would refuse every withdrawal until the user attached the account again.
+        when(store.findByStripeAccount("acct_1"))
+                .thenReturn(Optional.of(withStoredBank("PLN", "ba_1", BankAccountState.NOT_SET)));
+        when(provider.findDefaultBankAccount("acct_1", "PLN")).thenReturn(Optional.of(READY_BANK));
+        when(store.applyBankState(7L, 4L, "ba_1", BankAccountState.READY)).thenReturn(BankRefresh.CHANGED);
+
+        assertThat(service.refreshBankState("acct_1")).isEqualTo(BankRefresh.CHANGED);
+    }
+
+    @Test
+    void refreshSetsNotSetForADefaultThatIsNotReady() {
+        // Guards a bank account that Stripe reports as errored, or on an account whose payouts are disabled, staying
+        // READY: a withdrawal would pass the preflight, move the money to the connected account and fail at the payout.
+        ProviderBankAccount errored = new ProviderBankAccount("ba_1", "2874", "PLN", false);
+        when(store.findByStripeAccount("acct_1"))
+                .thenReturn(Optional.of(withStoredBank("PLN", "ba_1", BankAccountState.READY)));
+        when(provider.findDefaultBankAccount("acct_1", "PLN")).thenReturn(Optional.of(errored));
+        when(store.applyBankState(7L, 4L, "ba_1", BankAccountState.NOT_SET)).thenReturn(BankRefresh.CHANGED);
+
+        assertThat(service.refreshBankState("acct_1")).isEqualTo(BankRefresh.CHANGED);
+    }
+
+    @Test
+    void refreshSetsNotSetWhenStripeHasNoDefaultForTheCurrency() {
+        // Guards a removed bank account staying READY, and a missing default being applied with an external account id
+        // of null that the store would read as "no guard" for a default that Stripe does hold.
+        when(store.findByStripeAccount("acct_1"))
+                .thenReturn(Optional.of(withStoredBank("PLN", "ba_1", BankAccountState.READY)));
+        when(provider.findDefaultBankAccount("acct_1", "PLN")).thenReturn(Optional.empty());
+        when(store.applyBankState(7L, 4L, null, BankAccountState.NOT_SET)).thenReturn(BankRefresh.CHANGED);
+
+        assertThat(service.refreshBankState("acct_1")).isEqualTo(BankRefresh.CHANGED);
+    }
+
+    @Test
+    void aDefaultInACurrencyThePlatformDoesNotPayOutInNeverBecomesReady() {
+        // Guards a refresh making a EUR bank account READY on a platform that pays out only in PLN, which the
+        // preflight would let through and Stripe would refuse after the transfer.
+        ProviderBankAccount euro = new ProviderBankAccount("ba_9", "1234", "EUR", true);
+        when(store.findByStripeAccount("acct_1"))
+                .thenReturn(Optional.of(withStoredBank("EUR", "ba_9", BankAccountState.READY)));
+        when(provider.findDefaultBankAccount("acct_1", "EUR")).thenReturn(Optional.of(euro));
+        when(store.applyBankState(7L, 4L, "ba_9", BankAccountState.NOT_SET)).thenReturn(BankRefresh.CHANGED);
+
+        assertThat(service.refreshBankState("acct_1")).isEqualTo(BankRefresh.CHANGED);
+    }
+
+    @Test
+    void aDefaultInAConfiguredPayoutCurrencyBecomesReady() {
+        // Guards the refresh deciding on a hard-coded currency instead of the configured list, which would keep a
+        // payable EUR bank account NOT_SET on a platform that pays out in EUR.
+        ProviderBankAccount euro = new ProviderBankAccount("ba_9", "1234", "EUR", true);
+        when(store.findByStripeAccount("acct_1"))
+                .thenReturn(Optional.of(withStoredBank("EUR", "ba_9", BankAccountState.NOT_SET)));
+        when(provider.findDefaultBankAccount("acct_1", "EUR")).thenReturn(Optional.of(euro));
+        when(store.applyBankState(7L, 4L, "ba_9", BankAccountState.READY)).thenReturn(BankRefresh.CHANGED);
+
+        assertThat(servicePayingOutInPlnAndEur().refreshBankState("acct_1")).isEqualTo(BankRefresh.CHANGED);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(value = BankRefresh.class, names = {"RACED", "REPLACED", "CHANGED", "UNCHANGED"})
+    void refreshReportsWhatTheStoreDid(BankRefresh applied) {
+        // Guards a refresh that lost a race being reported as done: the webhook answers 200 for it, so Stripe never
+        // delivers the event again and the stored state stays behind Stripe's.
+        when(store.findByStripeAccount("acct_1"))
+                .thenReturn(Optional.of(withStoredBank("PLN", "ba_1", BankAccountState.READY)));
+        when(provider.findDefaultBankAccount("acct_1", "PLN")).thenReturn(Optional.of(READY_BANK));
+        when(store.applyBankState(7L, 4L, "ba_1", BankAccountState.READY)).thenReturn(applied);
+
+        assertThat(service.refreshBankState("acct_1")).isEqualTo(applied);
+    }
+
+    @Test
+    void anUnknownAccountCostsNoStripeRead() {
+        // Guards a sandbox account that no row holds, such as an empty one from an earlier run, costing a Stripe read
+        // for each event it keeps sending.
+        when(store.findByStripeAccount("acct_other")).thenReturn(Optional.empty());
+
+        assertThat(service.refreshBankState("acct_other")).isEqualTo(BankRefresh.UNKNOWN_ACCOUNT);
+
+        verifyNoInteractions(provider);
+        verify(store, never()).applyBankState(any(), any(), any(), any());
+    }
+
+    @Test
+    void anEventForAnAccountNoRowHoldsLeavesALogLine(CapturedOutput output) {
+        // Guards events about an account this service does not hold being dropped without a trace, which would hide a
+        // Connect endpoint wired to the wrong platform.
+        when(store.findByStripeAccount("acct_other")).thenReturn(Optional.empty());
+
+        service.refreshBankState("acct_other");
+
+        assertThat(output.getAll()).contains("acct_other").contains("no payout account holds");
+    }
+
+    @Test
+    void anAccountWithoutABankAccountCostsNoStripeRead() {
+        // Guards an event that arrives while the first PUT is still attaching a bank account: a refresh would find no
+        // currency to read for and could write a state over the one the request is about to record.
+        when(store.findByStripeAccount("acct_1")).thenReturn(Optional.of(opened()));
+
+        assertThat(service.refreshBankState("acct_1")).isEqualTo(BankRefresh.NO_BANK_ACCOUNT);
+
+        verifyNoInteractions(provider);
+        verify(store, never()).applyBankState(any(), any(), any(), any());
+    }
+
+    @Test
+    void aFailedStripeReadWritesNothingAndReachesTheCaller() {
+        // Guards an unreadable Stripe account being recorded as one without a default bank account, which would set
+        // the state NOT_SET during an outage, and an error that is swallowed so Stripe never delivers the event again.
+        PayoutLookupException failure = new PayoutLookupException("Account read failed", new IllegalStateException());
+        when(store.findByStripeAccount("acct_1"))
+                .thenReturn(Optional.of(withStoredBank("PLN", "ba_1", BankAccountState.READY)));
+        when(provider.findDefaultBankAccount("acct_1", "PLN")).thenThrow(failure);
+
+        assertThatThrownBy(() -> service.refreshBankState("acct_1")).isSameAs(failure);
+
+        verify(store, never()).applyBankState(any(), any(), any(), any());
+    }
+
+    @Test
+    void aRefreshLogsTheAccountKeyAndNeverTheUser(CapturedOutput output) {
+        // Guards a user id, which spends the user's balance, reaching the log line of an account event; the account
+        // key stands in for it.
+        when(store.findByStripeAccount("acct_1"))
+                .thenReturn(Optional.of(withStoredBank("PLN", "ba_1", BankAccountState.NOT_SET)));
+        when(provider.findDefaultBankAccount("acct_1", "PLN")).thenReturn(Optional.of(READY_BANK));
+        when(store.applyBankState(7L, 4L, "ba_1", BankAccountState.READY)).thenReturn(BankRefresh.CHANGED);
+
+        service.refreshBankState("acct_1");
+
+        assertThat(output.getAll()).contains("key-1").contains("CHANGED").doesNotContain(USER);
     }
 
     @Test

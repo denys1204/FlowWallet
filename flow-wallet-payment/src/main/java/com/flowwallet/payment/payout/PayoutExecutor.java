@@ -177,6 +177,7 @@ public class PayoutExecutor {
                     PayoutReason.BANK_ACCOUNT_REJECTED,
                     rejected.providerCode()
             );
+            case StepOutcome.Paid _ -> log.info("Payout {} paid", reference);
             case StepOutcome.Reversed reversed ->
                     log.info("Payout {} reversed as {}", reference, reversed.stripeReversalId());
             case StepOutcome.RetryUnknown retry -> log.warn(

@@ -23,6 +23,16 @@ public final class StripeConstants {
 
     public static final String EVENT_PAYMENT_FAILED = "payment_intent.payment_failed";
 
+    public static final String EVENT_PAYOUT_PAID = "payout.paid";
+
+    public static final String EVENT_PAYOUT_FAILED = "payout.failed";
+
+    public static final String EVENT_PAYOUT_CANCELED = "payout.canceled";
+
+    public static final String EVENT_ACCOUNT_UPDATED = "account.updated";
+
+    public static final String EVENT_EXTERNAL_ACCOUNT_UPDATED = "account.external_account.updated";
+
     public static final String STATUS_SUCCEEDED = "succeeded";
 
     public static final String STATUS_CANCELED = "canceled";

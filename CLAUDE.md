@@ -35,8 +35,9 @@ nothing about wallets ([ADR 0002](docs/adr/0002-module-boundaries.md),
 - `flow-wallet-gateway`: reactive Spring Cloud Gateway, path routing only. It routes `/api/wallets/**` to the
   wallet and **only** `/api/payments/webhooks/**` to payment, so a payment can only be started through a wallet.
 - `flow-wallet-payment`: Stripe, `payment_transactions`, webhooks, the payment events it sends to Kafka through the
-  outbox, the `payouts` it accepts from `wallet.withdrawals` and works through Stripe Connect in `PayoutExecutor`, and
-  the connected account and bank account each user sets for them.
+  outbox, the `payouts` it accepts from `wallet.withdrawals` and works through Stripe Connect in `PayoutExecutor`,
+  settled from the Connect webhook and `PayoutReconciler`, and the connected account and bank account each user sets for
+  them.
 - `flow-wallet-service`: the Wallet Service. REST API, deposit initiation, transfers, the bank account relay to
   Payment Service, and the Kafka consumer.
 
@@ -133,11 +134,12 @@ Each invariant here is stated once and links the ADR that holds its reasoning.
   ([ADR 0034](docs/adr/0034-shared-outbox-and-the-wallet-withdrawals-command.md)).
 - A webhook's status reports delivery, not the business outcome: an event for an intent this service never
   created gets 200, not 404 ([ADR 0016](docs/adr/0016-error-model-and-status-codes.md)).
-- A webhook body is size-capped and its signature verified before it is parsed; never call
-  `Webhook.constructEvent` first. `stripe.webhook.secret` has no default, and without a real `whsec_` value every
-  webhook is refused. A success is applied only if the intent has succeeded and its amount and currency match
-  the row
-  ([ADR 0017](docs/adr/0017-webhooks-verified-before-they-are-read.md)).
+- A webhook body is size-capped and its signature verified before it is parsed, with the secret of the endpoint it
+  reached; never call `Webhook.constructEvent` first. `stripe.webhook.secret` and `stripe.connect-webhook.secret` have
+  no default, and without a real `whsec_` value every webhook to that endpoint is refused. A success is applied only if
+  the intent has succeeded and its amount and currency match the row
+  ([ADR 0017](docs/adr/0017-webhooks-verified-before-they-are-read.md),
+  [ADR 0036](docs/adr/0036-connect-webhooks-have-their-own-endpoint-and-secret.md)).
 - The reconciler settles a payment only through `PaymentTransactionHandler`, the webhook's own checks and outbox
   write; it claims a row with a conditional update of `last_reconciled_at` before calling Stripe, holds nothing open
   during the call, and never cancels an intent
@@ -150,6 +152,13 @@ Each invariant here is stated once and links the ADR that holds its reasoning.
   token, looks for what Stripe holds before it creates on any later try, and never turns an unknown outcome into a
   return or reverses while a payout may still reach the bank
   ([ADR 0035](docs/adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md)).
+- The Connect webhook and `PayoutReconciler` settle a payout only through `PayoutStore.settle`, from the payout
+  `Payout.retrieve` returns, never from the event's type or data, and change nothing when its account, amount, currency,
+  payout id or reference differ from the row. The reconciler claims a row with a conditional update of
+  `last_reconciled_at` before calling Stripe and reads only `PAYOUT_CREATED` and recently `PAID` rows; `ACCEPTED`,
+  `TRANSFERRED` and `REVERSING` are the executor's. A `failed` payout sets the bank account to `NOT_SET` only when it
+  was sent to the stored one, and a `canceled` one never does
+  ([ADR 0036](docs/adr/0036-connect-webhooks-have-their-own-endpoint-and-secret.md)).
 - Money leaving the platform (a transfer, a payout, a reversal) is refused for certain only on a 400 or 402 whose code
   is on `StripeConnectPayouts`' list for that call. Every other failure, a 409 included, leaves the outcome unknown:
   the step keeps its key generation and looks for the object before it creates again

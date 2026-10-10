@@ -119,4 +119,71 @@ public interface PayoutRepository extends JpaRepository<Payout, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select p from Payout p where p.id = :id")
     Optional<Payout> lockById(@Param("id") Long id);
+
+    /**
+     * The row a Stripe payout belongs to, locked for its settlement.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select p from Payout p where p.stripePayoutId = :payoutId")
+    Optional<Payout> lockByStripePayoutId(@Param("payoutId") String payoutId);
+
+    /**
+     * The row a payout's metadata names, for a payout Stripe reports before the executor recorded its id.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select p from Payout p where p.transactionReference = :reference")
+    Optional<Payout> lockByTransactionReference(@Param("reference") String reference);
+
+    /**
+     * Payouts waiting for Stripe whose last look, or creation, is older than the cutoff, the least recently looked at
+     * first. The order follows {@code idx_payouts_created}.
+     */
+    @Query("""
+            select new com.flowwallet.payment.payout.ReconcilablePayout(
+                p.id, p.transactionReference, p.status, p.stripeAccountId, p.stripePayoutId)
+            from Payout p
+            where p.status = com.flowwallet.payment.payout.PayoutStatus.PAYOUT_CREATED
+              and coalesce(p.lastReconciledAt, p.createdAt) <= :lookedAtBefore
+            order by p.lastReconciledAt asc nulls first, p.id
+            """)
+    List<ReconcilablePayout> findCreatedToReconcile(@Param("lookedAtBefore") Instant lookedAtBefore, Pageable page);
+
+    /**
+     * Paid payouts still inside the window in which Stripe can fail them, whose last look is older than the cutoff.
+     * A range on {@code idx_payouts_paid}.
+     */
+    @Query("""
+            select new com.flowwallet.payment.payout.ReconcilablePayout(
+                p.id, p.transactionReference, p.status, p.stripeAccountId, p.stripePayoutId)
+            from Payout p
+            where p.status = com.flowwallet.payment.payout.PayoutStatus.PAID
+              and p.paidAt > :paidAfter
+              and coalesce(p.lastReconciledAt, p.paidAt) <= :lookedAtBefore
+            order by p.lastReconciledAt asc nulls first, p.paidAt, p.id
+            """)
+    List<ReconcilablePayout> findPaidToReconcile(
+            @Param("paidAfter") Instant paidAfter,
+            @Param("lookedAtBefore") Instant lookedAtBefore,
+            Pageable page
+    );
+
+    /**
+     * The reconciler's claim: it moves {@code last_reconciled_at} only if no other instance looked at the row since
+     * the cutoff and the row is still in the status it was selected in. It does not raise {@code version}, so it never
+     * fails a save by the webhook or the executor.
+     *
+     * @return 1 if this caller may ask Stripe about the row
+     */
+    @Modifying
+    @Query("""
+            update Payout p set p.lastReconciledAt = :now
+            where p.id = :id and p.status = :status
+              and (p.lastReconciledAt is null or p.lastReconciledAt <= :lookedAtBefore)
+            """)
+    int claimForReconciliation(
+            @Param("id") Long id,
+            @Param("status") PayoutStatus status,
+            @Param("now") Instant now,
+            @Param("lookedAtBefore") Instant lookedAtBefore
+    );
 }

@@ -1,5 +1,6 @@
 package com.flowwallet.payment.provider.stripe;
 
+import com.flowwallet.payment.provider.dto.ConnectEvent;
 import com.flowwallet.payment.provider.dto.PayoutAccountHolder;
 import com.flowwallet.payment.provider.dto.PayoutCallResult;
 import com.flowwallet.payment.provider.dto.PayoutRefusal;
@@ -7,8 +8,10 @@ import com.flowwallet.payment.provider.dto.ProviderBankAccount;
 import com.flowwallet.payment.provider.dto.ProviderPayout;
 import com.flowwallet.payment.provider.dto.ProviderPayoutStatus;
 import com.flowwallet.payment.provider.dto.ProviderTransfer;
+import com.flowwallet.payment.provider.exception.InvalidWebhookSignatureException;
 import com.flowwallet.payment.provider.exception.PayoutLookupException;
 import com.flowwallet.payment.provider.stripe.client.StripeClient;
+import com.flowwallet.payment.provider.stripe.config.StripeProperties;
 import com.stripe.exception.ApiConnectionException;
 import com.stripe.exception.ApiException;
 import com.stripe.exception.CardException;
@@ -20,8 +23,10 @@ import com.stripe.exception.StripeException;
 import com.stripe.model.Account;
 import com.stripe.model.Balance;
 import com.stripe.model.BankAccount;
+import com.stripe.model.Card;
 import com.stripe.model.ExternalAccountCollection;
 import com.stripe.model.Payout;
+import com.stripe.model.StripeObject;
 import com.stripe.model.Transfer;
 import com.stripe.model.TransferReversal;
 import com.stripe.model.TransferReversalCollection;
@@ -32,9 +37,12 @@ import com.stripe.param.PayoutListParams;
 import com.stripe.param.TransferCreateParams;
 import com.stripe.param.TransferListParams;
 import com.stripe.param.TransferReversalCollectionCreateParams;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 
@@ -43,10 +51,14 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.params.provider.Arguments.arguments;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -57,6 +69,9 @@ import static org.mockito.Mockito.when;
 class StripeConnectPayoutsTest {
     private static final String REFERENCE = "6f1d4c2a-8b3e-4f5a-9c7d-1e2f3a4b5c6d";
     private static final String ACCOUNT = "acct_unit_test";
+    private static final String PLATFORM_SECRET = "whsec_unit-test-signing-secret";
+    private static final String CONNECT_SECRET = "whsec_unit-test-connect-secret";
+    private static final Map<String, String> HEADERS = Map.of("Stripe-Signature", "t=1,v1=unit-test-signature");
 
     private static final PayoutAccountHolder HOLDER = new PayoutAccountHolder(
             "PL",
@@ -74,7 +89,15 @@ class StripeConnectPayoutsTest {
     );
 
     private final StripeClient stripeClient = mock(StripeClient.class);
-    private final StripeConnectPayouts payouts = new StripeConnectPayouts(stripeClient);
+    private final StripeWebhookParser webhookParser = mock(StripeWebhookParser.class);
+    private final StripeProperties properties = new StripeProperties();
+    private final StripeConnectPayouts payouts = new StripeConnectPayouts(stripeClient, webhookParser, properties);
+
+    @BeforeEach
+    void configureBothWebhookSecrets() {
+        properties.getWebhook().setSecret(PLATFORM_SECRET);
+        properties.getConnectWebhook().setSecret(CONNECT_SECRET);
+    }
 
     private static Transfer transfer(long amount, long reversed) {
         var transfer = new Transfer();
@@ -93,6 +116,7 @@ class StripeConnectPayoutsTest {
         payout.setMetadata(metadata);
         payout.setAmount(7500L);
         payout.setCurrency("pln");
+        payout.setDestination("ba_1");
         return payout;
     }
 
@@ -131,6 +155,17 @@ class StripeConnectPayoutsTest {
         externalAccounts.setData(List.of(banks));
         account.setExternalAccounts(externalAccounts);
         return account;
+    }
+
+    private static ParsedStripeEvent event(String type, String account, StripeObject object) {
+        return new ParsedStripeEvent("evt_1", type, Instant.parse("2026-10-10T08:00:00Z"), account, object);
+    }
+
+    static Stream<Arguments> accountEvents() {
+        return Stream.of(
+                arguments("account.updated", account(true)),
+                arguments("account.external_account.updated", bankAccount("new", true))
+        );
     }
 
     @Test
@@ -401,7 +436,8 @@ class StripeConnectPayoutsTest {
                 null,
                 REFERENCE,
                 new BigDecimal("75.00"),
-                "PLN"
+                "PLN",
+                "ba_1"
         )));
     }
 
@@ -666,5 +702,294 @@ class StripeConnectPayoutsTest {
         when(stripeClient.retrieveBalance()).thenReturn(balance);
 
         assertThat(payouts.availableBalance("PLN")).isEqualByComparingTo("0");
+    }
+
+    @Test
+    void readConnectEventParsesWithTheConnectSecret() {
+        // Guards a Connect delivery being verified with the platform's secret: a registered Connect endpoint has a
+        // secret of its own, so the platform's would refuse every genuine delivery.
+        when(webhookParser.parse("payload", HEADERS, CONNECT_SECRET))
+                .thenReturn(event("payout.paid", ACCOUNT, payout("po_1", "paid", null)));
+
+        ConnectEvent result = payouts.readConnectEvent("payload", HEADERS);
+
+        assertThat(result).isEqualTo(new ConnectEvent.PayoutChanged("evt_1", "payout.paid", ACCOUNT, "po_1"));
+        verify(webhookParser).parse("payload", HEADERS, CONNECT_SECRET);
+        verify(webhookParser, never()).parse(anyString(), anyMap(), eq(PLATFORM_SECRET));
+    }
+
+    @Test
+    void anUnsetConnectSecretIsPassedOnSoTheParserRefusesTheDelivery() {
+        // Guards the Connect endpoint falling back to the platform secret when its own is unset: the parser refuses
+        // a null secret, so the delivery gets a 400 instead of being verified with a key meant for another endpoint.
+        properties.getConnectWebhook().setSecret(null);
+        var refusal = new InvalidWebhookSignatureException("Webhook signing secret is not configured");
+        when(webhookParser.parse("payload", HEADERS, null)).thenThrow(refusal);
+
+        assertThatThrownBy(() -> payouts.readConnectEvent("payload", HEADERS)).isSameAs(refusal);
+        verify(webhookParser, never()).parse(anyString(), anyMap(), eq(PLATFORM_SECRET));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"payout.paid", "payout.failed", "payout.canceled"})
+    void aPayoutEventOfAHandledTypeNamesThePayoutAndItsAccount(String type) {
+        // Guards a payout outcome being dropped for want of a mapping: each of the three types must reach the settler
+        // with the connected account from the envelope and the payout's id, because the settler reads the status
+        // itself.
+        when(webhookParser.parse("payload", HEADERS, CONNECT_SECRET))
+                .thenReturn(event(type, ACCOUNT, payout("po_1", "paid", null)));
+
+        assertThat(payouts.readConnectEvent("payload", HEADERS))
+                .isEqualTo(new ConnectEvent.PayoutChanged("evt_1", type, ACCOUNT, "po_1"));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("accountEvents")
+    void anAccountEventOfAHandledTypeNamesTheConnectedAccountNotTheObject(String type, StripeObject object) {
+        // Guards the refresh being sent a bank account's id as the account to read: account.external_account.updated
+        // carries a ba_ object, and only the envelope names the connected account.
+        when(webhookParser.parse("payload", HEADERS, CONNECT_SECRET)).thenReturn(event(type, ACCOUNT, object));
+
+        assertThat(payouts.readConnectEvent("payload", HEADERS))
+                .isEqualTo(new ConnectEvent.AccountChanged("evt_1", type, ACCOUNT));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {
+            "payout.created",
+            "payout.updated",
+            "transfer.created",
+            "transfer.reversed",
+            "payment_intent.succeeded",
+            "account.application.deauthorized",
+    })
+    void aTypeNobodyHandlesIsIgnoredWithoutADefect(String type) {
+        // Guards a type outside the five being acted on or logged as a defect: payout.created arrives after the
+        // failure, and every handled type costs a Stripe read.
+        when(webhookParser.parse("payload", HEADERS, CONNECT_SECRET))
+                .thenReturn(event(type, ACCOUNT, payout("po_1", "pending", null)));
+
+        assertThat(payouts.readConnectEvent("payload", HEADERS))
+                .isEqualTo(new ConnectEvent.Ignored("evt_1", type, null));
+    }
+
+    @Test
+    void anUnhandledTypeWithoutAnAccountIsIgnoredWithoutADefect() {
+        // Guards the account check running before the type check: a platform event carries no account, and a type
+        // nobody handles must stay a quiet ignore, not a WARN about a defect.
+        when(webhookParser.parse("payload", HEADERS, CONNECT_SECRET))
+                .thenReturn(event("payment_intent.succeeded", null, payout("po_1", "paid", null)));
+
+        assertThat(payouts.readConnectEvent("payload", HEADERS))
+                .isEqualTo(new ConnectEvent.Ignored("evt_1", "payment_intent.succeeded", null));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {
+            "payout.paid",
+            "payout.failed",
+            "payout.canceled",
+            "account.updated",
+            "account.external_account.updated",
+    })
+    void aHandledTypeWithoutAnAccountIsIgnoredWithADefect(String type) {
+        // Guards an event on the platform itself being settled against a connected account that does not exist: the
+        // account comes from the envelope, and without it there is nothing to read from Stripe.
+        when(webhookParser.parse("payload", HEADERS, CONNECT_SECRET))
+                .thenReturn(event(type, null, payout("po_1", "paid", null)));
+
+        assertThat(payouts.readConnectEvent("payload", HEADERS))
+                .isInstanceOfSatisfying(ConnectEvent.Ignored.class, ignored -> {
+                    assertThat(ignored.eventId()).isEqualTo("evt_1");
+                    assertThat(ignored.type()).isEqualTo(type);
+                    assertThat(ignored.defect()).contains("account");
+                });
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"payout.paid", "payout.failed", "payout.canceled"})
+    void aPayoutEventWithoutAnIdIsIgnoredWithADefect(String type) {
+        // Guards a payout event without an object id answering 500: a redelivery cannot change its content, so Stripe
+        // would deliver it again for days with nothing to fix.
+        when(webhookParser.parse("payload", HEADERS, CONNECT_SECRET))
+                .thenReturn(event(type, ACCOUNT, new Payout()));
+
+        assertThat(payouts.readConnectEvent("payload", HEADERS))
+                .isInstanceOfSatisfying(ConnectEvent.Ignored.class, ignored -> {
+                    assertThat(ignored.eventId()).isEqualTo("evt_1");
+                    assertThat(ignored.type()).isEqualTo(type);
+                    assertThat(ignored.defect()).contains("payout id");
+                });
+    }
+
+    @Test
+    void anAccountEventNeedsNoObjectId() {
+        // Guards the payout id check applying to account events: an account event is about the envelope's account,
+        // and its object's id is never read.
+        when(webhookParser.parse("payload", HEADERS, CONNECT_SECRET))
+                .thenReturn(event("account.updated", ACCOUNT, new Account()));
+
+        assertThat(payouts.readConnectEvent("payload", HEADERS))
+                .isEqualTo(new ConnectEvent.AccountChanged("evt_1", "account.updated", ACCOUNT));
+    }
+
+    @Test
+    void aRetrievedPayoutCarriesItsDestinationAndFailureCode() throws Exception {
+        // Guards a failed payout that cannot be tied to a bank account: the settler resets the stored bank account
+        // only when the payout's destination is that account, and the reversal records the failure code.
+        Payout failed = payout("po_1", "failed", Map.of(StripeConstants.META_WITHDRAWAL_REF, REFERENCE));
+        failed.setFailureCode("account_closed");
+        when(stripeClient.retrievePayout("po_1", ACCOUNT)).thenReturn(failed);
+
+        ProviderPayout result = payouts.retrievePayout(ACCOUNT, "po_1");
+
+        assertThat(result).isEqualTo(new ProviderPayout(
+                "po_1",
+                ProviderPayoutStatus.FAILED,
+                "account_closed",
+                REFERENCE,
+                new BigDecimal("75.00"),
+                "PLN",
+                "ba_1"
+        ));
+    }
+
+    @Test
+    void aPayoutWithoutADestinationCarriesNone() throws Exception {
+        // Guards a missing destination turning into a NullPointerException or a made-up id: with none, a failure
+        // resets no bank account.
+        Payout withoutDestination = payout("po_1", "failed", null);
+        withoutDestination.setDestination(null);
+        when(stripeClient.retrievePayout("po_1", ACCOUNT)).thenReturn(withoutDestination);
+
+        assertThat(payouts.retrievePayout(ACCOUNT, "po_1").destinationId()).isNull();
+    }
+
+    @Test
+    void aListedPayoutCarriesItsDestination() throws Exception {
+        // Guards the executor adopting a failed payout from the listing without knowing which bank account failed:
+        // the listing and the retrieve map a payout the same way.
+        Payout failed = payout("po_1", "failed", Map.of(StripeConstants.META_WITHDRAWAL_REF, REFERENCE));
+        failed.setFailureCode("account_closed");
+        when(stripeClient.listPayouts(any(), anyString())).thenReturn(List.of(failed));
+
+        List<ProviderPayout> found = payouts.findPayouts(ACCOUNT, REFERENCE, Instant.parse("2026-10-10T08:00:00Z"));
+
+        assertThat(found).singleElement().satisfies(listed -> {
+            assertThat(listed.destinationId()).isEqualTo("ba_1");
+            assertThat(listed.failureCode()).isEqualTo("account_closed");
+        });
+    }
+
+    @ParameterizedTest(name = "payouts enabled {0}, status {1} -> ready {2}")
+    @CsvSource(nullValues = "NULL", value = {
+            "true,  new,                 true",
+            "true,  validated,           true",
+            "true,  verified,            true",
+            "true,  errored,             false",
+            "true,  verification_failed, false",
+            "false, new,                 false",
+            "false, verified,            false",
+            "NULL,  verified,            false",
+    })
+    void findDefaultBankAccountIsReadyOnlyWhenPayoutsAreOnAndTheStatusIsPayable(
+            Boolean payoutsEnabled,
+            String status,
+            boolean ready
+    ) throws Exception {
+        // Guards READY read from payouts_enabled alone, which Stripe leaves true after a failed payout while it marks
+        // the bank account errored: a refresh would then set READY again and every later payout would fail.
+        Account found = account(true, bankAccount(status, true));
+        found.setPayoutsEnabled(payoutsEnabled);
+        when(stripeClient.retrieveAccount(ACCOUNT)).thenReturn(found);
+
+        Optional<ProviderBankAccount> result = payouts.findDefaultBankAccount(ACCOUNT, "PLN");
+
+        assertThat(result).contains(new ProviderBankAccount("ba_1", "2874", "PLN", ready));
+    }
+
+    @Test
+    void aDefaultBankAccountWithoutAStatusIsNotReady() throws Exception {
+        // Guards a bank account Stripe returns without a status escaping as a NullPointerException, a 500 on the
+        // webhook, instead of being read as not payable.
+        Account found = account(true, bankAccount(null, true));
+        when(stripeClient.retrieveAccount(ACCOUNT)).thenReturn(found);
+
+        assertThat(payouts.findDefaultBankAccount(ACCOUNT, "PLN"))
+                .contains(new ProviderBankAccount("ba_1", "2874", "PLN", false));
+    }
+
+    @ParameterizedTest(name = "default {0}, bank account in {1}, asked for {2}")
+    @CsvSource({
+            "false, pln, PLN",
+            "true,  eur, PLN",
+    })
+    void aBankAccountThatIsNotTheDefaultForTheCurrencyIsNotTheDefaultBankAccount(
+            boolean defaultForCurrency,
+            String bankCurrency,
+            String asked
+    ) throws Exception {
+        // Guards a refresh reading another bank account's status as the one payouts go to: only the default for the
+        // currency counts, and with none the state is NOT_SET.
+        BankAccount bank = bankAccount("verified", defaultForCurrency);
+        bank.setCurrency(bankCurrency);
+        when(stripeClient.retrieveAccount(ACCOUNT)).thenReturn(account(true, bank));
+
+        assertThat(payouts.findDefaultBankAccount(ACCOUNT, asked)).isEmpty();
+    }
+
+    @Test
+    void anAccountWithAnEmptyExternalAccountListHasNoDefaultBankAccount() throws Exception {
+        // Guards an account whose bank was removed being reported as a failed read: an empty list is a definite
+        // answer, and the refresh sets NOT_SET from it.
+        when(stripeClient.retrieveAccount(ACCOUNT)).thenReturn(account(true));
+
+        assertThat(payouts.findDefaultBankAccount(ACCOUNT, "PLN")).isEmpty();
+    }
+
+    @Test
+    void aDefaultCardIsNotABankAccount() throws Exception {
+        // Guards a card on the connected account being read as a payable bank account, which would mark the account
+        // READY when no payout can reach a bank.
+        var card = new Card();
+        card.setId("card_1");
+        card.setCurrency("pln");
+        card.setDefaultForCurrency(true);
+        var found = account(true);
+        found.getExternalAccounts().setData(List.of(card));
+        when(stripeClient.retrieveAccount(ACCOUNT)).thenReturn(found);
+
+        assertThat(payouts.findDefaultBankAccount(ACCOUNT, "PLN")).isEmpty();
+    }
+
+    @Test
+    void anAccountReadWithoutItsExternalAccountsIsALookupFailure() throws Exception {
+        // Guards Stripe leaving out the list it shows only to the account's controller being read as "no default
+        // bank account", which would set a READY account to NOT_SET and block its payouts.
+        when(stripeClient.retrieveAccount(ACCOUNT)).thenReturn(new Account());
+
+        assertThatThrownBy(() -> payouts.findDefaultBankAccount(ACCOUNT, "PLN"))
+                .isInstanceOf(PayoutLookupException.class)
+                .hasMessageContaining(ACCOUNT);
+    }
+
+    @ParameterizedTest(name = "{0} {1}")
+    @CsvSource(nullValues = "NULL", value = {
+            "api,         500",
+            "api,         409",
+            "rate,        429",
+            "permission,  403",
+            "invalid,     404",
+            "connection,  NULL",
+    })
+    void aFailedAccountReadIsALookupFailureNotAnEmptyAnswer(String kind, Integer status) throws Exception {
+        // Guards an outage read as "no default bank account": the refresh would set a READY account to NOT_SET, and
+        // the webhook would answer 200 for an event it never applied.
+        StripeException failure = failure(kind, status, null);
+        when(stripeClient.retrieveAccount(ACCOUNT)).thenThrow(failure);
+
+        assertThatThrownBy(() -> payouts.findDefaultBankAccount(ACCOUNT, "PLN"))
+                .isInstanceOf(PayoutLookupException.class)
+                .hasCause(failure);
     }
 }

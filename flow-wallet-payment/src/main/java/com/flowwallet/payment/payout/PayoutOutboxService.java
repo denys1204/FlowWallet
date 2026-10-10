@@ -2,6 +2,7 @@ package com.flowwallet.payment.payout;
 
 import com.flowwallet.contract.constant.KafkaConstants;
 import com.flowwallet.contract.event.PayoutFailedEvent;
+import com.flowwallet.contract.event.PayoutPaidEvent;
 import com.flowwallet.contract.event.PayoutReturnedEvent;
 import com.flowwallet.outbox.Outbox;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +26,29 @@ public class PayoutOutboxService {
     static final String AGGREGATE_TYPE_PAYOUT = "Payout";
 
     private final Outbox outbox;
+
+    /**
+     * The event that tells the wallet the payout reached the bank. It moves no money, and a later Failed event can
+     * still follow it, since a paid payout can fail days later.
+     */
+    public void publishPaid(Payout payout, Instant paidAt) {
+        PayoutPaidEvent event = new PayoutPaidEvent(
+                UUID.randomUUID().toString(),
+                KafkaConstants.PAYOUT_EVENT_SCHEMA_VERSION,
+                payout.getTransactionReference(),
+                payout.getStripePayoutId(),
+                payout.getAmount(),
+                payout.getCurrency(),
+                payout.getUserId(),
+                paidAt
+        );
+        outbox.enqueue(
+                AGGREGATE_TYPE_PAYOUT,
+                payout.getTransactionReference(),
+                KafkaConstants.EVENT_TYPE_PAYOUT_PAID,
+                event
+        );
+    }
 
     /**
      * The event that tells the wallet the money is coming back, written once a reversal is certain. It moves no

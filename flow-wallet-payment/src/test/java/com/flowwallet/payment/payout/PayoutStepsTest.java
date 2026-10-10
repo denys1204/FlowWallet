@@ -78,8 +78,12 @@ class PayoutStepsTest {
     }
 
     private static ProviderPayout payout(String id, ProviderPayoutStatus status, String amount) {
+        return payoutTo(id, status, amount, "ba_1");
+    }
+
+    private static ProviderPayout payoutTo(String id, ProviderPayoutStatus status, String amount, String destination) {
         String failureCode = status == ProviderPayoutStatus.FAILED ? "no_account" : null;
-        return new ProviderPayout(id, status, failureCode, REF, new BigDecimal(amount), "PLN");
+        return new ProviderPayout(id, status, failureCode, REF, new BigDecimal(amount), "PLN", destination);
     }
 
     private static void assertSoon(Instant actual, Duration after) {
@@ -281,7 +285,40 @@ class PayoutStepsTest {
                 .thenReturn(List.of(payout("po_failed", ProviderPayoutStatus.FAILED, "75.00")));
 
         assertThat(steps.work(claim(PayoutStatus.TRANSFERRED, true, bank(true), 1)))
-                .isEqualTo(new StepOutcome.FailedPayoutAdopted("po_failed", "no_account"));
+                .isEqualTo(new StepOutcome.FailedPayoutAdopted("po_failed", "no_account", "ba_1"));
+    }
+
+    @Test
+    void aFailedPayoutFoundByTheListingCarriesItsDestination() {
+        // Guards a failed payout's bank account never being reset: the outcome must carry the account the payout was
+        // sent to, taken from the payout and not from the claim's current bank account, so a replaced account is kept.
+        when(provider.findPayouts(anyString(), anyString(), any()))
+                .thenReturn(List.of(payoutTo("po_failed", ProviderPayoutStatus.FAILED, "75.00", "ba_old")));
+
+        assertThat(steps.work(claim(PayoutStatus.TRANSFERRED, true, bank(true), 1)))
+                .isEqualTo(new StepOutcome.FailedPayoutAdopted("po_failed", "no_account", "ba_old"));
+    }
+
+    @Test
+    void aCanceledPayoutFoundByTheListingCarriesNoDestination() {
+        // Guards a cancelation resetting a bank account that nothing is wrong with: a canceled payout says nothing
+        // about the account, so only a failed one may hand its destination to the reset.
+        when(provider.findPayouts(anyString(), anyString(), any()))
+                .thenReturn(List.of(payout("po_canceled", ProviderPayoutStatus.CANCELED, "75.00")));
+
+        assertThat(steps.work(claim(PayoutStatus.TRANSFERRED, true, bank(true), 1)))
+                .isEqualTo(new StepOutcome.FailedPayoutAdopted("po_canceled", null, null));
+    }
+
+    @Test
+    void aFailedPayoutWithOtherTermsNeedsAttentionInsteadOfBeingAdopted() {
+        // Guards adopting, and resetting a bank account for, a failed payout that is not this withdrawal's.
+        when(provider.findPayouts(anyString(), anyString(), any()))
+                .thenReturn(List.of(payout("po_failed", ProviderPayoutStatus.FAILED, "10.00")));
+
+        assertThat(steps.work(claim(PayoutStatus.TRANSFERRED, true, bank(true), 1)))
+                .isInstanceOfSatisfying(StepOutcome.Attention.class, attention ->
+                        assertThat(attention.cause()).isEqualTo(AttentionCause.MISMATCH));
     }
 
     @Test

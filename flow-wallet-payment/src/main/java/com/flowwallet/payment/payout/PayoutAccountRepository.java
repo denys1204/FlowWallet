@@ -17,4 +17,10 @@ public interface PayoutAccountRepository extends JpaRepository<PayoutAccount, Lo
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select a from PayoutAccount a where a.id = :id")
     Optional<PayoutAccount> lockById(@Param("id") Long id);
+
+    Optional<PayoutAccount> findByStripeAccountId(String stripeAccountId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select a from PayoutAccount a where a.stripeAccountId = :stripeAccountId")
+    Optional<PayoutAccount> lockByStripeAccountId(@Param("stripeAccountId") String stripeAccountId);
 }

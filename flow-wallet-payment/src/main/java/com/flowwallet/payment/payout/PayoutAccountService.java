@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Optional;
 
 /**
  * Sets and reads a user's bank account for payouts. The first request reserves the user's row, opens a connected
@@ -29,6 +30,39 @@ public class PayoutAccountService {
     private final PayoutAccountStore store;
     private final PayoutProvider provider;
     private final PayoutProperties properties;
+
+    /**
+     * Sets a connected account's bank account state from the account as Stripe holds it now, after an account event.
+     * The event's data is never read. A refresh that raced another writer is not applied, so the caller has Stripe
+     * deliver the event again. See docs/adr/0036-connect-webhooks-have-their-own-endpoint-and-secret.md.
+     *
+     * @throws com.flowwallet.payment.provider.exception.PayoutLookupException when Stripe cannot be asked
+     */
+    public BankRefresh refreshBankState(String stripeAccountId) {
+        Optional<PayoutAccount> found = store.findByStripeAccount(stripeAccountId);
+        if (found.isEmpty()) {
+            log.info("Account event for connected account {}, which no payout account holds", stripeAccountId);
+            return BankRefresh.UNKNOWN_ACCOUNT;
+        }
+        PayoutAccount account = found.get();
+        if (account.getBankCurrency() == null) {
+            log.debug("Payout account {} has no bank account to refresh", account.getAccountKey());
+            return BankRefresh.NO_BANK_ACCOUNT;
+        }
+        Optional<ProviderBankAccount> current = provider.findDefaultBankAccount(
+                stripeAccountId,
+                account.getBankCurrency()
+        );
+        boolean ready = current.map(bank -> bank.ready() && properties.paysOutIn(bank.currency())).orElse(false);
+        BankRefresh refresh = store.applyBankState(
+                account.getId(),
+                account.getVersion(),
+                current.map(ProviderBankAccount::externalAccountId).orElse(null),
+                ready ? BankAccountState.READY : BankAccountState.NOT_SET
+        );
+        log.info("Payout account {} refreshed from Stripe: {}", account.getAccountKey(), refresh);
+        return refresh;
+    }
 
     public PayoutAccountResponse bankAccount(String userId) {
         return store.findByUser(userId)
@@ -106,10 +140,7 @@ public class PayoutAccountService {
      * A bank account in a currency Payment Service does not pay out in is recorded, but no withdrawal can use it.
      */
     private ProviderBankAccount inPayoutTerms(ProviderBankAccount bankAccount) {
-        boolean payoutCurrency = properties.getCurrencies()
-                .stream()
-                .anyMatch(entry -> entry.getCode().equalsIgnoreCase(bankAccount.currency()));
-        if (payoutCurrency) {
+        if (properties.paysOutIn(bankAccount.currency())) {
             return bankAccount;
         }
         return new ProviderBankAccount(

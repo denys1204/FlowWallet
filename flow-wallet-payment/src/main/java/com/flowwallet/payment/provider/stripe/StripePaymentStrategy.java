@@ -10,6 +10,7 @@ import com.flowwallet.payment.provider.exception.PaymentInitiationException;
 import com.flowwallet.payment.provider.exception.PaymentLookupException;
 import com.flowwallet.payment.provider.exception.PaymentRefusedException;
 import com.flowwallet.payment.provider.stripe.client.StripeClient;
+import com.flowwallet.payment.provider.stripe.config.StripeProperties;
 import com.flowwallet.payment.provider.stripe.mapper.StripeRequestMapper;
 import com.stripe.exception.CardException;
 import com.stripe.exception.InvalidRequestException;
@@ -33,6 +34,7 @@ public class StripePaymentStrategy implements PaymentProviderStrategy {
     private final StripeRequestMapper requestMapper;
     private final StripeWebhookParser webhookParser;
     private final StripeClient stripeClient;
+    private final StripeProperties stripeProperties;
 
     @Override
     public boolean supports(PaymentProvider provider) {
@@ -79,7 +81,7 @@ public class StripePaymentStrategy implements PaymentProviderStrategy {
 
     @Override
     public WebhookResult handleWebhook(String payload, Map<String, String> headers) {
-        ParsedStripeEvent event = webhookParser.parse(payload, headers);
+        ParsedStripeEvent event = webhookParser.parse(payload, headers, stripeProperties.getWebhook().getSecret());
 
         if (!(event.dataObject() instanceof PaymentIntent paymentIntent)) {
             log.debug("Ignoring non-PaymentIntent Stripe object for event: {}", event.eventType());

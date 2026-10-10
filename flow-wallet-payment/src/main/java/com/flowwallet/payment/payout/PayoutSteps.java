@@ -4,6 +4,7 @@ import com.flowwallet.payment.provider.PayoutProvider;
 import com.flowwallet.payment.provider.dto.PayoutCallResult;
 import com.flowwallet.payment.provider.dto.PayoutRefusal;
 import com.flowwallet.payment.provider.dto.ProviderPayout;
+import com.flowwallet.payment.provider.dto.ProviderPayoutStatus;
 import com.flowwallet.payment.provider.dto.ProviderTransfer;
 import com.flowwallet.payment.provider.exception.PayoutLookupException;
 import com.flowwallet.payment.provider.stripe.config.StripeProperties;
@@ -250,8 +251,9 @@ class PayoutSteps {
             return Optional.empty();
         }
         ProviderPayout failed = found.getFirst();
+        String failedDestination = failed.status() == ProviderPayoutStatus.FAILED ? failed.destinationId() : null;
         return Optional.of(matches(claim, failed)
-                ? new StepOutcome.FailedPayoutAdopted(failed.id(), failed.failureCode())
+                ? new StepOutcome.FailedPayoutAdopted(failed.id(), failed.failureCode(), failedDestination)
                 : attention(AttentionCause.MISMATCH, "payout " + failed.id() + " has other terms"));
     }
 

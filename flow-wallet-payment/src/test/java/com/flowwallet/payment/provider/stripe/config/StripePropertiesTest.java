@@ -4,11 +4,15 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.context.ConfigurationPropertiesAutoConfiguration;
+import org.springframework.boot.env.YamlPropertySourceLoader;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.boot.validation.autoconfigure.ValidationAutoConfiguration;
+import org.springframework.core.env.PropertySource;
+import org.springframework.core.io.ClassPathResource;
 
 import java.time.Duration;
 
@@ -40,6 +44,19 @@ class StripePropertiesTest {
     }
 
     @Test
+    void theShippedYamlReadsEachSecretFromItsOwnVariableWithNoDefault() throws Exception {
+        // Guards a renamed key or a fallback to the platform secret in application.yml, which no binding test with
+        // explicit values sees: Connect deliveries would all get 400, or the platform secret would verify them.
+        PropertySource<?> yaml = new YamlPropertySourceLoader()
+                .load("application", new ClassPathResource("application.yml"))
+                .getFirst();
+
+        assertThat(String.valueOf(yaml.getProperty("stripe.webhook.secret"))).isEqualTo("${STRIPE_WEBHOOK_SECRET:}");
+        assertThat(String.valueOf(yaml.getProperty("stripe.connect-webhook.secret")))
+                .isEqualTo("${STRIPE_CONNECT_WEBHOOK_SECRET:}");
+    }
+
+    @Test
     @DisplayName("binds a real signing secret and enables webhooks")
     void bindsARealSigningSecret() {
         runner.withPropertyValues(
@@ -59,6 +76,55 @@ class StripePropertiesTest {
         runner.withPropertyValues("stripe.webhook.secret=" + secret).run(context -> {
             assertThat(context).hasNotFailed();
             assertThat(context.getBean(StripeProperties.class).getWebhook().hasSigningSecret()).isFalse();
+        });
+    }
+
+    @Test
+    void startsWithoutAConnectSecretWithConnectDeliveriesRefused() {
+        // The quickstart starts Payment Service before `stripe listen` has printed a secret, so a missing Connect
+        // secret must not fail startup; it must only refuse Connect deliveries.
+        runner.run(context -> {
+            assertThat(context).hasNotFailed();
+            StripeProperties properties = context.getBean(StripeProperties.class);
+            assertThat(properties.getConnectWebhook().getSecret()).isNull();
+            assertThat(properties.getConnectWebhook().hasSigningSecret()).isFalse();
+        });
+    }
+
+    @Test
+    void thePlatformSecretNeverEnablesTheConnectEndpoint() {
+        // Guards the Connect endpoint falling back to stripe.webhook.secret: a deployment that set only the
+        // platform secret would verify Connect deliveries with a secret Stripe never signed them with.
+        runner.withPropertyValues("stripe.webhook.secret=whsec_unit-test-signing-secret").run(context -> {
+            StripeProperties properties = context.getBean(StripeProperties.class);
+            assertThat(properties.getWebhook().hasSigningSecret()).isTrue();
+            assertThat(properties.getConnectWebhook().hasSigningSecret()).isFalse();
+        });
+    }
+
+    @ParameterizedTest(name = "\"{0}\" is not a Connect signing secret")
+    @NullAndEmptySource
+    @ValueSource(strings = {" ", "whsec_", "whsec_dummy", "whsec_your_secret_here", "sk_test_123"})
+    void aConnectSecretThatIsUnsetBlankBarePrefixOrPlaceholderIsNotASigningSecret(String secret) {
+        // stripe-java signs with any string, so an unset secret or a published placeholder as the Connect key would
+        // let anyone who knows it sign a delivery to the Connect endpoint.
+        StripeProperties properties = new StripeProperties();
+        properties.getConnectWebhook().setSecret(secret);
+
+        assertThat(properties.getConnectWebhook().hasSigningSecret()).isFalse();
+        assertThat(StripeProperties.Webhook.isSigningSecret(secret)).isFalse();
+    }
+
+    @Test
+    void aVisiblyFakeConnectSecretIsASigningSecret() {
+        // Guards the Connect secret being read from the wrong key, or refused by a rule that only the platform's own
+        // test values pass. The two secrets bind independently.
+        runner.withPropertyValues("stripe.connect-webhook.secret=whsec_unit-test-connect-secret").run(context -> {
+            StripeProperties properties = context.getBean(StripeProperties.class);
+            assertThat(properties.getConnectWebhook().hasSigningSecret()).isTrue();
+            assertThat(properties.getConnectWebhook().getSecret()).isEqualTo("whsec_unit-test-connect-secret");
+            assertThat(properties.getWebhook().hasSigningSecret()).isFalse();
+            assertThat(properties.getWebhook().getToleranceSeconds()).isEqualTo(300);
         });
     }
 

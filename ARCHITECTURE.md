@@ -400,9 +400,12 @@ comes back before the gateway's 20 s response timeout would answer `504`
   URLs set `logServerErrorDetail=false` (`DB_LOG_SERVER_ERROR_DETAIL`), so an exception message carries no
   Postgres DETAIL line, which would quote a duplicate key's user id or a refused row
   ([ADR 0027](docs/adr/0027-user-ids-stay-out-of-logs-and-provider-metadata.md)).
-- Stripe webhooks are verified cryptographically (HMAC signature with a replay window). That check doesn't
-  depend on user identity and stays enforced. The body is capped at 256KB by default and its signature is
-  checked before it is parsed. Without a real signing secret (`whsec_...`, not a placeholder) webhooks are
-  disabled and every delivery is refused. A verified success is applied only when the PaymentIntent has
-  succeeded and its amount and currency match the stored transaction
-  ([ADR 0017](docs/adr/0017-webhooks-verified-before-they-are-read.md)).
+- Stripe webhooks are verified cryptographically (HMAC signature with a replay window). That check doesn't depend on
+  user identity and stays enforced. The body is capped at 256KB by default and its signature is checked before it is
+  parsed. Without a real signing secret (`whsec_...`, not a placeholder) webhooks are disabled and every delivery is
+  refused. A verified success is applied only when the PaymentIntent has succeeded and its amount and currency match the
+  stored transaction ([ADR 0017](docs/adr/0017-webhooks-verified-before-they-are-read.md)). Events from connected
+  accounts (payouts and bank accounts) arrive at their own endpoint, `/api/payments/webhooks/stripe/connect`, which
+  verifies with its own secret (`STRIPE_CONNECT_WEBHOOK_SECRET`) by the same rules. Such an event only names what
+  changed: Payment Service reads the payout or the account from Stripe and applies what it reads, never the event's type
+  or data ([ADR 0036](docs/adr/0036-connect-webhooks-have-their-own-endpoint-and-secret.md)).

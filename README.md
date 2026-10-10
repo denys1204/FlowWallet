@@ -117,8 +117,9 @@ Configure the environment:
 cp .env.example .env
 ```
 
-Set `STRIPE_API_KEY` and `POSTGRES_PASSWORD` in `.env`. Leave `STRIPE_WEBHOOK_SECRET` empty for now; a later
-step gives you the real value. Until it is set, Payment Service starts but refuses every webhook.
+Set `STRIPE_API_KEY` and `POSTGRES_PASSWORD` in `.env`. Leave `STRIPE_WEBHOOK_SECRET` and
+`STRIPE_CONNECT_WEBHOOK_SECRET` empty for now; a later step gives you the real value. Until they are set, Payment
+Service starts but refuses every webhook.
 
 Start infrastructure:
 
@@ -147,12 +148,13 @@ The gateway listens on `127.0.0.1` by default. It forwards `X-User-Id` as the cl
 Forward Stripe webhooks:
 
 ```bash
-stripe listen --forward-to localhost:8080/api/payments/webhooks/stripe
+stripe listen --forward-to localhost:8080/api/payments/webhooks/stripe \
+  --forward-connect-to localhost:8080/api/payments/webhooks/stripe/connect
 ```
 
-`stripe listen` prints a webhook signing secret (`whsec_...`). Put it in `STRIPE_WEBHOOK_SECRET` and restart
-Payment Service. Until you do, every webhook comes back `400`, and a deposit you pay is credited only when the
-reconciler finds it, 15 minutes or more later.
+`stripe listen` prints a webhook signing secret (`whsec_...`). It signs the events of both targets, so put it in both
+`STRIPE_WEBHOOK_SECRET` and `STRIPE_CONNECT_WEBHOOK_SECRET` and restart Payment Service. Until you do, every webhook
+comes back `400`, and a deposit you pay is credited only when the reconciler finds it, 15 minutes or more later.
 
 See [docs/development.md](docs/development.md) for the full guide, configuration and testing.
 

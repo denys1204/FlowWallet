@@ -1,6 +1,7 @@
 package com.flowwallet.payment.provider.stripe;
 
 import com.flowwallet.payment.provider.PayoutProvider;
+import com.flowwallet.payment.provider.dto.ConnectEvent;
 import com.flowwallet.payment.provider.dto.PayoutAccountHolder;
 import com.flowwallet.payment.provider.dto.PayoutCallResult;
 import com.flowwallet.payment.provider.dto.PayoutRefusal;
@@ -10,6 +11,7 @@ import com.flowwallet.payment.provider.dto.ProviderPayoutStatus;
 import com.flowwallet.payment.provider.dto.ProviderTransfer;
 import com.flowwallet.payment.provider.exception.PayoutLookupException;
 import com.flowwallet.payment.provider.stripe.client.StripeClient;
+import com.flowwallet.payment.provider.stripe.config.StripeProperties;
 import com.stripe.exception.CardException;
 import com.stripe.exception.IdempotencyException;
 import com.stripe.exception.InvalidRequestException;
@@ -120,7 +122,67 @@ public class StripeConnectPayouts implements PayoutProvider {
 
     private static final long PAGE_SIZE = 100;
 
+    /**
+     * The payout events the Connect webhook acts on. Their type is not trusted: the handler reads the payout's
+     * current status, because Stripe sent {@code payout.paid} before {@code payout.failed} for a payout that failed.
+     */
+    private static final Set<String> PAYOUT_EVENTS = Set.of(
+            StripeConstants.EVENT_PAYOUT_PAID,
+            StripeConstants.EVENT_PAYOUT_FAILED,
+            StripeConstants.EVENT_PAYOUT_CANCELED
+    );
+
+    private static final Set<String> ACCOUNT_EVENTS = Set.of(
+            StripeConstants.EVENT_ACCOUNT_UPDATED,
+            StripeConstants.EVENT_EXTERNAL_ACCOUNT_UPDATED
+    );
+
     private final StripeClient stripeClient;
+    private final StripeWebhookParser webhookParser;
+    private final StripeProperties stripeProperties;
+
+    /**
+     * Verifies with the Connect endpoint's secret and keeps only the envelope: the type, the connected account and,
+     * for a payout, its id. See docs/adr/0036-connect-webhooks-have-their-own-endpoint-and-secret.md.
+     */
+    @Override
+    public ConnectEvent readConnectEvent(String payload, Map<String, String> headers) {
+        ParsedStripeEvent event = webhookParser.parse(
+                payload,
+                headers,
+                stripeProperties.getConnectWebhook().getSecret()
+        );
+        String type = event.eventType();
+        boolean payoutEvent = PAYOUT_EVENTS.contains(type);
+        if (!payoutEvent && !ACCOUNT_EVENTS.contains(type)) {
+            return new ConnectEvent.Ignored(event.eventId(), type, null);
+        }
+        if (event.account() == null) {
+            return new ConnectEvent.Ignored(event.eventId(), type, "no connected account");
+        }
+        if (!payoutEvent) {
+            return new ConnectEvent.AccountChanged(event.eventId(), type, event.account());
+        }
+        String payoutId = event.objectId();
+        return payoutId == null
+                ? new ConnectEvent.Ignored(event.eventId(), type, "no payout id")
+                : new ConnectEvent.PayoutChanged(event.eventId(), type, event.account(), payoutId);
+    }
+
+    @Override
+    public Optional<ProviderBankAccount> findDefaultBankAccount(String accountId, String currency) {
+        Account account;
+        try {
+            account = stripeClient.retrieveAccount(accountId);
+        } catch (StripeException e) {
+            throw lookupFailed("account " + accountId, e);
+        }
+        if (account.getExternalAccounts() == null) {
+            String message = "Stripe returned account " + accountId + " without its external accounts";
+            throw new PayoutLookupException(message, null);
+        }
+        return defaultBankAccount(account, currency);
+    }
 
     /**
      * A v1 account with {@code controller} settings: no Stripe dashboard, the platform collects the requirements and
@@ -430,7 +492,7 @@ public class StripeConnectPayouts implements PayoutProvider {
                         listed.getId(),
                         listed.getLast4(),
                         listed.getCurrency().toUpperCase(Locale.ROOT),
-                        paysOut && PAYABLE_BANK_STATUSES.contains(listed.getStatus())
+                        paysOut && listed.getStatus() != null && PAYABLE_BANK_STATUSES.contains(listed.getStatus())
                 ));
     }
 
@@ -522,7 +584,8 @@ public class StripeConnectPayouts implements PayoutProvider {
                 payout.getFailureCode(),
                 payout.getMetadata() == null ? null : payout.getMetadata().get(META_WITHDRAWAL_REF),
                 toMajorUnits(payout.getAmount(), currency),
-                currency.toUpperCase(Locale.ROOT)
+                currency.toUpperCase(Locale.ROOT),
+                payout.getDestination()
         );
     }
 

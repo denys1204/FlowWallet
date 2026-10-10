@@ -11,8 +11,9 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Map;
 
 /**
- * The public webhook route. The body is read through {@link WebhookPayloadReader} rather than
- * {@code @RequestBody}, which would read an unauthenticated body of any size.
+ * The public webhook route for the platform's events. The body is read through {@link WebhookPayloadReader} rather
+ * than {@code @RequestBody}, which would read an unauthenticated body of any size. {@code /{provider}} matches one
+ * segment, so the events of connected accounts, at {@code /stripe/connect}, reach {@link ConnectWebhookController}.
  */
 @RestController
 @RequiredArgsConstructor

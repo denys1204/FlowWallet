@@ -9,6 +9,10 @@ import org.springframework.http.HttpStatus;
  * See docs/adr/0016-error-model-and-status-codes.md.
  */
 public class WebhookProcessingException extends ApiException {
+    public WebhookProcessingException(String message) {
+        super(HttpStatus.INTERNAL_SERVER_ERROR, message);
+    }
+
     public WebhookProcessingException(String message, Throwable cause) {
         super(HttpStatus.INTERNAL_SERVER_ERROR, message, cause);
     }
