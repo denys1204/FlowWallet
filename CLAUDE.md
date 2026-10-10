@@ -38,8 +38,8 @@ nothing about wallets ([ADR 0002](docs/adr/0002-module-boundaries.md),
   outbox, the `payouts` it accepts from `wallet.withdrawals` and works through Stripe Connect in `PayoutExecutor`,
   settled from the Connect webhook and `PayoutReconciler`, the connected account and bank account each user sets for
   them, and the `payouts` actuator endpoint, an operator's exit from `NEEDS_ATTENTION`.
-- `flow-wallet-service`: the Wallet Service. REST API, deposit initiation, transfers, the bank account relay to
-  Payment Service, and the Kafka consumer.
+- `flow-wallet-service`: the Wallet Service. REST API, deposit initiation, transfers, withdrawals with their outbox, the
+  bank account relay to Payment Service, and the Kafka consumer.
 
 In brief (the full flows are in `ARCHITECTURE.md`):
 
@@ -55,8 +55,15 @@ In brief (the full flows are in `ARCHITECTURE.md`):
   service and no Kafka. `TransferService` is deliberately not `@Transactional`: it checks the request before
   and classifies an integrity violation after; `TransferHandler.execute` is the one transactional method
   ([ADR 0014](docs/adr/0014-transfers-in-one-local-transaction.md)).
+- A withdrawal (`withdrawal/`) debits the wallet first and pays out later. `WithdrawalService` is deliberately not
+  `@Transactional`: it judges the key and asks Payment Service's preflight through `PayoutClient` with no transaction
+  open. `WithdrawalHandler.execute` then locks the wallet, judges the key again and either records a refusal (a 422 that
+  spends the key) or writes the ledger row, the `PENDING` withdrawal and the outbox command in one READ COMMITTED
+  transaction. Payout events settle the withdrawal afterwards
+  ([ADR 0033](docs/adr/0033-withdrawals-are-debited-under-the-lock-and-settled-by-payout-events.md),
+  [ADR 0034](docs/adr/0034-shared-outbox-and-the-wallet-withdrawals-command.md)).
 
-Before changing either flow, read its sections of `ARCHITECTURE.md` and the ADRs they link: the step order, the
+Before changing any of these flows, read its sections of `ARCHITECTURE.md` and the ADRs they link: the step order, the
 lock order and the idempotency checks are specified there, not here.
 
 ## Invariants
@@ -65,8 +72,9 @@ Each invariant here is stated once and links the ADR that holds its reasoning.
 
 - Money is `BigDecimal` / `NUMERIC(19,4)`, never floating point
   ([ADR 0012](docs/adr/0012-balances-and-append-only-ledger.md)).
-- A balance is never negative. `Wallet.debit` refuses an overdraft with a 422 before anything is written, and
-  the schema holds the rule for any writer that skips it (`wallets_balance_not_negative`). Ledger amounts are
+- A balance is never negative. `Wallet.debit` refuses an overdraft with a 422 before anything is written (a withdrawal
+  catches it and records the refusal under its key), and the schema holds the rule for any writer that skips it
+  (`wallets_balance_not_negative`). Ledger amounts are
   always positive and `type` carries the direction (`balance_history_amount_positive`)
   ([ADR 0012](docs/adr/0012-balances-and-append-only-ledger.md)).
 - Ledger order is the per-wallet `entry_no`, never the id: `Wallet.credit`/`debit` advance `last_entry_no` under
@@ -75,8 +83,9 @@ Each invariant here is stated once and links the ADR that holds its reasoning.
 - Every balance write takes a `PESSIMISTIC_WRITE` lock on the wallet row
   (`WalletRepository.lockByUserIdAndCurrency`); `@Version` stays as a backstop, and read-only endpoints use the
   non-locking finders. Code that locks more than one wallet in a transaction locks them in ascending
-  `(user_id, currency)`, taken from the request without a read. `TransferHandler` pins READ COMMITTED, because
-  under REPEATABLE READ a lock that waited fails with a serialization error
+  `(user_id, currency)`, taken from the request without a read. `TransferHandler`, `WithdrawalHandler` and
+  `WithdrawalEventHandler` pin READ COMMITTED, because under REPEATABLE READ a lock that waited fails with a
+  serialization error
   ([ADR 0011](docs/adr/0011-wallet-row-locking.md)).
 - No unlocked read of a wallet before its lock in the same transaction: the locking query would return the
   managed instance, and Hibernate throws `StaleObjectStateException` (a 503 on a transfer) whenever another
@@ -87,8 +96,9 @@ Each invariant here is stated once and links the ADR that holds its reasoning.
 - `Idempotency-Key` is a client-supplied UUID of any version, lower-cased and used verbatim as
   `transactionReference`, which is also Stripe's idempotency key; the server never generates it
   ([ADR 0005](docs/adr/0005-client-supplied-idempotency-keys.md)). Refusals write nothing, so they consume no
-  key, except a payment Stripe refuses after the row is reserved; Payment Service checks what it knows of
-  Stripe's rules before reserving
+  key, except a payment Stripe refuses after the row is reserved and a withdrawal's 422, which stays under its key as a
+  `REFUSED` row ([ADR 0033](docs/adr/0033-withdrawals-are-debited-under-the-lock-and-settled-by-payout-events.md));
+  Payment Service checks what it knows of Stripe's rules before reserving
   ([ADR 0022](docs/adr/0022-stripe-charge-rules-checked-before-the-reservation.md)). In the wallet ledger one
   reference can own several rows, so every `balance_history` lookup by reference names its type
   ([ADR 0012](docs/adr/0012-balances-and-append-only-ledger.md)).
@@ -115,7 +125,11 @@ Each invariant here is stated once and links the ADR that holds its reasoning.
   401 fix the identity header, 400 fix the request, 404 open your wallet (only ever the caller's), 406 accept
   JSON, 409 use a new key (only key reuse), 422 lower the amount or top up (insufficient funds) or pick another
   recipient (no recipient wallet), with the detail saying which, 503 retry with the same key; a 500 is a server
-  defect the caller cannot fix ([ADR 0016](docs/adr/0016-error-model-and-status-codes.md)). On every endpoint,
+  defect the caller cannot fix ([ADR 0016](docs/adr/0016-error-model-and-status-codes.md)). On the withdrawal path 202
+  means debited and on its way (`Location` names the withdrawal), a 404 on the read means no such withdrawal, a 422
+  spends the key (no bank account, or insufficient funds), so its fix is a new key, and a 503 also means a short
+  platform reserve with nothing debited
+  ([ADR 0033](docs/adr/0033-withdrawals-are-debited-under-the-lock-and-settled-by-payout-events.md)). On every endpoint,
   `GlobalExceptionHandler` answers a database the service cannot reach (a failed begin, a lost connection,
   SQLState class 08 or 57P0x) and any `TransientDataAccessException` (a query timeout, a lock failure) with that
   503, whose detail does not claim that nothing moved
@@ -186,9 +200,10 @@ Each invariant here is stated once and links the ADR that holds its reasoning.
 
 - In Postgres a constraint violation aborts the transaction. Catch `DataIntegrityViolationException` only to
   rethrow at once (see `WalletService.open`), or outside the rolled-back transaction and then read from a fresh
-  one (`PaymentEventListener` with `PaymentEventOutcomeStore`, `TransferService`, `PaymentService`); never keep
-  working on that connection. The catching class must not be `@Transactional` itself, or the inner
-  transaction joins it and the reads run on the aborted one ([ADR 0007](docs/adr/0007-unique-constraints-decide.md)).
+  one (`PaymentEventListener` with `PaymentEventOutcomeStore`, `TransferService`, `WithdrawalService`,
+  `PaymentService`); never keep working on that connection. The catching class must not be `@Transactional` itself, or
+  the inner transaction joins it and the reads run on the aborted one
+  ([ADR 0007](docs/adr/0007-unique-constraints-decide.md)).
 - `@Transactional` on a method called from the same class does nothing: there is no proxy
   ([ADR 0006](docs/adr/0006-short-transactions-across-bean-boundaries.md)).
 - `ObjectOptimisticLockingFailureException` is not a `DataIntegrityViolationException`; a catch for one never

@@ -15,7 +15,7 @@ import java.time.Instant;
  *
  * @param entryNo              the movement's place in its wallet's ledger, counting from 1 in commit order; the
  *                             cursor for paging further back
- * @param transactionReference links the movement to the payment or transfer that caused it; both legs of a
+ * @param transactionReference links the movement to the payment, transfer or withdrawal that caused it; both legs of a
  *                             transfer carry the same one
  * @param type                 the {@code TransactionType} name, which gives both direction and source
  * @param counterpartyUserId   the other user of a transfer: the recipient on {@code TRANSFER_OUT}, the sender

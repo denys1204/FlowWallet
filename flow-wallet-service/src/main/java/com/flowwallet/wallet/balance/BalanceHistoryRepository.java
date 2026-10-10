@@ -14,8 +14,9 @@ public interface BalanceHistoryRepository extends JpaRepository<BalanceHistory, 
      * The movement of one type under a reference. The type is required: a reference owns one movement of each
      * type, and the unique {@code (transaction_reference, type)} is what makes the {@code Optional} safe.
      * <p>
-     * Apart from a transfer judging its key under the sender wallet's lock, this is read only to classify a
-     * violation after the fact, never as a guard before an insert: the unique index decides.
+     * Apart from a transfer judging its key under the sender wallet's lock and a withdrawal rebuilding its receipt,
+     * this is read only to classify a violation after the fact, never as a guard before an insert: the unique index
+     * decides.
      * See docs/adr/0007-unique-constraints-decide.md and docs/adr/0012-balances-and-append-only-ledger.md.
      */
     Optional<BalanceHistory> findByTransactionReferenceAndType(String transactionReference, TransactionType type);

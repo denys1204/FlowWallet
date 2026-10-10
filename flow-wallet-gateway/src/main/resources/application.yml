@@ -27,7 +27,9 @@ spring:
             # that accepts the connection and never answers hangs until the caller gives up. 20s sits above
             # the wallet's own worst case for a deposit call to Payment Service (connect 2s + read 10s, see
             # WALLET_PAYMENT_CONNECT_TIMEOUT / WALLET_PAYMENT_READ_TIMEOUT), so a deposit's own timeout fires
-            # first and the gateway's is a backstop, not the thing the caller usually hits.
+            # first and the gateway's is a backstop, not the thing the caller usually hits. A withdrawal adds up
+            # to three 5s pool waits to its preflight and can outlast it: the gateway then answers 504 for a
+            # debit that may still commit, and a retry with the same key gets its 202 (ADR 0033).
             response-timeout: ${GATEWAY_HTTPCLIENT_RESPONSE_TIMEOUT:20s}
             # Millis, not a Duration string: HttpClientProperties#connectTimeout is a plain Integer.
             connect-timeout: ${GATEWAY_HTTPCLIENT_CONNECT_TIMEOUT_MS:2000}

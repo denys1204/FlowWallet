@@ -13,7 +13,8 @@ import java.net.http.HttpClient;
 /**
  * Builds the Payment Service client for deposits: a declarative HTTP interface over {@code RestClient}, started from
  * Boot's auto-configured builder so that Boot's message converters and client observation apply to the call. The
- * bank account client is built the same way, from {@link #proxyFactory}. See docs/adr/0013-deposit-initiation.md.
+ * bank account client and the withdrawal preflight client are built the same way, from {@link #proxyFactory}.
+ * See docs/adr/0013-deposit-initiation.md.
  */
 @Configuration
 @RequiredArgsConstructor

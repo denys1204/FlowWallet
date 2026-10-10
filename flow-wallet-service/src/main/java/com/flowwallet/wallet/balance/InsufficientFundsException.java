@@ -4,7 +4,9 @@ import com.flowwallet.platform.exception.ApiException;
 import org.springframework.http.HttpStatus;
 
 /**
- * The wallet's balance does not cover a debit: 422, whose remedy is a smaller amount or a top-up, never a new key.
+ * The wallet's balance does not cover a debit: 422, whose remedy for a transfer is a smaller amount or a top-up,
+ * never a new key. A withdrawal catches it and records the refusal under its key, which stays spent; a new attempt
+ * takes a new key.
  * <p>
  * The message names the currency and no figures, because the platform handler logs every 4xx detail. It is an
  * {@code ApiException} because every caller of {@link Wallet#debit} serves an HTTP request; a debit driven by an

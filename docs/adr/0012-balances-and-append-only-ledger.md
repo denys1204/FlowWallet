@@ -28,7 +28,8 @@ reference has to be able to name a payment or both legs of a transfer without an
   `balance_after` from that value, so both numbers come from the same mutation. The ledger can be replayed and
   reconciled against `Wallet.getBalance()` without recomputing history.
 - Amounts are always positive, and `TransactionType` carries both direction and source: `DEPOSIT`,
-  `TRANSFER_IN`, `TRANSFER_OUT`. `WITHDRAWAL` is declared, and nothing writes it yet. The CHECK
+  `TRANSFER_IN`, `TRANSFER_OUT`. `WITHDRAWAL` is a withdrawal's debit
+  ([0033](0033-withdrawals-are-debited-under-the-lock-and-settled-by-payout-events.md)). The CHECK
   `balance_history_amount_positive` (`amount > 0`) also refuses a positive value too small for four decimal
   places, such as `0.00001`, which Postgres would otherwise round to `0.0000` and store. A finer value that
   rounds to a non-zero amount is still rounded and stored, so precision is refused in code

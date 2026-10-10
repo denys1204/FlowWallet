@@ -22,7 +22,8 @@ import org.springframework.web.bind.annotation.*;
 public class TransferController {
     /**
      * Any UUID: versions 1 to 8 of variants 0 to 2, in either case, never nil (its version digit is 0), in ASCII
-     * only. {@code DepositController} checks its key with it too. It is a pattern because Hibernate Validator's
+     * only. {@code DepositController} checks its key with it too, and {@code WithdrawalController} its key and the
+     * reference it reads. It is a pattern because Hibernate Validator's
      * {@code @UUID} throws on a 36-character key with a fifth dash, which the platform handler answers with a 500
      * instead of a 400, and accepts non-ASCII digits. See docs/adr/0005-client-supplied-idempotency-keys.md.
      */

@@ -18,15 +18,16 @@ Details: [identity and security model](../ARCHITECTURE.md#identity--security-mod
 
 ## Wallets
 
-- A user opens a wallet explicitly, one per currency. A deposit, a transfer or a payment event never opens one.
+- A user opens a wallet explicitly, one per currency. A deposit, a transfer, a withdrawal or a payment event never opens
+  one.
 - The currency is an ISO 4217 code, in either letter case. A code that names no currency of payment, such as
   gold (XAU), the testing code (XTS) or "no currency" (XXX), cannot be opened, because no deposit could fund it.
 - A new wallet holds 0. A wallet cannot be closed, deleted or moved to another currency.
 - A wallet is addressed by its owner and currency and has no id in the API. Someone else's wallet and a wallet
   that does not exist look the same.
 - A balance never goes below zero. Spending it down to exactly zero is allowed.
-- Money comes into FlowWallet only through deposits and does not leave it: transfers move it between users,
-  and there are no withdrawals yet.
+- Money comes into FlowWallet only through deposits and leaves it only through withdrawals to the owner's bank
+  account. Transfers move it between users.
 
 Details: [API reference](api.md#wallet-service). Reasoning:
 [ADR 0004](adr/0004-wallet-addressed-by-owner-and-currency.md),
@@ -104,19 +105,65 @@ Details: [API reference](api.md#wallet-service). Reasoning:
 [ADR 0035](adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md),
 [ADR 0036](adr/0036-connect-webhooks-have-their-own-endpoint-and-secret.md).
 
+## Withdrawals
+
+- A withdrawal pays part of a wallet's balance out to the user's bank account through Stripe Connect. FlowWallet runs
+  in Stripe test mode only, so no real money moves.
+- It needs a bank account that is ready in the wallet's currency. Payment Service pays out in PLN only by default, so a
+  withdrawal from a wallet in another currency is refused.
+- The amount is positive, on the grid above, and has no more decimals than a payout in its currency allows. It is at
+  least the configured minimum, 5.00 by default, which is never below Stripe's own minimum payout where Stripe lists
+  one. Nothing else limits it but the balance and the platform's reserve.
+- The debit is immediate: the amount leaves the balance when the wallet accepts the request, and a `WITHDRAWAL` entry
+  shows in the history. The answer is `202`, accepted and not yet paid. The bank details never reach the wallet.
+- A withdrawal is `PENDING` while its payout is on its way and `PAID` when Stripe reports the payout paid. It is
+  `RETURN_PENDING` when the payout failed or could not be made and the money is on its way back, and `RETURNED` when the
+  money is back in the wallet. A request the wallet turns down is `REFUSED`.
+- Stripe can report a payout paid and then fail it days later. The withdrawal then moves from `PAID` to
+  `RETURN_PENDING`, and the money comes back.
+- The money comes back exactly once and in full, as a `WITHDRAWAL_RETURNED` entry under the withdrawal's key, however
+  many events arrive about the payout. The wallet credits it only when Payment Service reports the return: once the
+  transfer to the user's connected account is reversed, when none was made, or when an operator returns the payout.
+- A payout that fails at the bank also makes the bank account not ready, so the user sets one again before the next
+  withdrawal.
+- FlowWallet charges no fee: the amount debited is the amount paid out. The platform carries Stripe's fees.
+- A withdrawal refused for want of a ready bank account or of funds is recorded as `REFUSED` and answered `422`, and its
+  key is spent. The same key keeps getting that `422`, even after a top-up or a bank account set later, so a client that
+  retries automatically never pays out a withdrawal the user saw refused. A new attempt takes a new key. The bank
+  account is judged before the funds.
+- Terms that Payment Service refuses (a currency it does not pay out in, an amount below the minimum or off the payout
+  grid) are a `400` that records nothing. The key stays free, but a new attempt takes a new key, because the terms come
+  from configuration and could pass later.
+- While the platform's reserve cannot cover a payout, withdrawals are temporarily unavailable: the answer is `503`,
+  nothing is debited and nothing is recorded, and the same key can be sent again later.
+- After a lost response or a `5xx`, the client sends the same request again under the same key and never switches to a
+  new one, or the money could go out twice.
+- A withdrawal cannot be cancelled after the debit. It can stay `PENDING` or `RETURN_PENDING` while Payment Service
+  waits on Stripe or an operator resolves its payout.
+- Only the owner can read a withdrawal. Another user's withdrawal looks like one that does not exist.
+
+Details: [withdrawals](../ARCHITECTURE.md#withdrawals), [API reference](api.md#withdrawals). Reasoning:
+[ADR 0033](adr/0033-withdrawals-are-debited-under-the-lock-and-settled-by-payout-events.md),
+[ADR 0034](adr/0034-shared-outbox-and-the-wallet-withdrawals-command.md),
+[ADR 0035](adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md),
+[ADR 0036](adr/0036-connect-webhooks-have-their-own-endpoint-and-secret.md),
+[ADR 0037](adr/0037-operator-actions-decide-from-the-row-and-stripe-as-they-are.md).
+
 ## Idempotency keys
 
-- Every deposit and transfer request carries an `Idempotency-Key` UUID chosen by the client. The server never
-  generates one.
+- Every deposit, transfer and withdrawal request carries an `Idempotency-Key` UUID chosen by the client. The server
+  never generates one.
 - Repeating a request with the same key and the same terms gets the same answer, and the money moves once.
 - Reusing a key with different terms, or a key another user has used, is refused without saying why.
 - A deposit whose payment has completed cannot be replayed, and its key is refused. A transfer can be replayed
-  at any time and returns the original receipt, even after the balance was spent.
+  at any time and returns the original receipt, even after the balance was spent. A withdrawal can be replayed at
+  any time too and returns its original receipt, whatever its status has become.
 - A request the wallet refuses records nothing and does not use up its key. A transfer refused for low funds
-  can go through under the same key after a top-up. The one exception is a deposit that Stripe itself refuses:
-  its key stays tied to the refused request.
-- A deposit and a transfer are protected separately, so a key used for one does not block the other. Use a
-  fresh key for each operation anyway.
+  can go through under the same key after a top-up. There are two exceptions. A deposit that Stripe itself
+  refuses keeps its key tied to the refused request. A withdrawal refused for want of a bank account or of funds is
+  recorded, and its key is spent: the same key gets the same refusal even after a top-up.
+- A deposit, a transfer and a withdrawal are protected separately, so a key used for one does not block the others.
+  Use a fresh key for each operation anyway.
 - When the service is briefly unavailable, the client cannot tell whether its request went through. Sending
   the same request again with the same key is safe: the money still moves at most once, and the answer says
   what happened.
@@ -130,7 +177,7 @@ Details: [API reference](api.md#wallet-service). Reasoning:
 
 - Every balance change writes one ledger entry for each wallet it touches, together with the balance change. A
   deposit writes a `DEPOSIT` entry; a transfer writes `TRANSFER_OUT` for the sender and `TRANSFER_IN` for the
-  recipient.
+  recipient; a withdrawal writes `WITHDRAWAL`, and its money coming back writes `WITHDRAWAL_RETURNED`.
 - The ledger only grows. The application never changes or deletes an entry.
 - Each wallet numbers its entries 1, 2, 3 in the order they happened, with no gaps. The number belongs to the
   wallet, so the two legs of a transfer take their numbers from their own wallets.

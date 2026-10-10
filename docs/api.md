@@ -42,12 +42,14 @@ whitespace is ignored, and an empty string counts as a missing amount.
 | `GET /api/wallets/{currency}/history?before={entryNo}&limit={n}` | (none) | `200` `{items, nextBefore}`, newest first |
 | `POST /api/wallets/{currency}/deposits` | `{"amount": "50.00"}` + `Idempotency-Key` header | `200` `{reference, provider, providerData}` |
 | `POST /api/wallets/{currency}/transfers` | `{"to": "<user id>", "amount": "25.00"}` + `Idempotency-Key` header | `200` `{reference, to, amount, currency, balanceAfter}` |
+| `POST /api/wallets/{currency}/withdrawals` | `{"amount": "75.00"}` + `Idempotency-Key` header | `202` with `Location` and `{reference, amount, currency, balanceAfter}`; `422` refused, with its key spent; `503` also when the platform's reserve is short ([Withdrawals](#withdrawals)) |
+| `GET /api/wallets/{currency}/withdrawals/{reference}` | (none) | `200` `{reference, amount, currency, status, reason}`; `404` no such withdrawal in the caller's wallet |
 | `PUT /api/wallets/bank-account` | `{"token": "btok_...", "tosAccepted": true}` | `200` `{state, last4, currency}`; `400` not a bank token, terms not accepted, or Stripe refused the token; `502` Payment Service or Stripe gave no settling answer |
 | `GET /api/wallets/bank-account` | (none) | `200` `{state, last4, currency}`, `NOT_SET` with nulls when none is set |
 
 On every wallet endpoint a missing or invalid `X-User-Id` gets `401` before the body or any parameter is
-checked. `POST /api/wallets`, deposits, transfers and `PUT /api/wallets/bank-account` produce only JSON, so an
-`Accept` header that rules it out gets `406` before anything is created.
+checked. `POST /api/wallets`, deposits, transfers, withdrawals and `PUT /api/wallets/bank-account` produce only JSON, so
+an `Accept` header that rules it out gets `406` before anything is created.
 
 The bank account is the user's, not a wallet's, and withdrawals are paid out to it. The client creates a Stripe bank
 account token with the publishable key, so bank details never reach FlowWallet, and sends only the token with
@@ -68,8 +70,9 @@ amount, balanceBefore, balanceAfter, createdAt}`, with no row id
 ([ADR 0021](adr/0021-per-wallet-ledger-entry-numbers.md)). `amount` is positive on every item, and `type`
 says which way the money went.
 `counterpartyUserId` is the other user of a transfer (the recipient on `TRANSFER_OUT`, the sender on
-`TRANSFER_IN`) and `null` for a deposit. Both legs of a transfer carry the sender's key as
-`transactionReference`.
+`TRANSFER_IN`) and `null` for every other movement: a `DEPOSIT`, a `WITHDRAWAL` (the debit of a withdrawal) and a
+`WITHDRAWAL_RETURNED` (its money coming back). Both legs of a transfer carry the sender's key as
+`transactionReference`, and a withdrawal's debit and its return carry the withdrawal's key.
 
 A deposit returns `200` rather than `201` or `202`. Nothing gets created on the wallet's side, and the client
 finishes the work itself by confirming the payment with Stripe using `providerData.clientSecret`.
@@ -85,10 +88,10 @@ through three steps:
    the history. No response announces it, so the client reads the wallet or its history.
 
 - `Idempotency-Key` is required and can be a UUID of any version, in either case. It is lower-cased and
-  becomes the payment's transaction reference, so the same string runs from the client through Payment
-  Service into Stripe, onto the event and into the ledger. The server never generates one. If it did, a lost
-  response would get a fresh key on retry, and the customer would be charged twice. The key rules shared by
-  deposits and transfers are in [ADR 0005](adr/0005-client-supplied-idempotency-keys.md).
+becomes the payment's transaction reference, so the same string runs from the client through Payment Service into
+Stripe, onto the event and into the ledger. The server never generates one. If it did, a lost response would get a fresh
+key on retry, and the customer would be charged twice. The key rules shared by deposits, transfers and withdrawals are
+in [ADR 0005](adr/0005-client-supplied-idempotency-keys.md).
 - Repeating a request with the same key and the same amount returns a byte-identical body. Reusing a key
   with a different amount, or a key whose deposit already completed, gets a `409`.
 - The provider comes from configuration (`WALLET_PAYMENT_PROVIDER`, default `STRIPE`), not from the request.
@@ -154,10 +157,10 @@ a transfer, and a replay has to match the first answer in status as well as body
   through later under the same key, after a top-up. Treat a 4xx as the final answer for that intent: a
   client that retries a `422` automatically with the same key can move money long after the user stopped
   expecting it.
-- A key binds one kind of operation. The same key can name a deposit and a transfer, and each is still
-  protected on its own: a payment is credited at most once and a key starts at most one transfer. The wallet
-  can't refuse a key that a deposit uses, because an in-flight deposit's key exists only in `payment_db`
-  until its outcome event arrives. Use a fresh key for each operation.
+- A key binds one kind of operation. The same key can name a deposit, a transfer and a withdrawal, and each is
+  still protected on its own: a payment is credited at most once and a key starts at most one transfer and at
+  most one withdrawal. The wallet can't refuse a key that a deposit uses, because an in-flight deposit's key
+  exists only in `payment_db` until its outcome event arrives. Use a fresh key for each operation.
 - Refusals come in a fixed order, so a request with several faults gets the first that applies. First is
   `406` for an `Accept` header that rules out JSON: the endpoint produces only JSON, so the request is
   refused while the endpoint is matched, before anything runs. Next, `401` for a missing or invalid
@@ -170,6 +173,168 @@ a transfer, and a replay has to match the first answer in status as well as body
   when a lock or version check failed, in which case nothing moved, or when the database is unavailable, in
   which case the transfer may have committed. A retry with the same key is safe in both cases: it gets the
   receipt or makes the transfer once.
+
+#### Withdrawals
+
+A withdrawal pays part of a wallet's balance out to the caller's bank account through Stripe Connect, in test mode. The
+wallet is debited when it accepts the request and Payment Service pays out afterwards, so the answer is `202` rather
+than `200`: a URL addresses the withdrawal, and the server finishes it later
+([ADR 0033](adr/0033-withdrawals-are-debited-under-the-lock-and-settled-by-payout-events.md)). The caller sets a bank
+account first with `PUT /api/wallets/bank-account`.
+
+Payment Service owns the terms, and the wallet asks it before it debits anything: PLN only and a minimum of 5.00 by
+default (`PAYMENT_PAYOUT_CURRENCY`, `PAYMENT_PAYOUT_MIN_AMOUNT`), no more decimals than a payout in the currency allows,
+and at most 15 integer digits. A withdrawal from a wallet in another currency gets `400`. The amount must also sit on
+the wallet's own grid, the one a transfer uses. Nothing else limits it but the balance and the platform's reserve. The
+first answer and every replay are `202`:
+
+```
+POST /api/wallets/PLN/withdrawals
+X-User-Id: <uuid>
+Idempotency-Key: 6f1d4c2a-8b3e-4f5a-9c7d-1e2f3a4b5c6d
+Content-Type: application/json
+
+{"amount": "75.00"}
+```
+
+```
+HTTP/1.1 202 Accepted
+Location: /api/wallets/PLN/withdrawals/6f1d4c2a-8b3e-4f5a-9c7d-1e2f3a4b5c6d
+Content-Type: application/json
+
+{"reference":"6f1d4c2a-8b3e-4f5a-9c7d-1e2f3a4b5c6d","amount":"75.00","currency":"PLN","balanceAfter":"25.00"}
+```
+
+The body is the receipt, as a transfer's is. It has no status and no timestamp, so a replay matches the first answer
+byte for byte; the debit itself is a `WITHDRAWAL` entry in the history. `balanceAfter` is the balance right after this
+debit, and on a replay that is a past balance. The status is read at `Location`, which is a path built from the wallet's
+upper-case currency code and the lower-cased key, never from the request's host or path. A request to
+`/api/wallets/pln/withdrawals` with an upper-case key gets the same `Location` and body as its replay, and the path is
+valid through the gateway, which routes `/api/wallets/**` unchanged. The gateway's CORS settings expose no response
+header, so a browser script cannot read `Location`; the body's `currency` and `reference` give the same path.
+
+- `amount` is required and positive, a string or a JSON number, as in a deposit.
+- `Idempotency-Key` follows the deposit rules: required, any UUID version, lower-cased, never generated by the server.
+  It becomes the withdrawal's reference, the `transactionReference` of its ledger entries and the reference its payout
+  carries at Stripe. A server-generated key would give a retry after a lost response a fresh one, and the money would
+  go out twice.
+- The key binds the wallet, which fixes the currency, and the amount, compared by value, so `75`, `75.0` and `75.00`
+  match. Only withdrawals are consulted: a key that a deposit or a transfer used is free for a withdrawal.
+- A key that got a `202` gets the same `202`, `Location` and body for every request with the same terms, whatever the
+  withdrawal's status by then, `PAID` and `RETURNED` included, and even after the minimum was raised or the bank
+  account removed. The wallet rebuilds the answer from the stored ledger entry and never asks Payment Service, so a
+  replay works while Payment Service is down.
+- A key that got a `422` gets the same `422` and detail on every request with the same terms, even after a top-up or a
+  bank account set later. That is the difference from a transfer, whose refused key stays free: a withdrawal's
+  automatic retry must never pay out a withdrawal the user saw refused.
+- Another amount, another of the caller's wallets or another user's withdrawal under the key gets `409`, one answer
+  for every cause.
+- A `400` or a `422` ends the matter for that key. A `400` writes nothing and leaves the key free, but the terms Payment
+  Service checks come from configuration, so a request refused today, such as one below a minimum that is later lowered,
+  could pass under the same key. A new attempt, with a new confirmation from the user, takes a new key.
+- A `502`, a `503`, a gateway `504`, a client timeout or a dropped connection can leave the outcome unknown. Repeat the
+  request under the **same** key until the answer is not a 5xx, and never switch to a new key after an unknown outcome:
+  the first request can still commit, and a second key would pay out twice. The repeated `POST` is the authoritative
+  answer, because the wallet judges it under the wallet's lock. A `GET` shows progress, but its `404` does not prove
+  that a request still in flight will not commit.
+- A `RETURNED` withdrawal is not retried under its key, which still answers with the original `202`. A new withdrawal
+  takes a new key.
+
+Refusals come in a fixed order, so a request with several faults gets the first that applies:
+
+| # | Status | Cause | Written | The key afterwards |
+|---|--------|-------|---------|--------------------|
+| 1 | `406` | the `Accept` header rules out JSON | nothing | free |
+| 2 | `401` | `X-User-Id` missing or invalid | nothing | free |
+| 3 | `400` | the key is missing or not a UUID, the body is unreadable, or the amount is missing or not positive (listed in `errors`) | nothing | free |
+| 4 | `400` | the currency is not an ISO 4217 code, or the amount is off the wallet's grid or over 15 integer digits | nothing | free |
+| 5 | `404` | the caller holds no wallet in the currency | nothing | free |
+| 6 | `202`, `422` or `409` | the key already names a withdrawal: replayed, refused or a different one | nothing | as found |
+| 7 | `400` | Payment Service refuses the terms: a currency it does not pay out in, an amount below the minimum or off the payout grid | nothing | free, but use a new key |
+| 8 | `502` | Payment Service is unreachable, times out, answers 5xx, refuses the wallet's own request or answers something the wallet cannot read | nothing | free |
+| 9 | `503` | the bank account is ready and the platform's reserve is short | nothing | free |
+| 10 | `202`, `422` or `409` | the key is judged again under the wallet's lock, after a request with the same key committed meanwhile | nothing | as found |
+| 11 | `422` | no bank account is ready in the currency | a `REFUSED` withdrawal | spent |
+| 12 | `422` | the balance does not cover the amount | a `REFUSED` withdrawal | spent |
+| 13 | `202` | debited | the `WITHDRAWAL` entry, a `PENDING` withdrawal and the command to Payment Service | spent |
+| 14 | `503` | the wallet lost a lock or a version check | nothing | free |
+| 15 | `503` | the database is unavailable, or the connection was lost during the commit | unknown | unknown |
+| 16 | `500` | a defect | nothing expected | none |
+
+The bank account is judged before the funds, so a caller with neither is told to set a bank account, as
+[ADR 0033](adr/0033-withdrawals-are-debited-under-the-lock-and-settled-by-payout-events.md) orders it; a transfer judges
+the funds before the recipient. The wallet checks the terms and the reserve with Payment Service
+([the internal call](#internal-payment-service-8082-directly)) before it opens the transaction that debits, so a
+refusal at 7 to 9 writes nothing.
+
+What a client does with each status:
+
+| Status | Written | The key | The client |
+|--------|---------|---------|------------|
+| `202` | the debit | spent | follows `Location`, or builds the path from `currency` and `reference`; a replay gives the same bytes |
+| `400` | nothing | free, but start over | fixes the request; a new confirmation takes a new key |
+| `401`, `406` | nothing | free | fixes the header |
+| `404` | nothing | free | opens and funds the wallet, then uses a new key |
+| `409` | nothing | not applicable | uses a new key |
+| `422` | a `REFUSED` withdrawal | **spent** | tops up or sets a bank account, then uses a **new** key; the same key keeps getting this `422` |
+| `502` | nothing | free | repeats with the **same** key; a repeat is always safe, and after "Payment Service refused the request" it keeps failing until the service is fixed, so the client also reports it |
+| `503` for a short reserve or a busy wallet | nothing | free | repeats later with the same key, or stops; both are safe |
+| `503` for the database, `504`, no answer | unknown | unknown | repeats with the same key until the answer is not a 5xx |
+| `500` | nothing expected | not applicable | reports it; a repeat under the same key is safe |
+
+The details are written by the server and never quote the request, a figure or a user id:
+
+- `404`: "No PLN wallet", and on the read "No such withdrawal in the PLN wallet".
+- `409`: "This Idempotency-Key was already used for a different withdrawal. Retry with a new key."
+- `422`: "Insufficient funds in the PLN wallet. This Idempotency-Key is spent; withdraw a smaller amount or top up, then
+  use a new key." or "No bank account is ready for payouts in PLN. This Idempotency-Key is spent; set a bank account,
+  then use a new key."
+- `400` from Payment Service's terms: its own words, which name the rule, such as "The smallest withdrawal in PLN is
+  5.00", and never the amount.
+- `502`: says what failed and that nothing was debited. Three variants invite a retry with the same key: Payment Service
+  unavailable, Payment Service could not check the withdrawal, and an answer the wallet could not read. The fourth,
+  "Payment Service refused the request", means the wallet's own call is wrong: a retry under the same key is safe but
+  keeps failing until that is fixed, so report it.
+- `503`: "Withdrawals are temporarily unavailable. Nothing was debited; retry later with the same Idempotency-Key." for
+  a short reserve, which says nothing about the reserve; "The wallet is busy and nothing was debited. Retry with the
+  same Idempotency-Key." for a lost lock; and the detail of [ADR 0025](adr/0025-unreachable-database-answers-503.md)
+  for the database, which does not say whether anything was debited.
+
+`GET /api/wallets/{currency}/withdrawals/{reference}` shows where a withdrawal stands. `{reference}` is the key, in
+either case, and a key that got a `422` can be read as well:
+
+```json
+{
+  "reference": "6f1d4c2a-8b3e-4f5a-9c7d-1e2f3a4b5c6d",
+  "amount": "75.00",
+  "currency": "PLN",
+  "status": "RETURN_PENDING",
+  "reason": "PAYOUT_FAILED"
+}
+```
+
+| `status` | Meaning | The client |
+|----------|---------|------------|
+| `PENDING` | debited and on its way. The payout executor runs every 10 seconds by default; in Stripe test mode with the Connect webhook a withdrawal showed `PAID` about 11 seconds after its `202`. Without the Connect webhook secret a payout settles only when the payout reconciler asks Stripe, first 15 minutes after the withdrawal was accepted | polls |
+| `PAID` | Stripe reports the payout paid. This is not final: a payout can fail days later, which the payout reconciler checks every 6 hours for 10 days and a webhook can report at any time | treats it as sent and rechecks rarely |
+| `RETURN_PENDING` | the payout failed or could not be made, and the money is on its way back but not credited yet | polls |
+| `RETURNED` | the money is back in the wallet, in full and once, as a `WITHDRAWAL_RETURNED` entry in the history under the same key; `reason` says why | stops |
+| `REFUSED` | the wallet never debited it; `reason` is `NO_BANK_ACCOUNT` or `INSUFFICIENT_FUNDS` | stops |
+
+- `reason` is the refusal reason of a `REFUSED` withdrawal and the reason the money comes back for a `RETURN_PENDING` or
+  `RETURNED` one, and `null` otherwise. The reasons for a return are an open set, so a client shows one and must not
+  fail on an unknown value. The values in use are `PLATFORM_FUNDS_SHORT` (the platform's balance was short when the
+  transfer was made), `TRANSFER_REFUSED` (Stripe refused the transfer for another reason), `BANK_ACCOUNT_NOT_SET` (the
+  bank account was not ready), `BANK_ACCOUNT_REJECTED` (Stripe refused the payout for a reason about the bank account),
+  `PAYOUT_FAILED` (the payout failed, was canceled or was refused), `TERMS_REFUSED` (the terms Payment Service sets no
+  longer allowed the withdrawal when it accepted it), `OPERATOR_RETURNED` (an operator returned it) and `OTHER`.
+- `amount` and `currency` are the withdrawal's, as in the `202`. The read has no timestamp.
+- A `404` "No PLN wallet" is about the caller's own wallet. A `404` "No such withdrawal in the PLN wallet" answers an
+  unknown reference, another wallet's withdrawal and another user's alike. `400` is for a reference that is not a UUID
+  (in `errors`, not quoted) and for an invalid currency. The read needs no Payment Service, so it works while Payment
+  Service is down.
+- The money of a `RETURN_PENDING` withdrawal comes back only with its `WITHDRAWAL_RETURNED` entry. The status alone
+  does not credit the wallet.
 
 ### Provider webhook
 
@@ -310,12 +475,13 @@ Content-Type: application/json
 {"currency": "PLN", "amount": 75.00}
 ```
 
-Withdrawals are not open yet; once they are, Wallet Service asks this before it debits one
-([ADR 0033](adr/0033-withdrawals-are-debited-under-the-lock-and-settled-by-payout-events.md)). It returns
-`{bankAccount, reserveSufficient}`: `bankAccount` is `READY` when the caller's bank account takes payouts in the
-currency and `NOT_SET` otherwise, and `reserveSufficient` says whether the platform's available Stripe balance, less
-what payouts not yet transferred still owe, covers the amount. It is `null` while no bank account is ready, because the
-balance is not read then ([ADR 0035](adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md)).
+Wallet Service asks this before it debits a withdrawal, with no transaction open
+([ADR 0033](adr/0033-withdrawals-are-debited-under-the-lock-and-settled-by-payout-events.md)); the client's side is in
+[Withdrawals](#withdrawals). It returns `{bankAccount, reserveSufficient}`: `bankAccount` is `READY` when the caller's
+bank account takes payouts in the currency and `NOT_SET` otherwise, and `reserveSufficient` says whether the platform's
+available Stripe balance, less what payouts not yet transferred still owe, covers the amount. It is `null` while no bank
+account is ready, because the balance is not read then
+([ADR 0035](adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md)).
 
 - `400` when the withdrawal misses Payment Service's terms: a currency it does not pay out in (PLN only by default), an
   amount below the minimum (`PAYMENT_PAYOUT_MIN_AMOUNT`, 5.00 by default and never below Stripe's own minimum payout
@@ -326,6 +492,13 @@ balance is not read then ([ADR 0035](adr/0035-payouts-run-as-a-step-machine-on-s
 - `502` when Stripe cannot report the platform's balance. Nothing is written; retry.
 - The check is not atomic: two withdrawals can pass it together, as can one whose command is still on its way, and
   the transfer that finds the balance short returns its money.
+- The wallet sends `amount` at the ledger's scale, four decimals such as `75.0000`, as a JSON number. Trailing zeros
+  count against neither the payout grid nor the digit limit.
+- The wallet reads the answer this way. `NOT_SET` is a recorded `422` for the withdrawal, whatever `reserveSufficient`
+  says. `READY` with `true` goes on to the debit. `READY` with `false` is a `503` with nothing written. A body the
+  wallet cannot read, a `bankAccount` it does not know or a `READY` without `reserveSufficient` is a `502` and is never
+  taken as either state, because taking it as `NOT_SET` would spend the caller's key. A `400` is passed on as the
+  withdrawal's `400`, and a `5xx`, a timeout or any other `4xx` is a `502`.
 
 ### Operator: the `payouts` actuator endpoint (`:8082` directly)
 
@@ -544,36 +717,43 @@ The status mapping lives in one place, and each status stands for one remedy
 - `401`: missing or malformed `X-User-Id` (blank, over 64 characters, not a version 4 or 7 UUID).
 - `400`: invalid request, unknown provider, non-ISO-4217 currency, a new wallet in a code with no minor unit, missing or
   non-UUID `Idempotency-Key`, a deposit Payment Service refuses (its message passed on, including a currency Stripe
-  doesn't charge, an amount below Stripe's minimum, and a payment Stripe refused, whose key is spent), a transfer `to`
-  that isn't a version 4 or 7 UUID, a transfer amount off its currency's grid or too large for a balance, a transfer to
-  oneself, a bank account request without a bank token or the terms accepted, a bank token Stripe refuses, a missing,
-  malformed or invalid webhook signature, or any webhook while no signing secret is configured.
-- `404`: wallet not found. Wallet lookups are scoped to the caller, so it is never `403`. On a transfer it
-  always means the caller's own wallet; a recipient without a wallet gets `422`.
-- `406`: a transfer, a deposit, a wallet opening or a bank account request whose `Accept` header rules out JSON. It is
-  refused before anything runs.
+  doesn't charge, an amount below Stripe's minimum, and a payment Stripe refused, whose key is spent), a withdrawal
+  Payment Service refuses (its message passed on: a currency it does not pay out in, an amount below the minimum or off
+  the payout grid; the key stays free, but a new attempt takes a new one), a transfer `to` that isn't a version 4 or 7
+  UUID, a transfer or withdrawal amount off its currency's grid or too large for a balance, a transfer to oneself, a
+  bank account request without a bank token or the terms accepted, a bank token Stripe refuses, a missing, malformed or
+  invalid webhook signature, or any webhook while no signing secret is configured.
+- `404`: wallet not found. Wallet lookups are scoped to the caller, so it is never `403`. On a transfer or a withdrawal
+  it always means the caller's own wallet; a recipient without a wallet gets `422`. On the read of a withdrawal it
+  also means no such withdrawal in the caller's wallet, with a detail of its own that an unknown reference, another
+  wallet's withdrawal and another user's share.
+- `406`: a transfer, a deposit, a withdrawal, a wallet opening or a bank account request whose `Accept` header rules out
+  JSON. It is refused before anything runs.
 - `409`: transaction reference already in use (another user, different terms, or already paid), wallet
-  already exists, `Idempotency-Key` reused for a different or completed deposit or for a different transfer.
+  already exists, `Idempotency-Key` reused for a different or completed deposit, for a different transfer or for a
+  different withdrawal.
 - `413`: a webhook body larger than `PAYMENT_WEBHOOK_MAX_PAYLOAD_SIZE`, refused before its signature is
   checked ([ADR 0017](adr/0017-webhooks-verified-before-they-are-read.md)).
-- `422`: a transfer the caller's balance doesn't cover, or a recipient without a wallet in the currency. The
-  request is well-formed and its key unspent, and the remedy is a smaller amount, a top-up or another
-  recipient. On a transfer it is kept apart from `409`, whose remedy there is a new key, because without a
-  `type` the status is all a client can branch on.
+- `422`: a transfer the caller's balance doesn't cover, a recipient without a wallet in the currency, or a withdrawal
+  for which no bank account is ready or the balance doesn't cover. The request is well-formed, and the remedy is a
+  smaller amount, a top-up, another recipient or a bank account. A transfer's key is unspent. A withdrawal's `422` is
+  recorded under its key, which stays spent, so the remedy there is the same plus a new key. On a transfer it is kept
+  apart from `409`, whose remedy there is a new key, because without a `type` the status is all a client can branch on.
 - `502`: upstream failure, meaning the payment provider failing (not refusing), or Payment Service being unreachable,
-  timing out, failing to start the payment or to complete a bank account request, or answering unexpectedly. The detail
-  says which. Retrying a deposit with the same key, or a bank account with the same token, is safe.
-- `503`: a transfer that lost a lock or a version check (a deadlock, a lock wait that timed out, a version
-  conflict), which the lock order is meant to rule out, or Payment Service's answer to a deposit whose twin
-  request with the same key is still starting the payment (the wallet turns that one into a `502`). In these
-  cases nothing moved. On any endpoint of either service, `503` also means the database is unavailable: a
-  transaction that could not begin, a connection lost or ended by Postgres, a query timeout. The detail is
-  "Service temporarily unavailable; retry the request, with the same Idempotency-Key if it has one", and it
-  does not say whether anything moved, because a connection lost during the commit leaves that unknown.
-  Retrying with the same key is safe in every case
+  timing out, failing to start the payment, to complete a bank account request or to check a withdrawal, or answering
+  unexpectedly. The detail says which. Retrying a deposit or a withdrawal with the same key, or a bank account with the
+  same token, is safe. Nothing was debited.
+- `503`: a transfer or a withdrawal that lost a lock or a version check (a deadlock, a lock wait that timed out, a
+  version conflict), which the lock order is meant to rule out, a withdrawal while the platform's reserve cannot cover
+  it, or Payment Service's answer to a deposit whose twin request with the same key is still starting the payment (the
+  wallet turns that one into a `502`). In these cases nothing moved. On any endpoint of either service, `503` also
+  means the database is unavailable: a transaction that could not begin, a connection lost or ended by Postgres, a
+  query timeout. The detail is "Service temporarily unavailable; retry the request, with the same Idempotency-Key if it
+  has one", and it does not say whether anything moved, because a connection lost during the commit leaves that
+  unknown. Retrying with the same key is safe in every case
   ([ADR 0025](adr/0025-unreachable-database-answers-503.md)).
-- `500`: a correctly signed webhook payload that can't be processed, a transfer that broke a database CHECK
-  or overflowed a column, or anything unexpected. The detail stays generic; the specifics go to the logs and
+- `500`: a correctly signed webhook payload that can't be processed, a transfer or withdrawal that broke a database
+  CHECK or overflowed a column, or anything unexpected. The detail stays generic; the specifics go to the logs and
   are never returned.
 
 The `payouts` actuator endpoint answers in this format too, and gives `422`, `502` and `503` meanings of their own, so

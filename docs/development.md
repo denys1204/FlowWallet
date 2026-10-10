@@ -126,6 +126,62 @@ curl localhost:8080/api/wallets/USD -H "X-User-Id: $USER"
 curl localhost:8080/api/wallets/USD/history -H "X-User-Id: $USER"
 ```
 
+### 7. Try a withdrawal
+
+A withdrawal pays PLN out to a Stripe test bank account, so it needs a PLN wallet with money in it and a bank account.
+Reuse `$USER` from the deposit. Open the wallet, deposit 100.00 PLN and confirm the payment as in step 6, but with the
+card `pm_card_bypassPendingInternational`. Stripe makes that card's funds available at once, so the deposit also fills
+the platform's reserve, the Stripe balance a payout is paid from. Withdraw less than you deposited, because the Stripe
+fee of each deposit shrinks the reserve ([ADR 0035](adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md)).
+
+```bash
+curl -X POST localhost:8080/api/wallets \
+  -H "X-User-Id: $USER" -H 'Content-Type: application/json' -d '{"currency":"PLN"}'
+
+curl -X POST localhost:8080/api/wallets/PLN/deposits \
+  -H "X-User-Id: $USER" -H "Idempotency-Key: $(uuidgen)" \
+  -H 'Content-Type: application/json' -d '{"amount":"100.00"}'
+
+curl https://api.stripe.com/v1/payment_intents/<pi_...>/confirm \
+  -u "<your sk_test_ key>:" -d payment_method=pm_card_bypassPendingInternational
+
+curl localhost:8080/api/wallets/PLN -H "X-User-Id: $USER"
+```
+
+Wait until the balance reads `100.00`, because a withdrawal refused for funds spends its key.
+
+The bank account is a token. The client creates it with the publishable key, so bank details never reach FlowWallet. Use
+Stripe's Polish test account number, which Stripe pays out to successfully, and send the token with the user's
+acceptance of Stripe's Connected Account Agreement. The answer is the bank account's state, `READY` with `last4` `2874`:
+
+```bash
+curl https://api.stripe.com/v1/tokens -u "<your pk_test_ key>:" \
+  -d "bank_account[country]=PL" -d "bank_account[currency]=pln" \
+  -d "bank_account[account_number]=PL61109010140000071219812874"
+
+curl -X PUT localhost:8080/api/wallets/bank-account \
+  -H "X-User-Id: $USER" -H 'Content-Type: application/json' \
+  -d '{"token":"<btok_...>","tosAccepted":true}'
+```
+
+Withdraw with a new key and keep the key, because it also addresses the withdrawal. `-i` shows the `202` and its
+`Location`. The balance drops at once and the history shows a `WITHDRAWAL` entry. Sending the same request again returns
+the same `202` and moves nothing. Read the withdrawal until its `status` is `PAID`:
+
+```bash
+KEY=$(uuidgen | tr 'A-Z' 'a-z')
+
+curl -i -X POST localhost:8080/api/wallets/PLN/withdrawals \
+  -H "X-User-Id: $USER" -H "Idempotency-Key: $KEY" \
+  -H 'Content-Type: application/json' -d '{"amount":"20.00"}'
+
+curl localhost:8080/api/wallets/PLN/withdrawals/$KEY -H "X-User-Id: $USER"
+```
+
+The payout settles from Stripe's Connect webhook, which needs `stripe listen` with `--forward-connect-to` (step 5) and
+`STRIPE_CONNECT_WEBHOOK_SECRET`. Without it the payout reconciler settles the withdrawal, first 15 minutes after it was
+accepted.
+
 ## Configuration
 
 Every setting except the two webhook signing secrets has a local default and can be overridden in `.env` or with an
@@ -140,12 +196,12 @@ their reconcilers. `.env.example` has the full list with comments. The main ones
 | `WALLET_SERVICE_PORT` | `8081` | Wallet (listen port), Gateway (routing, unless `WALLET_SERVICE_URI` is set) |
 | `PAYMENT_SERVICE_PORT` | `8082` | Payment (listen port), Gateway (routing, unless `PAYMENT_SERVICE_URI` is set), Wallet (calls it, unless `WALLET_PAYMENT_BASE_URL` is set) |
 | `GATEWAY_ADDRESS` / `WALLET_SERVICE_ADDRESS` / `PAYMENT_SERVICE_ADDRESS` | `127.0.0.1` each | Gateway, Wallet, Payment: the interface each binds to. Loopback keeps their unauthenticated API and actuator off the LAN when run directly on a host; a container has to set these to `0.0.0.0` so the service is still reachable from other containers. The gateway logs a WARN at startup when it listens beyond loopback, because it must then sit behind an authentication layer that sets `X-User-Id` ([ADR 0031](adr/0031-callers-are-authenticated-in-front-of-the-gateway.md)) |
-| `GATEWAY_HTTPCLIENT_RESPONSE_TIMEOUT` / `_CONNECT_TIMEOUT_MS` | `20s` / `2000` | Gateway: how long it waits for an upstream response and a connection, before the elastic Netty pool would otherwise wait forever. `20s` sits above the wallet's own worst case for a deposit call to Payment Service (`WALLET_PAYMENT_CONNECT_TIMEOUT` + `WALLET_PAYMENT_READ_TIMEOUT`, `2s` + `10s`), so that timeout fires first in the ordinary case |
+| `GATEWAY_HTTPCLIENT_RESPONSE_TIMEOUT` / `_CONNECT_TIMEOUT_MS` | `20s` / `2000` | Gateway: how long it waits for an upstream response and a connection, before the elastic Netty pool would otherwise wait forever. `20s` sits above the wallet's own worst case for a deposit call to Payment Service (`WALLET_PAYMENT_CONNECT_TIMEOUT` + `WALLET_PAYMENT_READ_TIMEOUT`, `2s` + `10s`), so that timeout fires first in the ordinary case. A withdrawal adds up to three pool waits of `DB_POOL_CONNECTION_TIMEOUT_MS` to its preflight and can outlast it: the gateway then answers `504` for a debit that may still commit, and a retry with the same key gets its `202` ([ADR 0033](adr/0033-withdrawals-are-debited-under-the-lock-and-settled-by-payout-events.md)) |
 | `DB_HOST` / `DB_PORT` | `localhost` / `5432` | Payment, Wallet; `DB_PORT` is also the host port Compose publishes Postgres on |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` | `flowadmin` / `flowsecret` | Payment, Wallet and Docker Compose |
 | `PAYMENT_DB_NAME` / `WALLET_DB_NAME` | `payment_db` / `wallet_db` | Payment / Wallet (the init script always creates these two names) |
 | `DB_POOL_MAX_SIZE` / `DB_POOL_MIN_IDLE` | `10` / `2` | Payment, Wallet |
-| `DB_POOL_CONNECTION_TIMEOUT_MS` | `5000` | Payment, Wallet: how long a request waits for a pooled connection. It must stay below `GATEWAY_HTTPCLIENT_RESPONSE_TIMEOUT` and `WALLET_PAYMENT_READ_TIMEOUT`, so a database the service cannot reach answers the caller with the service's `503` rather than a timeout further up ([ADR 0025](adr/0025-unreachable-database-answers-503.md)) |
+| `DB_POOL_CONNECTION_TIMEOUT_MS` | `5000` | Payment, Wallet: how long a request waits for a pooled connection. It must stay below `GATEWAY_HTTPCLIENT_RESPONSE_TIMEOUT` and `WALLET_PAYMENT_READ_TIMEOUT`, so a database the service cannot reach answers the caller with the service's `503` rather than a timeout further up ([ADR 0025](adr/0025-unreachable-database-answers-503.md)). A withdrawal checks out a connection three times, so its waits can add up to three times this value |
 | `DB_LOG_SERVER_ERROR_DETAIL` | `false` | Payment, Wallet: whether exception messages carry Postgres' DETAIL line. `true` puts user ids and balances into the logs (a duplicate key's values, a refused row), so set it only for local debugging ([ADR 0027](adr/0027-user-ids-stay-out-of-logs-and-provider-metadata.md)) |
 | `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` | Payment, Wallet |
 | `KAFKA_TOPIC_PAYMENT_EVENTS_PARTITIONS` / `_REPLICAS` / `_MIN_INSYNC_REPLICAS` | `3` / `1` / `1` | Payment: applied when the topic is created. A three-broker cluster uses `3` / `2` for the last two; see [events.md](events.md) |
@@ -158,7 +214,7 @@ their reconcilers. `.env.example` has the full list with comments. The main ones
 | `KAFKA_TOPIC_WALLET_WITHDRAWALS_DLT_PARTITIONS` / `_REPLICAS` | `3` / `1` | Payment: applied when `wallet.withdrawals.payment.DLT` is created; on an existing topic only a higher partition count takes effect |
 | `WALLET_CONSUMER_RETRY_MAX_ATTEMPTS` | `3` | Wallet: retries before dead-lettering, with backoff from `WALLET_CONSUMER_RETRY_INITIAL_INTERVAL_MS` (`500`) up to `_MAX_INTERVAL_MS` (`10000`, at most `60000`) by `_MULTIPLIER` (`2.0`). The backoff sleeps on the consumer thread without polling, so the cap stays well below Kafka's `max.poll.interval.ms` (`300000`) |
 | `WALLET_PAYMENT_BASE_URL` | `http://localhost:${PAYMENT_SERVICE_PORT}` | Wallet (Payment Service's own address, not the gateway's) |
-| `WALLET_PAYMENT_CONNECT_TIMEOUT` / `_READ_TIMEOUT` | `2s` / `10s` | Wallet; at least 1ms each. A bank account request makes up to five Stripe calls in a row and can outlast the read timeout; the wallet then answers `502`, and the retry with the same token is safe, because each Stripe write is keyed and a read changes nothing |
+| `WALLET_PAYMENT_CONNECT_TIMEOUT` / `_READ_TIMEOUT` | `2s` / `10s` | Wallet; at least 1ms each. A bank account request makes up to five Stripe calls in a row and can outlast the read timeout; the wallet then answers `502`, and the retry with the same token is safe, because each Stripe write is keyed and a read changes nothing. A withdrawal's preflight makes one Stripe read, 8s with the default Stripe timeouts; when this timeout ends the wait first, the wallet answers `502` with nothing debited |
 | `WALLET_PAYMENT_PROVIDER` | `STRIPE` | Wallet; `STRIPE` is the only accepted value |
 | `STRIPE_API_KEY` / `STRIPE_WEBHOOK_SECRET` | `sk_test_dummy` / none (webhooks disabled) | Payment: only a test-mode key (`sk_test_` or `rk_test_`) starts |
 | `STRIPE_CONNECT_WEBHOOK_SECRET` | none (Connect webhooks disabled) | Payment: the secret of the endpoint for connected accounts, `/api/payments/webhooks/stripe/connect`; under `stripe listen` the same value as `STRIPE_WEBHOOK_SECRET` ([ADR 0036](adr/0036-connect-webhooks-have-their-own-endpoint-and-secret.md)) |
@@ -180,7 +236,7 @@ their reconcilers. `.env.example` has the full list with comments. The main ones
 | `OUTBOX_MAX_RETRIES` | `10` | Payment, Wallet: send attempts, the first included, before a row becomes `FAILED`, with backoff from `OUTBOX_RETRY_BACKOFF_BASE_MS` (`1000`) doubling up to `_MAX_MS` (`60000`). The default spends about four minutes in backoff (1, 2, 4, 8, 16, 32 s, then 60 s three times); the poll interval and each send's wait on the broker (up to the producer's `max.block.ms`, 60 s by default, when it is unreachable) add to that |
 | `OUTBOX_REAPER_INTERVAL_MS` / `OUTBOX_STUCK_PROCESSING_THRESHOLD_MS` | `60000` / `300000` | Payment, Wallet |
 | `OUTBOX_RETENTION_DAYS` / `OUTBOX_CLEANUP_CRON` | `7` / `0 0 3 * * *` | Payment, Wallet (`COMPLETED` rows only) |
-| `ACTUATOR_EXPOSED_ENDPOINTS` | Payment and Wallet `health,info,metrics,outbox`; Gateway `health,info` | All three. It is one shared name, so a value set in `.env` replaces all three defaults at once; the template leaves it commented for that reason. Payment's `payouts` endpoint is in no default, because its writes credit wallets and it authenticates nobody. Export it for the one Payment Service process, only while acting, as in `ACTUATOR_EXPOSED_ENDPOINTS=health,info,metrics,outbox,payouts ./mvnw -pl flow-wallet-payment spring-boot:run`, and never in `.env`, which all three services read. A value of `*` exposes it too. Its use is in [api.md](api.md#operator-the-payouts-actuator-endpoint-8082-directly) |
+| `ACTUATOR_EXPOSED_ENDPOINTS` | Payment and Wallet `health,info,metrics,outbox`; Gateway `health,info` | All three. It is one shared name, so a value set in `.env` replaces all three defaults at once; the template leaves it commented for that reason. The wallet's `outbox` endpoint requeues its `FAILED` rows, which are debited withdrawal commands Payment Service never received; the procedure is in [operations.md](operations.md). Payment's `payouts` endpoint is in no default, because its writes credit wallets and it authenticates nobody. Export it for the one Payment Service process, only while acting, as in `ACTUATOR_EXPOSED_ENDPOINTS=health,info,metrics,outbox,payouts ./mvnw -pl flow-wallet-payment spring-boot:run`, and never in `.env`, which all three services read. A value of `*` exposes it too. Its use is in [api.md](api.md#operator-the-payouts-actuator-endpoint-8082-directly) |
 | `LOG_LEVEL` / `APP_LOG_LEVEL` | `INFO` / `DEBUG` | Payment, Wallet |
 | `KAFKA_EXTERNAL_PORT` / `KAFKA_UI_PORT` | `9092` / `8090` | Docker Compose |
 
@@ -207,7 +263,7 @@ endpoint's webhooks.
 
 ## Testing
 
-There are 1823 tests, all green: 1378 in the payment service, 339 in the wallet service, 53 in the outbox module, 44 in
+There are 2035 tests, all green: 1378 in the payment service, 551 in the wallet service, 53 in the outbox module, 44 in
 platform and 9 in the gateway. The gateway's tests bind its own `application.yml`, so a YAML regression that drops the
 response or connect timeout, or binds the gateway beyond loopback, fails there rather than in a live request; they also
 check that `BindAddressCheck` runs when the application is ready, warns for `0.0.0.0`, a LAN address and no address at
@@ -348,6 +404,39 @@ replay, the amount grid (trailing zeros, zero-decimal currencies, the size bound
 deposit and a wallet opening), `401` coming before the header, body and parameter checks on every wallet endpoint (and
 on Payment Service's intent endpoint), violations and lock failures leaving the handler unchanged, the explanation of a
 violation after the rollback, the `503` mapping, and the READ COMMITTED pin.
+
+For withdrawals they cover the order of the service: the currency, key and amount normalised before any query, an amount
+off the grid refused before a connection is taken, a missing wallet refused before the key or Payment Service is asked,
+the key judged before the preflight and again under the wallet lock, the same amount reaching the preflight, the debit,
+the rows and the command, and a preflight refusal never reaching the handler. The service opens no transaction of its
+own and the shipped configuration keeps `open-in-view` off, because either would make the handler's lock return a wallet
+the service had already read. For the handler they cover the wallet locked first and never loaded without the lock, a
+withdrawal committed under the key while this one waited answered as a replay that writes nothing, a bank account that
+is not set judged before the funds, an unaffordable amount leaving the balance and the entry number as they were, a
+refusal returned rather than thrown so that its row commits and sending no command, the ledger row, the withdrawal and
+the command saved in that order before one flush, the command carrying the locked wallet's user id and currency, the
+debited amount and no wallet id, a fresh event id with the contract's schema version, a violation, an enqueue failure or
+a lock failure reaching the service as thrown, the READ COMMITTED pin, and a handler with no way to call Payment
+Service. They also cover the replay of a debit from its ledger row and of a refusal even after a top-up, neither asking
+Payment Service, every cause of a `409`, a violation explained after the rollback (another wallet's key a `409`, the
+caller's own a replay, one that no withdrawal explains rethrown), a lock or version failure answered `503` with the
+advice to retry under the same key, and no log line naming the user on any path.
+
+For the preflight call they cover each answer: a ready bank account with a reserve, a short reserve, a bank account that
+is not set whatever the reserve says, a terms refusal in Payment Service's words, any other refusal treated as the
+wallet's own fault and a `502` that logs no body, a failing or silent Payment Service, and an unreadable answer (no
+body, an unknown bank account state, a ready one without a reserve) that is never read as ready or not set. They also
+cover the request on the wire (the caller's id, the upper-case currency and the canonical amount as a JSON number), the
+field names on both sides of the call, the real client proxy called over HTTP, and the client built from Boot's
+builder. For the endpoints they cover the receipt and a replay from the stored row rendering to the same bytes (PLN and
+JPY), a `Location` built from the normalised currency and the lower-cased key and never from the request's host, an
+amount taken as a string or a JSON number, a `406` before the service runs, `401` before the key and the body, the key
+and reference rules (a fifth dash and non-ASCII digits included, never quoted), the status of each refusal with a `422`
+whose detail says the key is spent, and the status read: the reason that applies and `null` otherwise, only the caller's
+wallet answered, and a missing withdrawal told apart from a missing wallet.
+
+The lock, the unique indexes and the commit of the outbox row with the debit are pinned by mocks only. No automated test
+runs them against real Postgres yet.
 
 For the ledger they cover entry numbers rising by one per wallet across credits and both transfer legs, a
 refused debit taking no number, history paged by entry number without skipping or repeating a movement while

@@ -10,9 +10,9 @@ paths:
 
 - Without `produces` on the mapping, Spring MVC negotiates the response only after the handler has returned, so a
   request whose `Accept` rules out JSON gets a 406 after the work is done. Every Wallet Service mapping that changes
-  state declares `produces = MediaType.APPLICATION_JSON_VALUE`: the transfer, the deposit (Payment Service creates the
-  intent), opening a wallet and setting the bank account (`TransferController`, `DepositController`,
-  `WalletController.open`, `BankAccountController.set`).
+  state declares `produces = MediaType.APPLICATION_JSON_VALUE`: the transfer, the withdrawal, the deposit (Payment
+  Service creates the intent), opening a wallet and setting the bank account (`TransferController`,
+  `WithdrawalController.withdraw`, `DepositController`, `WalletController.open`, `BankAccountController.set`).
 - Spring MVC resolves arguments in declaration order, so `@CurrentUserId` is the first parameter of every
   mapping that takes it; declared later, a caller without `X-User-Id` and a bad body or parameter gets 400
   instead of 401.
@@ -24,8 +24,9 @@ paths:
 - `UUID.fromString` is not a validator (it accepts `1-1-1-1-1`), and Hibernate Validator 9.1's `@UUID` is an
   unreliable one. Its validator throws on a 36-character value with a fifth dash, which the platform's
   last-resort handler answers with a 500, and it accepts non-ASCII digits. UUIDs are checked with an ASCII
-  `@Pattern` instead: both idempotency keys with `TransferController.ANY_UUID` (`DepositController` shares it),
-  and a transfer's recipient with `CurrentUserIdResolver.RANDOM_UUID_REGEX` (`TransferRequest`).
+  `@Pattern` instead: the idempotency keys and the withdrawal's `{reference}` with `TransferController.ANY_UUID`
+  (`DepositController` and `WithdrawalController` share it), and a transfer's recipient with
+  `CurrentUserIdResolver.RANDOM_UUID_REGEX` (`TransferRequest`).
 - A problem detail never quotes the value it refuses: `GlobalExceptionHandler` logs every 4xx detail, so a
   quoted value with line breaks forges log lines. Name the field and the rule; a request `String` that reaches
   a detail is bounded first with `@Pattern`, like `CreateWalletRequest.currency` or Payment Service's

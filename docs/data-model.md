@@ -52,14 +52,15 @@ events that connect these two databases.
 - `wallets` holds `id`, `user_id VARCHAR(64)`, `balance NUMERIC(19,4)` (default 0, and a CHECK refuses a
   value below zero), `currency VARCHAR(3)` (a CHECK forces upper case), `last_entry_no BIGINT` (the entry
   number of the wallet's newest ledger row, 0 before the first), `version` and timestamps. `version` is an
-  optimistic-lock backstop, since credits and transfers take a `PESSIMISTIC_WRITE` row lock. The table is
-  unique on (`user_id`, `currency`): one wallet per user per currency.
+  optimistic-lock backstop, since credits, transfers and withdrawals take a `PESSIMISTIC_WRITE` row lock. The table
+  is unique on (`user_id`, `currency`): one wallet per user per currency.
 - `balance_history` is the append-only ledger: `id`, `wallet_id`, `entry_no BIGINT`, `transaction_reference`, `event_id`
   (nullable), `type`, `counterparty_user_id VARCHAR(64)` (nullable), `amount`, `balance_before`, `balance_after` and
-  `created_at`. `type` is `DEPOSIT`, `TRANSFER_IN` or `TRANSFER_OUT`. `WITHDRAWAL` (a withdrawal's debit, which nothing
-  writes yet) and `WITHDRAWAL_RETURNED` (its money coming back, written when a `PayoutReturnedEvent` arrives) are
-  declared for withdrawals. The table is unique on (`transaction_reference`, `type`), so both legs of a transfer share
-  one reference while a payment can still be credited only once and a key can start only one transfer. The amount is
+  `created_at`. `type` is `DEPOSIT`, `TRANSFER_IN`, `TRANSFER_OUT`, `WITHDRAWAL` (a withdrawal's debit, written with its
+  `withdrawals` row) or `WITHDRAWAL_RETURNED` (its money coming back, written when a `PayoutReturnedEvent` arrives). The
+  table is unique on (`transaction_reference`, `type`), so both legs of a transfer share one reference, and a
+  withdrawal's debit and its return share the withdrawal's, while a payment can still be credited only once and a key
+  can start only one transfer or one withdrawal. The amount is
   always positive and `type` gives the direction, so a CHECK refuses an amount of zero or less. That includes a positive
   value too small for four decimal places, such as `0.00001`, which Postgres would otherwise round to `0.0000` and
   store. `counterparty_user_id` is the user on the other side of a transfer: the recipient on `TRANSFER_OUT`, the sender

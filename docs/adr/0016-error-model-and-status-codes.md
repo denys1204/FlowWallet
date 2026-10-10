@@ -70,8 +70,8 @@ The fault is this service's, and a redelivery can succeed once it is fixed.
 
 `UnknownWalletException` and `UnreadablePaymentEventException` extend `RuntimeException`, not `ApiException`,
 because a Kafka listener has no HTTP response and a status on them would mislead whoever reads them next.
-`InsufficientFundsException` is an `ApiException` because `Wallet.debit` is reached only from `TransferHandler`, so
-every debit in scope starts from an HTTP request that waits for the answer.
+`InsufficientFundsException` is an `ApiException` because `Wallet.debit` is reached only from `TransferHandler` and
+`WithdrawalHandler`, so every debit in scope starts from an HTTP request that waits for the answer.
 
 Since every `ApiException` detail goes to the log as well as to the caller, no detail or log line carries a balance
 figure or a rejected header value. `InsufficientFundsException` names only the currency, and `CurrentUserIdResolver`

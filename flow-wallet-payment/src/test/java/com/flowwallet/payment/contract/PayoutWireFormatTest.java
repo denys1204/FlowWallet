@@ -15,8 +15,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Freezes the field names of {@code PUT|GET /api/payments/payout-accounts} and
  * {@code POST /api/payments/payouts/preflight}, Payment Service's side of both calls.
- * Wallet Service keeps its own copies of the payout-account records, and its {@code PayoutWireFormatTest} pins the
- * same names; its copies of the preflight records come with withdrawals.
+ * Wallet Service keeps its own copies of the records: its {@code PayoutWireFormatTest} pins the payout-account names
+ * and its {@code PayoutPreflightWireFormatTest} the preflight's.
  * See docs/adr/0002-module-boundaries.md.
  */
 class PayoutWireFormatTest {

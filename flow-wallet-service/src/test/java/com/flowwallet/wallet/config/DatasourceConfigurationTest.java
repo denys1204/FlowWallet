@@ -60,4 +60,16 @@ class DatasourceConfigurationTest {
         // timeout, so a dead database reached the client as the gateway's 504 instead of this service's 503.
         assertThat(shipped("spring.datasource.hikari.connection-timeout")).isEqualTo("5000");
     }
+
+    @Test
+    void theShippedConfigurationKeepsOpenInViewOff() throws Exception {
+        // Guards the setting being switched on or its line being dropped, which turns it on, since Spring Boot's
+        // default is on. A withdrawal reads the wallet unlocked in the service and locks it again in the handler's
+        // transaction, and that only works when the read leaves nothing behind. With a request-scoped
+        // EntityManager the first read stays in the persistence context the handler joins, the lock query
+        // returns that managed instance, and a credit committed in between ends in a StaleObjectStateException,
+        // a 503 on a valid withdrawal. The request would also keep its connection across the call to Payment
+        // Service. See docs/adr/0006-short-transactions-across-bean-boundaries.md.
+        assertThat(shipped("spring.jpa.open-in-view")).isEqualTo("false");
+    }
 }

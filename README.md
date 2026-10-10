@@ -10,20 +10,22 @@
 
 > **Event-driven microservices wallet system, built as an engineering showcase.**
 
-FlowWallet is a backend platform that lets a user deposit into a digital wallet through an external
-payment provider (Stripe), have the balance credited reliably and asynchronously through events, and send
-money to another user's wallet in the same currency. It is built to demonstrate production-grade patterns on
-a modern stack: a Transactional Outbox, so an event is written if and only if the change behind it commits,
-and a failed send is retried rather than lost; an idempotent event consumer that credits a balance once
-however often an event arrives; a pluggable payment-provider abstraction (Strategy + Factory);
-database-per-service isolation; and clean module boundaries.
+FlowWallet is a backend platform that lets a user deposit into a digital wallet through an external payment provider
+(Stripe), have the balance credited reliably and asynchronously through events, send money to another user's wallet in
+the same currency, and withdraw to a bank account through Stripe Connect in test mode. It is built to demonstrate
+production-grade patterns on a modern stack: a Transactional Outbox, so an event is written if and only if the change
+behind it commits, and a failed send is retried rather than lost; an idempotent event consumer that credits a balance
+once however often an event arrives; a pluggable payment-provider abstraction (Strategy + Factory); database-per-service
+isolation; and clean module boundaries.
 
 > **Project status:** work in progress. The deposit loop works end to end. A client asks its wallet to
 > start a deposit, the wallet checks that the wallet exists and belongs to the caller, Payment Service
 > creates a Stripe PaymentIntent, a signed webhook confirms the payment, the outbox publishes to Kafka, and
 > the wallet credits the balance exactly once. A user can also send money to another user's wallet in the
-> same currency, in one local transaction inside Wallet Service. Integration tests against real Postgres and
-> Kafka, and withdrawals, are still to come. See [Project status & roadmap](#project-status--roadmap).
+> same currency, in one local transaction inside Wallet Service, and withdraw to a bank account through Stripe
+> Connect: the wallet debits the balance, Payment Service pays out, and a payout that fails comes back as a credit.
+> Integration tests against real Postgres and Kafka are still to come. See
+> [Project status & roadmap](#project-status--roadmap).
 >
 > The project runs against Stripe test mode only and is not meant for production use.
 
@@ -42,9 +44,9 @@ database-per-service isolation; and clean module boundaries.
 ## How it works
 
 FlowWallet runs as six Maven modules. A reactive API gateway sits in front of two servlet-based domain services, and
-each service keeps its own Postgres database. Wallet Service calls Payment Service directly over HTTP to start a deposit
-and to relay the caller's bank account, and Payment Service reports the outcome back through Kafka once Stripe confirms
-the payment.
+each service keeps its own Postgres database. Wallet Service calls Payment Service directly over HTTP to start a
+deposit, to relay the caller's bank account and to check a withdrawal before it debits it, and sends the withdrawal to
+Payment Service through Kafka. Payment Service reports the outcomes back through Kafka once Stripe confirms them.
 
 ```mermaid
 flowchart LR
@@ -56,31 +58,36 @@ flowchart LR
     subgraph Kafka["Kafka (KRaft)"]
       T[["topic: payment.events"]]
       DLT[["topic: payment.events.wallet.DLT"]]
+      WT[["topic: wallet.withdrawals"]]
+      WDLT[["topic: wallet.withdrawals.payment.DLT"]]
     end
     WDB[("wallet_db")]
     PDB[("payment_db")]
 
     Client -->|X-User-Id| GW
     GW -->|/api/wallets/**| WS
-    GW -->|/api/payments/webhooks/**| PS
-    WS -->|POST /api/payments/intent<br/>PUT, GET /api/payments/payout-accounts<br/>direct HTTP, X-User-Id| PS
-    PS <-->|create / retrieve PaymentIntent| Stripe
-    Stripe -->|webhook| GW
-    PS -->|outbox → publish| T
-    T -->|consume → credit / record failure| WS
+    GW -->|/api/payments/webhooks/**<br/>stripe and stripe/connect| PS
+    WS -->|POST /api/payments/intent<br/>PUT, GET /api/payments/payout-accounts<br/>POST /api/payments/payouts/preflight<br/>direct HTTP, X-User-Id| PS
+    PS <-->|create / retrieve PaymentIntent<br/>platform balance<br/>Connect accounts, transfers, payouts, reversals| Stripe
+    Stripe -->|payment and Connect webhooks| GW
+    WS -->|outbox → publish withdrawal command| WT
+    WT -->|consume → accept payout| PS
+    PS -->|unreadable / invalid / retries exhausted| WDLT
+    PS -->|outbox → publish payment and payout events| T
+    T -->|consume → credit / record / settle withdrawal| WS
     WS -->|unreadable / retries exhausted| DLT
     PS --- PDB
     WS --- WDB
 ```
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the module breakdown, the deposit and transfer flows, the outbox,
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the module breakdown, the deposit, transfer and withdrawal flows, the outbox,
 the wallet consumer and the identity model.
 
 ## Documentation
 
 | Document | Answers |
 |----------|---------|
-| [ARCHITECTURE.md](ARCHITECTURE.md) | How the system works: the modules, the deposit flow, the outbox, the wallet consumer, transfers and the identity model |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | How the system works: the modules, the deposit flow, the outbox, the wallet consumer, transfers, withdrawals and the identity model |
 | [docs/business-rules.md](docs/business-rules.md) | What the wallet allows and refuses, in business terms |
 | [docs/adr/](docs/adr/README.md) | Why: one decision record per file, with the alternatives that were rejected |
 | [docs/api.md](docs/api.md) | The API reference and error responses |
@@ -160,8 +167,9 @@ See [docs/development.md](docs/development.md) for the full guide, configuration
 
 ## Project status & roadmap
 
-This is a showcase that keeps changing. The deposit loop works end to end, and transfers between wallets
-work against real Postgres. What's left is automated tests on real infrastructure, and withdrawals.
+This is a showcase that keeps changing. The deposit loop works end to end, transfers between wallets work against
+real Postgres, and withdrawals to a bank account work through Stripe Connect in test mode. What's left is automated
+tests on real infrastructure.
 
 1. ~~Wallet comes alive~~: done. Domain model and migrations, an idempotent Kafka consumer, and retries with
    backoff plus a dead-letter topic.
@@ -171,11 +179,16 @@ work against real Postgres. What's left is automated tests on real infrastructur
    deposit raises the balance end to end. For transfers they should show that opposite transfers don't
    deadlock, that concurrent requests with one key move the money once, that a key raced from two senders
    goes to one of them whether or not the two transfers share a wallet, that concurrent transfers can't
-   overdraw a wallet, and that a replay is byte for byte the first answer.
+   overdraw a wallet, and that a replay is byte for byte the first answer. For withdrawals they should show that
+   concurrent requests with one key debit once, that a key raced from two wallets goes to one of them, that concurrent
+   withdrawals and transfers can't overdraw a wallet or deadlock, that the command commits with the debit, and that a
+   returned payout credits once.
 4. ~~Transfers between wallets~~: done, with their automated tests on real infrastructure left to stage 3.
    Same currency only, the recipient named by user id, and one local transaction that locks both wallets in
    ascending user id.
-5. Withdrawals out to the payment provider, through Stripe Connect in test mode.
+5. ~~Withdrawals out to the payment provider~~: done, with their automated tests on real infrastructure left to
+   stage 3. Through Stripe Connect in test mode: the wallet debits under its lock and records a refusal under the key,
+   Payment Service pays out, and a payout that fails comes back as a credit.
 
 Stages, definitions of done and open decisions live in `implementation_plan.md`. It is a local working file
 and deliberately isn't committed.
