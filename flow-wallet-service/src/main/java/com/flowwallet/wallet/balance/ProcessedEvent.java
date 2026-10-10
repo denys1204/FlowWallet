@@ -86,17 +86,46 @@ public class ProcessedEvent {
     }
 
     /**
-     * A completed payment the wallet refused. The payload is kept in full so the event can be republished once
-     * the cause is fixed, under a fresh event id, because this row holds the original one.
+     * An event the wallet refused. The payload is kept in full so the event can be republished once the cause is
+     * fixed, under a fresh event id, because this row holds the original one.
      */
-    public static ProcessedEvent rejected(PaymentCompletedEvent event, RejectionReason reason, String payload) {
+    public static ProcessedEvent rejected(EventEnvelope event, RejectionReason reason, String payload) {
         return ProcessedEvent.builder()
                 .eventId(event.eventId())
-                .eventType(KafkaConstants.EVENT_TYPE_PAYMENT_COMPLETED)
+                .eventType(event.eventType())
                 .transactionReference(event.transactionReference())
                 .amount(storable(event.amount()))
                 .outcome(ProcessedEventOutcome.REJECTED)
                 .rejectionReason(reason)
+                .payload(payload)
+                .build();
+    }
+
+    /**
+     * A withdrawal's amount credited back. The payload is not kept, because {@link BalanceHistory} records the
+     * movement. See docs/adr/0033-withdrawals-are-debited-under-the-lock-and-settled-by-payout-events.md.
+     */
+    public static ProcessedEvent returnCredited(EventEnvelope event) {
+        return ProcessedEvent.builder()
+                .eventId(event.eventId())
+                .eventType(event.eventType())
+                .transactionReference(event.transactionReference())
+                .amount(storable(event.amount()))
+                .outcome(ProcessedEventOutcome.RETURN_CREDITED)
+                .build();
+    }
+
+    /**
+     * A Paid or Failed payout event, whether or not it raised the withdrawal's status. No balance moves, and the
+     * payload is kept for the payout id and the reason it carries.
+     */
+    public static ProcessedEvent statusRecorded(EventEnvelope event, String payload) {
+        return ProcessedEvent.builder()
+                .eventId(event.eventId())
+                .eventType(event.eventType())
+                .transactionReference(event.transactionReference())
+                .amount(storable(event.amount()))
+                .outcome(ProcessedEventOutcome.STATUS_RECORDED)
                 .payload(payload)
                 .build();
     }

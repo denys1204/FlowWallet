@@ -20,7 +20,8 @@ public interface WalletRepository extends JpaRepository<Wallet, Long> {
 
     /**
      * Loads a wallet and holds its row lock for the rest of the transaction. Every balance write goes through
-     * this: the wallet a payment credits and both wallets of a transfer.
+     * this: the wallet a payment credits, both wallets of a transfer, and the wallet a withdrawal debits or a
+     * return credits.
      * <p>
      * A transaction that locks several wallets locks them in ascending {@code (user_id, currency)}, or two
      * opposite transfers deadlock. Nothing may load the wallet without a lock earlier in the same transaction:

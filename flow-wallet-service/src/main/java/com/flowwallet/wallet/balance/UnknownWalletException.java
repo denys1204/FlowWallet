@@ -1,8 +1,9 @@
 package com.flowwallet.wallet.balance;
 
 /**
- * A confirmed payment names a user and currency with no wallet. A deposit into a missing wallet is refused before
- * anything is charged, so this means a payment started by some other route, or a wallet that has disappeared.
+ * A confirmed payment or a payout event names a user and currency with no wallet. A deposit into a missing wallet is
+ * refused before anything is charged, and a withdrawal comes from a wallet, so this means an event that reached the
+ * wallet by some other route, or a wallet that has disappeared.
  * The listener stores the event as {@code WALLET_NOT_FOUND} with its payload.
  * <p>
  * Not an {@code ApiException}, because a Kafka listener has no HTTP response.

@@ -102,11 +102,11 @@ public class Withdrawal {
     }
 
     /**
-     * Whether a request for this wallet and amount is a repeat of this one. The amount is compared with
-     * {@code compareTo}: a stored amount comes back from {@code NUMERIC(19,4)} as 25.0000.
-     * See docs/adr/0005-client-supplied-idempotency-keys.md.
+     * Whether this withdrawal is for this wallet and amount: a request that is a replay of it, or a payout event
+     * about it. The amount is compared with {@code compareTo}: a stored amount comes back from {@code NUMERIC(19,4)}
+     * as 25.0000. See docs/adr/0005-client-supplied-idempotency-keys.md.
      */
-    public boolean isRepeatOf(Long walletId, BigDecimal amount) {
+    public boolean hasTerms(Long walletId, BigDecimal amount) {
         return this.walletId.equals(walletId) && this.amount.compareTo(amount) == 0;
     }
 

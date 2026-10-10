@@ -231,18 +231,20 @@ How it stays reliable:
 
 ## The wallet consumer
 
-Wallet Service consumes `payment.events` and has to credit each completed payment exactly once, even though
-Kafka delivers at least once. Two independent barriers make that hold. For a credit, both are written in the
-same database transaction as the balance change: the `processed_events` row goes in first, then the
-transaction locks the wallet row before it touches the balance and writes the ledger entry. A failed payment
-writes only its `processed_events` row and takes no lock, because no money moves.
+Wallet Service consumes `payment.events` and has to credit each completed payment and each returned withdrawal exactly
+once, even though Kafka delivers at least once. Two independent barriers make that hold. For a credit, both are written
+in the same database transaction as the balance change: the `processed_events` row goes in first, then the transaction
+locks the wallet row before it touches the balance and writes the ledger entry. A failed payment writes only its
+`processed_events` row and takes no lock, because no money moves. A payout event writes its row, locks the wallet and
+only then reads the withdrawal, whatever it changes.
 
-- Every event the listener settles (credited, failure recorded or refused) writes a `processed_events` row
-  with a unique `event_id`. A redelivery hits that constraint and is acknowledged without touching the
-  balance, and that includes redelivering an event the wallet already refused.
-- A credit writes a `balance_history` row that is unique on (`transaction_reference`, `type`). A second,
-  different event for a payment that was already credited is refused as `DUPLICATE_REFERENCE`, because that
-  is a producer contract violation rather than an ordinary redelivery.
+- Every event the listener settles (credited, credited back, failure or status recorded, or refused) writes a
+  `processed_events` row with a unique `event_id`. A redelivery hits that constraint and is acknowledged without
+  touching the balance, and that includes redelivering an event the wallet already refused.
+- A credit writes a `balance_history` row that is unique on (`transaction_reference`, `type`). A second, different event
+  for a payment that was already credited, or a second return for one withdrawal, is refused as `DUPLICATE_REFERENCE`,
+  because that is a producer contract violation rather than an ordinary redelivery
+  ([ADR 0033](docs/adr/0033-withdrawals-are-debited-under-the-lock-and-settled-by-payout-events.md)).
 
 After a constraint violation the listener asks the database, from a fresh transaction, which barrier fired.
 If neither did, it rethrows instead of guessing, so a real failure is never acknowledged as a duplicate.
@@ -253,7 +255,9 @@ The listener reads the event type from the Kafka `eventType` header and never in
 |-------|---------|
 | `PaymentCompletedEvent` for an existing wallet | Credited: balance updated, `DEPOSIT` ledger entry, `processed_events` row `CREDITED` |
 | `PaymentFailedEvent` | Recorded as `FAILURE_RECORDED`; the balance never moves |
-| Readable but refused (an amount that is missing, not positive or off its currency's grid, an incomplete envelope, no wallet for that user and currency, a second event for a credited reference) | Stored as `REJECTED` with the reason and the full payload; the offset is committed |
+| `PayoutPaidEvent`, `PayoutFailedEvent` | Recorded as `STATUS_RECORDED`; the withdrawal rises to `PAID` or `RETURN_PENDING` unless it already ranks higher, and the balance never moves |
+| `PayoutReturnedEvent` | Credited back: balance updated, `WITHDRAWAL_RETURNED` ledger entry, withdrawal `RETURNED`, `processed_events` row `RETURN_CREDITED` |
+| Readable but refused (an amount that is missing, not positive or off its currency's grid, an incomplete envelope or a Paid event without its payout id, no wallet for that user and currency, no withdrawal or a refused one under the reference, a withdrawal with another wallet or amount, a second event for a credited reference) | Stored as `REJECTED` with the reason and the full payload; the offset is committed |
 | Unreadable (missing or unknown `eventType` header, unparseable JSON, no value or the JSON literal `null`, no `eventId`) | Sent to `payment.events.wallet.DLT` immediately, without retrying |
 | Anything else that fails | Retried with exponential backoff, then sent to `payment.events.wallet.DLT` |
 
@@ -272,9 +276,11 @@ Nothing replays a refused or dead-lettered event automatically; an operator repu
   that barrier: the listener logs it as already processed and credits nothing. Republish it under a fresh
   `eventId`. The unique (`transaction_reference`, `type`) key on `balance_history` still stops a second
   credit for a payment that was credited in the meantime.
-- Only a `WALLET_NOT_FOUND` payload is replayed with nothing but the id changed, once the user has opened
-  the wallet. `INVALID_AMOUNT` and `INVALID_ENVELOPE` payloads are wrong in themselves and need correcting
-  first. `DUPLICATE_REFERENCE` is never replayed: the payment is already credited.
+- Only a `WALLET_NOT_FOUND` payload is replayed with nothing but the id changed, once the user has opened the wallet.
+  `INVALID_AMOUNT` and `INVALID_ENVELOPE` payloads are wrong in themselves and need correcting first.
+  `DUPLICATE_REFERENCE` is never replayed: the payment or the return is already credited. `WITHDRAWAL_NOT_FOUND` and
+  `WITHDRAWAL_MISMATCH` mean the producer sent an event the withdrawal does not describe, so they need an operator, not
+  a replay.
 - A record on `payment.events.wallet.DLT` has no `processed_events` row and keeps its original key and
   headers, so it can be republished unchanged once the cause of the failure is fixed.
 

@@ -181,7 +181,7 @@ replicas than replicas. A missing webhook secret doesn't stop it starting; it on
 
 ## Testing
 
-There are 651 tests, all green: 288 in the wallet service, 257 in the payment service, 53 in the outbox module, 44 in
+There are 684 tests, all green: 321 in the wallet service, 257 in the payment service, 53 in the outbox module, 44 in
 platform and 9 in the gateway. The gateway's tests bind its own `application.yml`, so a YAML regression that drops the
 response or connect timeout, or binds the gateway beyond loopback, fails there rather than in a live request; they also
 check that `BindAddressCheck` runs when the application is ready, warns for `0.0.0.0`, a LAN address and no address at
@@ -203,11 +203,14 @@ sides of it, the identity and idempotency-key rules, and a log line never naming
 its stack trace after the handler already logged it. Against each service's shipped `application.yml` they check that
 the datasource URL keeps Postgres' error detail out of exception messages and that a request waits at most five seconds
 for a pooled connection. For the wallet consumer they cover dispatch on the `eventType` header, dead-lettering of
-unreadable records, refusals (an event amount off its currency's grid among them), duplicate classification (by the
-`DEPOSIT` entry alone, since one reference can own one movement of each type), the barrier row being written before the
+unreadable records, refusals (an event amount off its currency's grid among them), duplicate classification (by the one
+ledger type the write could have created, `DEPOSIT` or `WITHDRAWAL_RETURNED`, and by the event id alone for an event
+that moves no money, since one reference can own one movement of each type), the barrier row being written before the
 wallet is loaded, failed payments never touching a wallet (a redelivered failure is acknowledged, any other violation is
-raised), and the error handler (an unreadable record dead-lettered at once, any other failure only after its retries,
-each dead letter counted, and the dead-letter topic created with unlimited retention).
+raised), payout events reaching their own steps, a Paid event refused without its payout id, a payout refusal stored
+with its reason, a second return refused as `DUPLICATE_REFERENCE`, a withdrawal status that only rises, the payout
+handler pinned to READ COMMITTED, and the error handler (an unreadable record dead-lettered at once, any other failure
+only after its retries, each dead letter counted, and the dead-letter topic created with unlimited retention).
 
 For transfers they cover the lock order in both directions, the key judged only after both locks, and no other wallet
 read in the transaction. With the sender sorting first and last, they cover a retry that still gets its receipt after
@@ -234,11 +237,12 @@ All of these are unit tests with mocked collaborators, so they can't prove the r
 constraints on `processed_events.event_id` and `balance_history (transaction_reference, type)`, the classification by
 read-back, and the row lock. Those have been exercised by hand against real Postgres and Kafka (redelivery, duplicate
 references, forty concurrent credits to one wallet), but no automated test runs them yet. The hand check ran while the
-classification read any entry under the reference, and the lookup of the `DEPOSIT` entry alone has run only against
-mocks. The unique `balance_history (wallet_id, entry_no)`, the entry-number history queries and the migration that
-numbers existing ledger rows were checked by hand on a scratch database seeded with interleaved ids: numbering follows
-id order within each wallet, `last_entry_no` equals each wallet's row count, history pages by entry number, and a later
-transfer takes the next number on both wallets. Payment changeset 006 ran by hand against a schema migrated through 005.
+classification read any entry under the reference, and the lookup by the one expected ledger type (`DEPOSIT` or
+`WITHDRAWAL_RETURNED`) has run only against mocks. The unique `balance_history (wallet_id, entry_no)`, the entry-number
+history queries and the migration that numbers existing ledger rows were checked by hand on a scratch database seeded
+with interleaved ids: numbering follows id order within each wallet, `last_entry_no` equals each wallet's row count,
+history pages by entry number, and a later transfer takes the next number on both wallets. Payment changeset 006 ran by
+hand against a schema migrated through 005.
 
 For transfers the mocks pin the order of the calls and the decision after each one. What they can't show was
 checked by hand against real Postgres, through the running wallet service on a scratch database:

@@ -126,19 +126,20 @@ provider's failure code. No wallet id travels. `reasonCode` is a string from the
 [0035](0035-payouts-run-as-a-step-machine-on-stripe-connect.md). The wallet stores a value of at most 32 capitals and
 underscores as it came, stores `OTHER` for anything else, and never branches on it.
 
-`PaymentEventListener` has a case for each type. The required envelope is the event id, reference, user id, currency
-and amount, plus `providerPayoutId` on Paid. Failed and Returned may lack it, because a payout that was never created
-has no id. A missing field is `INVALID_ENVELOPE`, and an amount off the grid is `INVALID_AMOUNT`
-([0019](0019-payment-event-amounts-on-the-grid.md)). `WithdrawalEventHandler` runs
+`PaymentEventListener` has a case for each type. The required envelope is the event id, reference, user id, currency and
+amount, plus `providerPayoutId` on Paid. Failed and Returned may lack it, because a payout that was never created has no
+id. A missing reference, user id or currency, or a Paid event without its payout id, is `INVALID_ENVELOPE`; a missing,
+non-positive or off-grid amount is `INVALID_AMOUNT` ([0019](0019-payment-event-amounts-on-the-grid.md)); and a missing
+event id makes the record unreadable, so it is dead-lettered. `WithdrawalEventHandler` runs
 `@Transactional(isolation = READ_COMMITTED)`, because it reads the withdrawal after the lock. It flushes the
 `processed_events` row, locks the wallet (`UnknownWalletException` is `WALLET_NOT_FOUND`), reads the withdrawal by
 reference (a missing or `REFUSED` one is `WITHDRAWAL_NOT_FOUND`), compares the wallet id and the amount by `compareTo`
 (`WITHDRAWAL_MISMATCH`), and applies the transition. These refusals are thrown inside the transaction and stored as
 `REJECTED` rows, as in [0010](0010-idempotent-payment-event-consumer.md). A credited return is `RETURN_CREDITED`, and
-Paid and Failed events are stored as `STATUS_RECORDED` whether or not they raise the status. A return is never a
-stale status: a second `PayoutReturnedEvent` under another event id still attempts the credit, meets the ledger key on
-`WITHDRAWAL_RETURNED` and is stored as `REJECTED` with `DUPLICATE_REFERENCE`, a producer defect like a second credit
-for one deposit.
+Paid and Failed events are stored as `STATUS_RECORDED` whether or not they raise the status. A return is never a stale
+status: a second `PayoutReturnedEvent` under another event id still attempts the credit, meets the ledger key on
+`WITHDRAWAL_RETURNED` and is stored as `REJECTED` with `DUPLICATE_REFERENCE`, a producer defect like a second credit for
+one deposit.
 
 `PaymentEventOutcomeStore.classify(eventId, reference, barrierType)` takes the ledger barrier as a parameter. Deposits
 pass `DEPOSIT`, returns pass `WITHDRAWAL_RETURNED`, and Paid and Failed pass none and acknowledge only an event already

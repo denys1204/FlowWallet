@@ -118,10 +118,10 @@ Each invariant here is stated once and links the ADR that holds its reasoning.
   503, whose detail does not claim that nothing moved
   ([ADR 0025](docs/adr/0025-unreachable-database-answers-503.md)).
 - The consumer's `DefaultErrorHandler` is the wallet's only retry of a consumed record; do not add Spring Retry there.
-  Refusals the wallet understands (invalid amount or envelope, unknown wallet, duplicate reference) are stored
-  as acknowledged `REJECTED` rows with the payload; unreadable records and exhausted retries go to
-  `payment.events.wallet.DLT` ([ADR 0010](docs/adr/0010-idempotent-payment-event-consumer.md)). That topic keeps
-  records without a time limit, and each dead letter is logged at ERROR and counted in
+  Refusals the wallet understands (invalid amount or envelope, unknown wallet, duplicate reference, an unknown or
+  mismatched withdrawal) are stored as acknowledged `REJECTED` rows with the payload; unreadable records and exhausted
+  retries go to `payment.events.wallet.DLT` ([ADR 0010](docs/adr/0010-idempotent-payment-event-consumer.md)). That topic
+  keeps records without a time limit, and each dead letter is logged at ERROR and counted in
   `wallet.consumer.dead.letters` ([ADR 0020](docs/adr/0020-wallet-dead-letters-kept-and-counted.md)).
 - A webhook's status reports delivery, not the business outcome: an event for an intent this service never
   created gets 200, not 404 ([ADR 0016](docs/adr/0016-error-model-and-status-codes.md)).
@@ -137,7 +137,9 @@ Each invariant here is stated once and links the ADR that holds its reasoning.
 - `FAILED` outbox rows are never deleted automatically; they are the dead-letter store
   ([ADR 0008](docs/adr/0008-transactional-outbox.md)).
 - A `PaymentFailedEvent` moves no money, which is why the consumer does not depend on event order
-  ([ADR 0009](docs/adr/0009-payment-event-contract.md)).
+  ([ADR 0009](docs/adr/0009-payment-event-contract.md)). Of the payout events only `PayoutReturnedEvent` moves money,
+  crediting a `WITHDRAWAL_RETURNED` row whatever the withdrawal's status; Paid and Failed only raise its ranked status
+  ([ADR 0033](docs/adr/0033-withdrawals-are-debited-under-the-lock-and-settled-by-payout-events.md)).
 
 ## Traps already hit
 

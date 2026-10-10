@@ -31,27 +31,28 @@ events that connect these two databases.
   unique on (`user_id`, `currency`): one wallet per user per currency.
 - `balance_history` is the append-only ledger: `id`, `wallet_id`, `entry_no BIGINT`, `transaction_reference`, `event_id`
   (nullable), `type`, `counterparty_user_id VARCHAR(64)` (nullable), `amount`, `balance_before`, `balance_after` and
-  `created_at`. `type` is `DEPOSIT`, `TRANSFER_IN` or `TRANSFER_OUT`. `WITHDRAWAL` (a withdrawal's debit) and
-  `WITHDRAWAL_RETURNED` (its money coming back) are declared for withdrawals, and nothing writes them yet. The table is
-  unique on (`transaction_reference`, `type`), so both legs of a transfer share one reference while a payment can still
-  be credited only once and a key can start only one transfer. The amount is always positive and `type` gives the
-  direction, so a CHECK refuses an amount of zero or less. That includes a positive value too small for four decimal
-  places, such as `0.00001`, which Postgres would otherwise round to `0.0000` and store. `counterparty_user_id` is the
-  user on the other side of a transfer: the recipient on `TRANSFER_OUT`, the sender on `TRANSFER_IN`. A second CHECK
-  makes it present on the two transfer types and absent on every other, so a transfer leg without a counterparty can't
-  be stored. `event_id` is NULL on both transfer legs, since a transfer never passes through Kafka, and on a
-  withdrawal's debit, which no `payment.events` record causes. `entry_no` numbers each wallet's movements 1, 2, 3 in
-  commit order: every balance change advances `wallets.last_entry_no` under the row lock and gives its ledger row the
-  new value. The table is unique on (`wallet_id`, `entry_no`) (`balance_history_wallet_entry_no_key`), and that index
-  also serves every read by wallet, including the history, which is ordered and paged by `entry_no`.
-- `processed_events` holds one row per event the consumer settles (credited, failure recorded or refused).
-  Unreadable records and records that still fail after retries go to the dead-letter topic and leave no row.
-  Its columns are `id`, `event_id` (unique), `event_type`,
-  `transaction_reference`, `amount`, `outcome` (`CREDITED`/`FAILURE_RECORDED`/`REJECTED`),
-  `rejection_reason`, `payload TEXT` (kept for `FAILURE_RECORDED` and `REJECTED`, NULL for `CREDITED`) and
-  `processed_at`. It is indexed on (`outcome`, `processed_at`). `amount` is NULL when the event carried none
-  or carried one that `NUMERIC(19,4)` cannot hold exactly, such as `0.00001`, which Postgres would round, or
-  a 16-digit amount, which it would refuse; the payload keeps the figure as sent
+  `created_at`. `type` is `DEPOSIT`, `TRANSFER_IN` or `TRANSFER_OUT`. `WITHDRAWAL` (a withdrawal's debit, which nothing
+  writes yet) and `WITHDRAWAL_RETURNED` (its money coming back, written when a `PayoutReturnedEvent` arrives) are
+  declared for withdrawals. The table is unique on (`transaction_reference`, `type`), so both legs of a transfer share
+  one reference while a payment can still be credited only once and a key can start only one transfer. The amount is
+  always positive and `type` gives the direction, so a CHECK refuses an amount of zero or less. That includes a positive
+  value too small for four decimal places, such as `0.00001`, which Postgres would otherwise round to `0.0000` and
+  store. `counterparty_user_id` is the user on the other side of a transfer: the recipient on `TRANSFER_OUT`, the sender
+  on `TRANSFER_IN`. A second CHECK makes it present on the two transfer types and absent on every other, so a transfer
+  leg without a counterparty can't be stored. `event_id` is NULL on both transfer legs, since a transfer never passes
+  through Kafka, and on a withdrawal's debit, which no `payment.events` record causes. `entry_no` numbers each wallet's
+  movements 1, 2, 3 in commit order: every balance change advances `wallets.last_entry_no` under the row lock and gives
+  its ledger row the new value. The table is unique on (`wallet_id`, `entry_no`)
+  (`balance_history_wallet_entry_no_key`), and that index also serves every read by wallet, including the history, which
+  is ordered and paged by `entry_no`.
+- `processed_events` holds one row per event the consumer settles (credited, credited back, failure or status recorded,
+  or refused). Unreadable records and records that still fail after retries go to the dead-letter topic and leave no
+  row. Its columns are `id`, `event_id` (unique), `event_type`, `transaction_reference`, `amount`, `outcome`
+  (`CREDITED`/`FAILURE_RECORDED`/`REJECTED`, and `RETURN_CREDITED`/`STATUS_RECORDED` for payout events),
+  `rejection_reason`, `payload TEXT` (kept for `FAILURE_RECORDED`, `STATUS_RECORDED` and `REJECTED`, NULL for `CREDITED`
+  and `RETURN_CREDITED`) and `processed_at`. It is indexed on (`outcome`, `processed_at`). `amount` is NULL when the
+  event carried none or carried one that `NUMERIC(19,4)` cannot hold exactly, such as `0.00001`, which Postgres would
+  round, or a 16-digit amount, which it would refuse; the payload keeps the figure as sent
   ([ADR 0019](adr/0019-payment-event-amounts-on-the-grid.md)).
 - `withdrawals` holds one row per withdrawal request: `id`, `wallet_id` (a plain id, like the ledger's),
   `transaction_reference` (unique as `withdrawals_reference_key`), `amount`, `status`

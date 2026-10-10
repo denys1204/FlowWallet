@@ -3,12 +3,21 @@ package com.flowwallet.wallet.balance;
 import com.flowwallet.contract.constant.KafkaConstants;
 import com.flowwallet.contract.event.PaymentCompletedEvent;
 import com.flowwallet.contract.event.PaymentFailedEvent;
+import com.flowwallet.contract.event.PayoutFailedEvent;
+import com.flowwallet.contract.event.PayoutPaidEvent;
+import com.flowwallet.contract.event.PayoutReturnedEvent;
 import com.flowwallet.wallet.enums.RejectionReason;
+import com.flowwallet.wallet.enums.TransactionType;
+import com.flowwallet.wallet.withdrawal.WithdrawalEventHandler;
+import com.flowwallet.wallet.withdrawal.WithdrawalMismatchException;
+import com.flowwallet.wallet.withdrawal.WithdrawalNotFoundException;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.dao.DataIntegrityViolationException;
 import tools.jackson.databind.ObjectMapper;
@@ -16,6 +25,8 @@ import tools.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.function.Supplier;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -26,11 +37,17 @@ import static org.mockito.Mockito.*;
 class PaymentEventListenerTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final PaymentEventHandler handler = mock(PaymentEventHandler.class);
+    private final WithdrawalEventHandler withdrawalHandler = mock(WithdrawalEventHandler.class);
     private final PaymentEventOutcomeStore outcomes = mock(PaymentEventOutcomeStore.class);
-    private final PaymentEventListener listener = new PaymentEventListener(objectMapper, handler, outcomes);
+    private final PaymentEventListener listener =
+            new PaymentEventListener(objectMapper, handler, withdrawalHandler, outcomes);
 
     private static final String COMPLETED = KafkaConstants.EVENT_TYPE_PAYMENT_COMPLETED;
     private static final String FAILED = KafkaConstants.EVENT_TYPE_PAYMENT_FAILED;
+    private static final String PAYOUT_PAID = KafkaConstants.EVENT_TYPE_PAYOUT_PAID;
+    private static final String PAYOUT_FAILED = KafkaConstants.EVENT_TYPE_PAYOUT_FAILED;
+    private static final String PAYOUT_RETURNED = KafkaConstants.EVENT_TYPE_PAYOUT_RETURNED;
+    private static final Instant AT = Instant.parse("2026-10-10T12:00:00Z");
 
     private ConsumerRecord<String, String> record(String eventType, String json) {
         var consumerRecord = new ConsumerRecord<>(KafkaConstants.PAYMENT_EVENTS_TOPIC, 0, 0L, "ref-1", json);
@@ -56,7 +73,26 @@ class PaymentEventListenerTest {
         )));
     }
 
-    private static PaymentCompletedEvent eventWithId(String eventId) {
+    private ConsumerRecord<String, String> payoutPaid(String eventId, String providerPayoutId) {
+        return record(PAYOUT_PAID, objectMapper.writeValueAsString(new PayoutPaidEvent(
+                eventId, 1, "ref-1", providerPayoutId, new BigDecimal("75.00"), "PLN", "alice", AT
+        )));
+    }
+
+    private ConsumerRecord<String, String> payoutFailed(String eventId, String providerPayoutId) {
+        return record(PAYOUT_FAILED, objectMapper.writeValueAsString(new PayoutFailedEvent(
+                eventId, 1, "ref-1", providerPayoutId, new BigDecimal("75.00"), "PLN", "alice",
+                "PAYOUT_FAILED", null, AT
+        )));
+    }
+
+    private ConsumerRecord<String, String> payoutReturned(String eventId, String amount) {
+        return record(PAYOUT_RETURNED, objectMapper.writeValueAsString(new PayoutReturnedEvent(
+                eventId, 1, "ref-1", null, new BigDecimal(amount), "PLN", "alice", "PLATFORM_FUNDS_SHORT", AT
+        )));
+    }
+
+    private static EventEnvelope eventWithId(String eventId) {
         return argThat(event -> eventId.equals(event.eventId()) && "ref-1".equals(event.transactionReference()));
     }
 
@@ -101,14 +137,14 @@ class PaymentEventListenerTest {
     }
 
     @ParameterizedTest(name = "{0}")
-    @ValueSource(strings = {COMPLETED, FAILED})
+    @ValueSource(strings = {COMPLETED, FAILED, PAYOUT_PAID, PAYOUT_FAILED, PAYOUT_RETURNED})
     void aJsonNullPayloadIsDeadLetteredAtOnce(String eventType) {
         // The literal null parses to a null event. Without the check the listener fails with a
         // NullPointerException, which is retried and reaches the dead-letter topic without saying why.
         assertThatThrownBy(() -> listener.onPaymentEvent(record(eventType, "null")))
                 .isInstanceOf(UnreadablePaymentEventException.class);
 
-        verifyNoInteractions(handler, outcomes);
+        verifyNoInteractions(handler, withdrawalHandler, outcomes);
     }
 
     @Test
@@ -168,7 +204,8 @@ class PaymentEventListenerTest {
     @Test
     void aRedeliveryOfAProcessedEventIsAcknowledgedQuietly() {
         doThrow(new DataIntegrityViolationException("event_id")).when(handler).credit(any());
-        when(outcomes.classify("evt-1", "ref-1")).thenReturn(DuplicateVerdict.EVENT_ALREADY_PROCESSED);
+        when(outcomes.classify("evt-1", "ref-1", TransactionType.DEPOSIT))
+                .thenReturn(DuplicateVerdict.EVENT_ALREADY_PROCESSED);
 
         listener.onPaymentEvent(completed("evt-1", "50.00", "USD", "alice"));
 
@@ -178,7 +215,8 @@ class PaymentEventListenerTest {
     @Test
     void aSecondEventForOneReferenceIsRecordedAsAContractViolation() {
         doThrow(new DataIntegrityViolationException("transaction_reference")).when(handler).credit(any());
-        when(outcomes.classify("evt-2", "ref-1")).thenReturn(DuplicateVerdict.REFERENCE_ALREADY_CREDITED);
+        when(outcomes.classify("evt-2", "ref-1", TransactionType.DEPOSIT))
+                .thenReturn(DuplicateVerdict.REFERENCE_ALREADY_CREDITED);
 
         listener.onPaymentEvent(completed("evt-2", "50.00", "USD", "alice"));
 
@@ -204,18 +242,18 @@ class PaymentEventListenerTest {
         // wallet could not read or settle with ones it read fine and deliberately declined.
         doThrow(new DataIntegrityViolationException("event_id"))
                 .when(outcomes).recordRejection(any(), any(), any());
-        when(outcomes.classify("evt-1", "ref-1")).thenReturn(DuplicateVerdict.EVENT_ALREADY_PROCESSED);
+        when(outcomes.classify("evt-1", "ref-1", null)).thenReturn(DuplicateVerdict.EVENT_ALREADY_PROCESSED);
 
         listener.onPaymentEvent(completed("evt-1", "-5.00", "USD", "alice"));
 
-        verify(outcomes).classify("evt-1", "ref-1");
+        verify(outcomes).classify("evt-1", "ref-1", null);
     }
 
     @Test
     void aRefusalThatFailsForAnotherReasonIsStillRaised() {
         DataIntegrityViolationException somethingElse = new DataIntegrityViolationException("value too long");
         doThrow(somethingElse).when(outcomes).recordRejection(any(), any(), any());
-        when(outcomes.classify(any(), any())).thenReturn(DuplicateVerdict.NOT_A_DUPLICATE);
+        when(outcomes.classify(any(), any(), any())).thenReturn(DuplicateVerdict.NOT_A_DUPLICATE);
 
         assertThatThrownBy(() -> listener.onPaymentEvent(completed("evt-1", "-5.00", "USD", "alice")))
                 .isSameAs(somethingElse);
@@ -227,7 +265,7 @@ class PaymentEventListenerTest {
         // an event whose credit never happened, and Kafka would never redeliver it.
         DataIntegrityViolationException somethingElse = new DataIntegrityViolationException("value too long");
         doThrow(somethingElse).when(handler).credit(any());
-        when(outcomes.classify(any(), any())).thenReturn(DuplicateVerdict.NOT_A_DUPLICATE);
+        when(outcomes.classify(any(), any(), any())).thenReturn(DuplicateVerdict.NOT_A_DUPLICATE);
 
         assertThatThrownBy(() -> listener.onPaymentEvent(completed("evt-1", "50.00", "USD", "alice")))
                 .isSameAs(somethingElse);
@@ -253,11 +291,11 @@ class PaymentEventListenerTest {
         // Kafka delivers at least once, so the second copy of a recorded failure meets the event-id barrier.
         // Raising it would retry and dead-letter an event the wallet has already recorded.
         doThrow(new DataIntegrityViolationException("event_id")).when(handler).recordFailure(any(), any());
-        when(outcomes.classify("evt-9", "ref-1")).thenReturn(DuplicateVerdict.EVENT_ALREADY_PROCESSED);
+        when(outcomes.classify("evt-9", "ref-1", null)).thenReturn(DuplicateVerdict.EVENT_ALREADY_PROCESSED);
 
         listener.onPaymentEvent(failed("evt-9"));
 
-        verify(outcomes).classify("evt-9", "ref-1");
+        verify(outcomes).classify("evt-9", "ref-1", null);
         verify(outcomes, never()).recordRejection(any(), any(), any());
     }
 
@@ -269,8 +307,134 @@ class PaymentEventListenerTest {
         // failure the wallet never recorded.
         DataIntegrityViolationException violation = new DataIntegrityViolationException("value too long");
         doThrow(violation).when(handler).recordFailure(any(), any());
-        when(outcomes.classify("evt-9", "ref-1")).thenReturn(verdict);
+        when(outcomes.classify("evt-9", "ref-1", null)).thenReturn(verdict);
 
         assertThatThrownBy(() -> listener.onPaymentEvent(failed("evt-9"))).isSameAs(violation);
+    }
+
+    @Test
+    void eachPayoutEventReachesItsOwnStepAndNeverThePaymentHandler() {
+        // Guards a payout event dispatched as a payment, which would credit a deposit, or to the wrong step, which
+        // would credit a withdrawal that is only paid.
+        ConsumerRecord<String, String> paid = payoutPaid("evt-1", "po_1");
+        ConsumerRecord<String, String> failed = payoutFailed("evt-2", "po_1");
+
+        listener.onPaymentEvent(paid);
+        listener.onPaymentEvent(failed);
+        listener.onPaymentEvent(payoutReturned("evt-3", "75.00"));
+
+        verify(withdrawalHandler).recordPaid(argThat(event -> "evt-1".equals(event.eventId())), eq(paid.value()));
+        verify(withdrawalHandler).recordFailed(argThat(event -> "evt-2".equals(event.eventId())), eq(failed.value()));
+        verify(withdrawalHandler).creditReturn(argThat(event -> "evt-3".equals(event.eventId())));
+        verifyNoInteractions(handler, outcomes);
+    }
+
+    @Test
+    void aPaidEventWithoutItsPayoutIdIsRefusedAsAnInvalidEnvelope() {
+        // Guards a Paid event that names no payout: once a payout is paid it exists, so its id missing means the
+        // producer is broken, and the status must not move on it.
+        listener.onPaymentEvent(payoutPaid("evt-1", null));
+
+        verify(outcomes).recordRejection(eventWithId("evt-1"), eq(RejectionReason.INVALID_ENVELOPE), any());
+        verifyNoInteractions(withdrawalHandler);
+    }
+
+    @Test
+    void aFailureOrAReturnWithoutAPayoutIdIsSettled() {
+        // Guards refusing the events of a payout that was never created, such as a return for a short reserve,
+        // which would leave the withdrawal's money debited for good.
+        listener.onPaymentEvent(payoutFailed("evt-1", null));
+        listener.onPaymentEvent(payoutReturned("evt-2", "75.00"));
+
+        verify(withdrawalHandler).recordFailed(any(), any());
+        verify(withdrawalHandler).creditReturn(any());
+        verify(outcomes, never()).recordRejection(any(), any(), any());
+    }
+
+    @Test
+    void aReturnOffTheGridIsRefusedRatherThanCredited() {
+        // Guards crediting an amount no withdrawal could have debited.
+        listener.onPaymentEvent(payoutReturned("evt-1", "75.001"));
+
+        verify(outcomes).recordRejection(eventWithId("evt-1"), eq(RejectionReason.INVALID_AMOUNT), any());
+        verifyNoInteractions(withdrawalHandler);
+    }
+
+    static Stream<Arguments> placementRefusals() {
+        return Stream.of(
+                Arguments.of(
+                        (Supplier<RuntimeException>) () -> new UnknownWalletException("PLN"),
+                        RejectionReason.WALLET_NOT_FOUND
+                ),
+                Arguments.of(
+                        (Supplier<RuntimeException>) WithdrawalNotFoundException::new,
+                        RejectionReason.WITHDRAWAL_NOT_FOUND
+                ),
+                Arguments.of(
+                        (Supplier<RuntimeException>) WithdrawalMismatchException::new,
+                        RejectionReason.WITHDRAWAL_MISMATCH
+                )
+        );
+    }
+
+    @ParameterizedTest(name = "{1}")
+    @MethodSource("placementRefusals")
+    void aPayoutEventTheWalletCannotPlaceIsRecordedWithItsReason(
+            Supplier<RuntimeException> refusal,
+            RejectionReason reason
+    ) {
+        // Guards dead-lettering a refusal the wallet understood: it is recorded with its payload, so an operator
+        // sees why and can republish it under a fresh event id once the cause is fixed.
+        doThrow(refusal.get()).when(withdrawalHandler).creditReturn(any());
+
+        listener.onPaymentEvent(payoutReturned("evt-1", "75.00"));
+
+        verify(outcomes).recordRejection(eventWithId("evt-1"), eq(reason), any());
+    }
+
+    @Test
+    void aSecondReturnForOneReferenceIsRecordedAsADuplicateReference() {
+        // Guards a return being taken for a stale status: a second credit under another event id is a producer
+        // defect, judged by the WITHDRAWAL_RETURNED row and not by the withdrawal's debit under the same reference.
+        doThrow(new DataIntegrityViolationException("transaction_reference"))
+                .when(withdrawalHandler)
+                .creditReturn(any());
+        when(outcomes.classify("evt-2", "ref-1", TransactionType.WITHDRAWAL_RETURNED))
+                .thenReturn(DuplicateVerdict.REFERENCE_ALREADY_CREDITED);
+
+        listener.onPaymentEvent(payoutReturned("evt-2", "75.00"));
+
+        verify(outcomes).recordRejection(eventWithId("evt-2"), eq(RejectionReason.DUPLICATE_REFERENCE), any());
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {PAYOUT_PAID, PAYOUT_FAILED})
+    void aRedeliveredStatusEventIsAcknowledgedOnItsEventIdAlone(String eventType) {
+        // Guards dead-lettering the second copy of a Paid or Failed event, and judging it by any ledger row: it moves
+        // no money, so only its event id can make it a duplicate.
+        DataIntegrityViolationException redelivery = new DataIntegrityViolationException("event_id");
+        doThrow(redelivery).when(withdrawalHandler).recordPaid(any(), any());
+        doThrow(redelivery).when(withdrawalHandler).recordFailed(any(), any());
+        when(outcomes.classify("evt-1", "ref-1", null)).thenReturn(DuplicateVerdict.EVENT_ALREADY_PROCESSED);
+
+        listener.onPaymentEvent(
+                PAYOUT_PAID.equals(eventType) ? payoutPaid("evt-1", "po_1") : payoutFailed("evt-1", "po_1")
+        );
+
+        verify(outcomes).classify("evt-1", "ref-1", null);
+        verify(outcomes, never()).recordRejection(any(), any(), any());
+    }
+
+    @Test
+    void aReturnViolationThatIsNeitherBarrierIsRaisedRatherThanAcknowledged() {
+        // Guards acknowledging a return whose credit never happened: Kafka would never redeliver it, and the
+        // withdrawal's money would stay debited.
+        DataIntegrityViolationException somethingElse = new DataIntegrityViolationException("value too long");
+        doThrow(somethingElse).when(withdrawalHandler).creditReturn(any());
+        when(outcomes.classify(any(), any(), any())).thenReturn(DuplicateVerdict.NOT_A_DUPLICATE);
+
+        assertThatThrownBy(() -> listener.onPaymentEvent(payoutReturned("evt-1", "75.00"))).isSameAs(somethingElse);
+
+        verify(outcomes, never()).recordRejection(any(), any(), any());
     }
 }

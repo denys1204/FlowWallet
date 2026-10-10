@@ -73,8 +73,9 @@ copes with either order, because a failure moves no money.
 
 The contract also defines the events of a withdrawal
 ([ADR 0033](adr/0033-withdrawals-are-debited-under-the-lock-and-settled-by-payout-events.md),
-[ADR 0034](adr/0034-shared-outbox-and-the-wallet-withdrawals-command.md)). Nothing publishes or consumes them yet. They
-ship in this order: the contract, the consumers, then the producers, and withdrawals are switched on last.
+[ADR 0034](adr/0034-shared-outbox-and-the-wallet-withdrawals-command.md)). Wallet Service consumes the payout events;
+nothing publishes them yet, and nothing consumes `WithdrawalRequestedEvent`. They ship in this order: the contract, the
+consumers, then the producers, and withdrawals are switched on last.
 
 - `WithdrawalRequestedEvent`, on `wallet.withdrawals` from Wallet Service to Payment Service, carries `eventId`, `schemaVersion`, `transactionReference`, `userId`, `amount`, `currency`.
 - `PayoutPaidEvent`, on `payment.events`, carries `eventId`, `schemaVersion`, `transactionReference`, `providerPayoutId`, `amount`, `currency`, `userId`, `paidAt`.

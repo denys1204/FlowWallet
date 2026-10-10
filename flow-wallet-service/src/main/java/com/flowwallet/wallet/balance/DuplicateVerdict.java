@@ -17,7 +17,7 @@ enum DuplicateVerdict {
     REFERENCE_ALREADY_CREDITED,
 
     /**
-     * Neither barrier: another constraint refused the write and the credit did not happen, so it must be
+     * Neither barrier: another constraint refused the write and the write did not happen, so it must be
      * rethrown, never acknowledged.
      */
     NOT_A_DUPLICATE

@@ -136,14 +136,14 @@ class WithdrawalTest {
     }
 
     @Test
-    void aRepeatIsTheSameWalletAndAmountWhateverTheScale() {
+    void theTermsAreTheSameWalletAndAmountWhateverTheScale() {
         // A stored amount comes back from NUMERIC(19,4) as 75.0000, and under equals a retry that sent 75.00 would
         // count as another withdrawal.
         Withdrawal withdrawal = pending();
 
-        assertThat(withdrawal.isRepeatOf(11L, new BigDecimal("75.00"))).isTrue();
-        assertThat(withdrawal.isRepeatOf(12L, new BigDecimal("75.00"))).isFalse();
-        assertThat(withdrawal.isRepeatOf(11L, new BigDecimal("75.01"))).isFalse();
+        assertThat(withdrawal.hasTerms(11L, new BigDecimal("75.00"))).isTrue();
+        assertThat(withdrawal.hasTerms(12L, new BigDecimal("75.00"))).isFalse();
+        assertThat(withdrawal.hasTerms(11L, new BigDecimal("75.01"))).isFalse();
     }
 
     @Test

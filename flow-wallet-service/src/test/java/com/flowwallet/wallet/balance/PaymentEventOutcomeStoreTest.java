@@ -53,7 +53,8 @@ class PaymentEventOutcomeStoreTest {
         when(balanceHistory.findByTransactionReferenceAndType(eq("ref-1"), any())).thenAnswer(call ->
                 call.getArgument(1) == TransactionType.DEPOSIT ? Optional.empty() : Optional.of(transferLeg));
 
-        assertThat(outcomes.classify("evt-1", "ref-1")).isEqualTo(DuplicateVerdict.NOT_A_DUPLICATE);
+        assertThat(outcomes.classify("evt-1", "ref-1", TransactionType.DEPOSIT))
+                .isEqualTo(DuplicateVerdict.NOT_A_DUPLICATE);
 
         verify(balanceHistory).findByTransactionReferenceAndType("ref-1", TransactionType.DEPOSIT);
         verifyNoMoreInteractions(balanceHistory);
@@ -73,8 +74,10 @@ class PaymentEventOutcomeStoreTest {
         when(processedEvents.findByEventId("evt-1"))
                 .thenReturn(Optional.of(ProcessedEvent.credited(completed("evt-1"))));
 
-        assertThat(outcomes.classify("evt-2", "ref-1")).isEqualTo(DuplicateVerdict.REFERENCE_ALREADY_CREDITED);
-        assertThat(outcomes.classify("evt-1", "ref-1")).isEqualTo(DuplicateVerdict.EVENT_ALREADY_PROCESSED);
+        assertThat(outcomes.classify("evt-2", "ref-1", TransactionType.DEPOSIT))
+                .isEqualTo(DuplicateVerdict.REFERENCE_ALREADY_CREDITED);
+        assertThat(outcomes.classify("evt-1", "ref-1", TransactionType.DEPOSIT))
+                .isEqualTo(DuplicateVerdict.EVENT_ALREADY_PROCESSED);
     }
 
     @Test
@@ -83,7 +86,7 @@ class PaymentEventOutcomeStoreTest {
         // redelivery would miss the barrier and be refused again; the payload, or nothing could be replayed.
         PaymentCompletedEvent event = completed("evt-1");
 
-        outcomes.recordRejection(event, RejectionReason.WALLET_NOT_FOUND, "{\"eventId\":\"evt-1\"}");
+        outcomes.recordRejection(EventEnvelope.of(event), RejectionReason.WALLET_NOT_FOUND, "{\"eventId\":\"evt-1\"}");
 
         ArgumentCaptor<ProcessedEvent> saved = ArgumentCaptor.forClass(ProcessedEvent.class);
         verify(processedEvents).saveAndFlush(saved.capture());
@@ -96,5 +99,35 @@ class PaymentEventOutcomeStoreTest {
         assertThat(row.getOutcome()).isEqualTo(ProcessedEventOutcome.REJECTED);
         assertThat(row.getRejectionReason()).isEqualTo(RejectionReason.WALLET_NOT_FOUND);
         assertThat(row.getPayload()).isEqualTo("{\"eventId\":\"evt-1\"}");
+    }
+
+    @Test
+    void aReturnIsJudgedByItsReturnedRowAndNotByTheWithdrawalsDebit() {
+        // Guards a first return being acknowledged as a duplicate because the withdrawal's own WITHDRAWAL row shares
+        // its reference: the wallet would never be credited.
+        Wallet wallet = Wallet.builder()
+                .id(11L)
+                .userId("alice")
+                .currency("PLN")
+                .balance(new BigDecimal("75.0000"))
+                .build();
+        BalanceHistory debit = BalanceHistory.withdrawal(
+                wallet, "ref-1", new BigDecimal("75.0000"), new BigDecimal("75.0000")
+        );
+        when(balanceHistory.findByTransactionReferenceAndType(eq("ref-1"), any())).thenAnswer(call ->
+                call.getArgument(1) == TransactionType.WITHDRAWAL ? Optional.of(debit) : Optional.empty());
+
+        assertThat(outcomes.classify("evt-1", "ref-1", TransactionType.WITHDRAWAL_RETURNED))
+                .isEqualTo(DuplicateVerdict.NOT_A_DUPLICATE);
+        verify(balanceHistory).findByTransactionReferenceAndType("ref-1", TransactionType.WITHDRAWAL_RETURNED);
+    }
+
+    @Test
+    void anEventThatMovesNoMoneyIsADuplicateOnlyByItsEventId() {
+        // Guards a Paid or Failed event being acknowledged as a duplicate on a ledger row that says nothing about it.
+        assertThat(outcomes.classify("evt-1", "ref-1", null)).isEqualTo(DuplicateVerdict.NOT_A_DUPLICATE);
+
+        verify(processedEvents).findByEventId("evt-1");
+        verifyNoInteractions(balanceHistory);
     }
 }
