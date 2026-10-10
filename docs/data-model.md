@@ -21,6 +21,22 @@ events that connect these two databases.
   `processing_started_at` (the claim time, set only while the row is `PROCESSING`; the reaper's age check and
   the sender's ownership check), `created_at` and `processed_at`. It is indexed on (`status`, `created_at`) for
   the poller.
+- `payout_accounts` holds one row per user: `id`, `user_id` (unique), `account_key` (server-generated and unique; it
+  keys the creation of the Stripe account), `stripe_account_id` (unique, NULL until Stripe created it),
+  `tos_accepted_at` (when the user accepted Stripe's terms, sent verbatim on every retry), `external_account_id`,
+  `bank_last4`, `bank_currency` (upper case, as payouts carry it), `last_token` (the last bank token attached),
+  `bank_state` (`READY`/`NOT_SET`, and a CHECK requires both Stripe ids for `READY`), `version` and timestamps. No bank
+  details are stored.
+- `payouts` holds one row per withdrawal command: `id`, `transaction_reference` (unique as `payouts_reference_key`),
+  `user_id`, `amount`, `currency`, `stripe_account_id`, `stripe_transfer_id` (unique), `stripe_payout_id` (unique),
+  `stripe_reversal_id`, `status` (`ACCEPTED`/`TRANSFERRED`/`PAYOUT_CREATED`/`PAID`/`REVERSING`/`RETURNED`/
+  `NEEDS_ATTENTION`), `reason_code`, `failure_code`, and the executor's bookkeeping: `key_gen`, each step's
+  `*_attempted_at` (the time of its first claim), `transferred_at`, `paid_at`, `attempts`, `next_attempt_at` (NOT NULL),
+  `claimed_until` (the lease, also its ownership token), `attention_from` and `last_reconciled_at`, plus `version` and
+  timestamps. CHECKs keep the amount positive, the status known, a reason on a payout on its way back or returned, the
+  Stripe ids each status needs, and `attention_from` set exactly in `NEEDS_ATTENTION`. Partial indexes serve the
+  executor's scan of due rows and the reconciler's scan of created and paid ones
+  ([ADR 0035](adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md)).
 
 `wallet_db` is managed by Liquibase in `flow-wallet-service`:
 

@@ -1,0 +1,189 @@
+databaseChangeLog:
+  - changeSet:
+      id: 009-create-payouts-seq
+      author: flow-wallet
+      changes:
+        - createSequence:
+            sequenceName: payouts_seq
+            incrementBy: 50
+            startValue: 1
+  - changeSet:
+      id: 009-create-payouts-table
+      author: flow-wallet
+      comment: >-
+        One row per withdrawal command under its reference, apart from payment_transactions. It holds the terms, the
+        Stripe ids of the Transfer, Payout and Reversal steps, the outcome and the executor's bookkeeping. See
+        docs/adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md.
+      changes:
+        - createTable:
+            tableName: payouts
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: transaction_reference
+                  type: VARCHAR(64)
+                  remarks: The withdrawal's reference; the unique key decides a repeated command.
+                  constraints:
+                    nullable: false
+                    unique: true
+                    uniqueConstraintName: payouts_reference_key
+              - column:
+                  name: user_id
+                  type: VARCHAR(64)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: amount
+                  type: NUMERIC(19,4)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: currency
+                  type: VARCHAR(3)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: stripe_account_id
+                  type: VARCHAR(128)
+                  remarks: The connected account the transfer went to, kept for the payout and the reversal.
+              - column:
+                  name: stripe_transfer_id
+                  type: VARCHAR(128)
+                  constraints:
+                    unique: true
+                    uniqueConstraintName: payouts_stripe_transfer_key
+              - column:
+                  name: stripe_payout_id
+                  type: VARCHAR(128)
+                  remarks: Also the Connect webhook's lookup key.
+                  constraints:
+                    unique: true
+                    uniqueConstraintName: payouts_stripe_payout_key
+              - column:
+                  name: stripe_reversal_id
+                  type: VARCHAR(128)
+              - column:
+                  name: status
+                  type: VARCHAR(20)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: reason_code
+                  type: VARCHAR(32)
+                  remarks: Why the money comes back; sent as the reasonCode of the Failed and Returned events.
+              - column:
+                  name: failure_code
+                  type: VARCHAR(64)
+                  remarks: Stripe's failure code for a failed payout, when it gave one.
+              - column:
+                  name: key_gen
+                  type: INT
+                  defaultValueNumeric: 0
+                  remarks: Part of each step's idempotency key; raised only after a definite refusal the step retries.
+                  constraints:
+                    nullable: false
+              - column:
+                  name: transfer_attempted_at
+                  type: TIMESTAMP
+                  remarks: >-
+                    The time of the step's first claim, kept by later ones; a claim that finds an earlier time looks
+                    for the transfer at Stripe before it creates one.
+              - column:
+                  name: payout_attempted_at
+                  type: TIMESTAMP
+                  remarks: >-
+                    The time of the step's first claim, kept by later ones; a claim that finds an earlier time looks
+                    for the payout at Stripe before it creates one.
+              - column:
+                  name: reversal_attempted_at
+                  type: TIMESTAMP
+                  remarks: >-
+                    The time of the step's first claim, kept by later ones; a claim that finds an earlier time looks
+                    for the reversal at Stripe before it creates one.
+              - column:
+                  name: transferred_at
+                  type: TIMESTAMP
+              - column:
+                  name: paid_at
+                  type: TIMESTAMP
+                  remarks: When the payout moved to PAID; the reconciler watches a paid payout for a time after it.
+              - column:
+                  name: attempts
+                  type: INT
+                  defaultValueNumeric: 0
+                  remarks: Tries in the current step; a step's wait and the limit for an unknown outcome count them.
+                  constraints:
+                    nullable: false
+              - column:
+                  name: next_attempt_at
+                  type: TIMESTAMP
+                  remarks: When the executor may try the step again; every move into an executor step sets it to now.
+                  constraints:
+                    nullable: false
+              - column:
+                  name: claimed_until
+                  type: TIMESTAMP
+                  remarks: The end of the executor's lease, written at microsecond precision; also its ownership token.
+              - column:
+                  name: attention_from
+                  type: VARCHAR(20)
+                  remarks: The step a payout in NEEDS_ATTENTION came from, which a requeue returns it to.
+              - column:
+                  name: last_reconciled_at
+                  type: TIMESTAMP
+                  remarks: >-
+                    When the reconciler last asked Stripe about the payout; written only by its conditional claim.
+              - column:
+                  name: version
+                  type: BIGINT
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+  - changeSet:
+      id: 009-add-payouts-checks-and-indexes
+      author: flow-wallet
+      comment: >-
+        The amount is positive and the status one the code knows. A payout on its way back or returned has its reason,
+        one transferred or being reversed its transfer and account, a created or paid one its payout, and attention_from
+        is set exactly in NEEDS_ATTENTION and names an executor step. The partial indexes serve the executor's scan of
+        due rows, the reconciler's scan of created ones, and its window of paid ones by paid_at, since paid rows grow without
+        end. Written as raw SQL because addCheckConstraint is a Liquibase Pro change type.
+      changes:
+        - sql:
+            sql: >-
+              ALTER TABLE payouts ADD CONSTRAINT payouts_amount_positive CHECK (amount > 0);
+              ALTER TABLE payouts ADD CONSTRAINT payouts_status_known
+              CHECK (status IN ('ACCEPTED', 'TRANSFERRED', 'PAYOUT_CREATED', 'PAID', 'REVERSING', 'RETURNED',
+              'NEEDS_ATTENTION'));
+              ALTER TABLE payouts ADD CONSTRAINT payouts_reason_when_returning
+              CHECK (status NOT IN ('REVERSING', 'RETURNED') OR reason_code IS NOT NULL);
+              ALTER TABLE payouts ADD CONSTRAINT payouts_transfer_when_transferred
+              CHECK (status NOT IN ('TRANSFERRED', 'PAYOUT_CREATED', 'PAID', 'REVERSING')
+              OR (stripe_transfer_id IS NOT NULL AND stripe_account_id IS NOT NULL));
+              ALTER TABLE payouts ADD CONSTRAINT payouts_payout_when_created
+              CHECK (status NOT IN ('PAYOUT_CREATED', 'PAID') OR stripe_payout_id IS NOT NULL);
+              ALTER TABLE payouts ADD CONSTRAINT payouts_attention_from_when_needed
+              CHECK ((status = 'NEEDS_ATTENTION') = (attention_from IS NOT NULL)
+              AND (attention_from IS NULL OR attention_from IN ('ACCEPTED', 'TRANSFERRED', 'REVERSING')));
+              CREATE INDEX idx_payouts_due ON payouts (next_attempt_at)
+              WHERE status IN ('ACCEPTED', 'TRANSFERRED', 'REVERSING');
+              CREATE INDEX idx_payouts_created ON payouts (last_reconciled_at NULLS FIRST)
+              WHERE status = 'PAYOUT_CREATED';
+              CREATE INDEX idx_payouts_paid ON payouts (paid_at)
+              WHERE status = 'PAID'

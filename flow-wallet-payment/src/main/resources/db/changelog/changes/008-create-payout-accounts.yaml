@@ -1,0 +1,111 @@
+databaseChangeLog:
+  - changeSet:
+      id: 008-create-payout-accounts-seq
+      author: flow-wallet
+      changes:
+        - createSequence:
+            sequenceName: payout_accounts_seq
+            incrementBy: 50
+            startValue: 1
+  - changeSet:
+      id: 008-create-payout-accounts-table
+      author: flow-wallet
+      comment: >-
+        One row per user: the Stripe connected account a withdrawal is paid through and the bank account attached to it.
+        The row is reserved before Stripe is called, under a server-generated account_key that keys the account's
+        creation. FlowWallet keeps Stripe's ids, the last four digits and the last token applied, never bank details.
+        See docs/adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md.
+      changes:
+        - createTable:
+            tableName: payout_accounts
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: user_id
+                  type: VARCHAR(64)
+                  constraints:
+                    nullable: false
+                    unique: true
+                    uniqueConstraintName: payout_accounts_user_key
+              - column:
+                  name: account_key
+                  type: VARCHAR(64)
+                  remarks: >-
+                    Server-generated; keys the creation of the Stripe account, so a retry never makes a second one.
+                  constraints:
+                    nullable: false
+                    unique: true
+                    uniqueConstraintName: payout_accounts_account_key_key
+              - column:
+                  name: stripe_account_id
+                  type: VARCHAR(128)
+                  remarks: The connected account; NULL until Stripe has created it.
+                  constraints:
+                    unique: true
+                    uniqueConstraintName: payout_accounts_stripe_account_key
+              - column:
+                  name: tos_accepted_at
+                  type: TIMESTAMP
+                  remarks: >-
+                    When the user accepted Stripe's terms, sent verbatim on every retry of the account's creation.
+                  constraints:
+                    nullable: false
+              - column:
+                  name: external_account_id
+                  type: VARCHAR(128)
+              - column:
+                  name: bank_last4
+                  type: VARCHAR(4)
+              - column:
+                  name: bank_currency
+                  type: VARCHAR(3)
+              - column:
+                  name: last_token
+                  type: VARCHAR(128)
+                  remarks: >-
+                    The last bank token attached. A token works once, so a request that repeats it is answered from the
+                    row.
+              - column:
+                  name: bank_state
+                  type: VARCHAR(20)
+                  defaultValue: 'NOT_SET'
+                  constraints:
+                    nullable: false
+              - column:
+                  name: version
+                  type: BIGINT
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+  - changeSet:
+      id: 008-add-payout-accounts-checks
+      author: flow-wallet
+      comment: >-
+        The bank state is one the code knows, READY needs both the connected account and the bank account it names, and
+        the currency is kept in upper case as payouts carry it. Written as raw SQL because addCheckConstraint is a
+        Liquibase Pro change type.
+      changes:
+        - sql:
+            sql: >-
+              ALTER TABLE payout_accounts ADD CONSTRAINT payout_accounts_bank_state_known
+              CHECK (bank_state IN ('READY', 'NOT_SET'));
+              ALTER TABLE payout_accounts ADD CONSTRAINT payout_accounts_ready_has_accounts
+              CHECK (bank_state <> 'READY' OR (stripe_account_id IS NOT NULL AND external_account_id IS NOT NULL));
+              ALTER TABLE payout_accounts ADD CONSTRAINT payout_accounts_bank_currency_upper
+              CHECK (bank_currency = upper(bank_currency))
