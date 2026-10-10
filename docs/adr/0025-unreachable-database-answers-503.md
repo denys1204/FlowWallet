@@ -1,7 +1,8 @@
 # 0025. A database the service cannot reach answers 503, and the retry uses the same key
 
 - Status: Accepted, extends [0005](0005-client-supplied-idempotency-keys.md) and
-  [0016](0016-error-model-and-status-codes.md)
+  [0016](0016-error-model-and-status-codes.md), extended by
+  [0033](0033-withdrawals-are-debited-under-the-lock-and-settled-by-payout-events.md)
 - Date: 2026-09-27
 
 ## Context

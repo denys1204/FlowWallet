@@ -1,7 +1,8 @@
 # 0027. User ids stay out of logs and provider metadata
 
 - Status: Accepted, supersedes the logging detail of [0014](0014-transfers-in-one-local-transaction.md), extends
-  [0003](0003-caller-identity-and-trust-boundary.md)
+  [0003](0003-caller-identity-and-trust-boundary.md), extended by
+  [0035](0035-payouts-run-as-a-step-machine-on-stripe-connect.md)
 - Date: 2026-09-27
 
 ## Context

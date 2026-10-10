@@ -1,6 +1,6 @@
 # 0011. Every balance write locks the wallet row, in a fixed order, with nothing read first
 
-- Status: Accepted
+- Status: Accepted, extended by [0033](0033-withdrawals-are-debited-under-the-lock-and-settled-by-payout-events.md)
 - Date: 2026-09-05
 
 ## Context

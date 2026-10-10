@@ -1,8 +1,8 @@
 # 0022. Stripe's charge rules are checked before the reservation, and a refusal from Stripe is a 400
 
-- Status: Accepted, extends [0005](0005-client-supplied-idempotency-keys.md),
-  [0013](0013-deposit-initiation.md), [0015](0015-currency-precision-and-no-rounding.md) and
-  [0016](0016-error-model-and-status-codes.md)
+- Status: Accepted, extends [0005](0005-client-supplied-idempotency-keys.md), [0013](0013-deposit-initiation.md),
+  [0015](0015-currency-precision-and-no-rounding.md) and [0016](0016-error-model-and-status-codes.md), extended by
+  [0035](0035-payouts-run-as-a-step-machine-on-stripe-connect.md)
 - Date: 2026-09-27
 
 ## Context

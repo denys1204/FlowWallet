@@ -1,6 +1,8 @@
 # 0026. A problem detail never quotes the value it rejects
 
-- Status: Accepted, extends [0016](0016-error-model-and-status-codes.md)
+- Status: Accepted, extends [0016](0016-error-model-and-status-codes.md), extended by
+  [0033](0033-withdrawals-are-debited-under-the-lock-and-settled-by-payout-events.md) and
+  [0035](0035-payouts-run-as-a-step-machine-on-stripe-connect.md)
 - Date: 2026-09-27
 
 ## Context

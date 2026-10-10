@@ -1,8 +1,9 @@
 # 0015. Amounts sit on an explicit per-currency grid and are refused, never rounded
 
 - Status: Accepted, extended by [0019](0019-payment-event-amounts-on-the-grid.md),
-  [0022](0022-stripe-charge-rules-checked-before-the-reservation.md) and
-  [0030](0030-amounts-in-responses-are-decimal-strings.md), ISK precision superseded by
+  [0022](0022-stripe-charge-rules-checked-before-the-reservation.md),
+  [0030](0030-amounts-in-responses-are-decimal-strings.md) and
+  [0035](0035-payouts-run-as-a-step-machine-on-stripe-connect.md), ISK precision superseded by
   [0023](0023-isk-charged-in-whole-units.md), response scale superseded by
   [0030](0030-amounts-in-responses-are-decimal-strings.md)
 - Date: 2026-09-05

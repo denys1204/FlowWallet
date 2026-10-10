@@ -1,6 +1,7 @@
 # 0012. A balance never goes negative, and every movement is an append-only ledger row keyed by reference and type
 
-- Status: Accepted, history paging superseded by [0021](0021-per-wallet-ledger-entry-numbers.md)
+- Status: Accepted, extended by [0033](0033-withdrawals-are-debited-under-the-lock-and-settled-by-payout-events.md),
+  history paging superseded by [0021](0021-per-wallet-ledger-entry-numbers.md)
 - Date: 2026-09-26
 
 ## Context

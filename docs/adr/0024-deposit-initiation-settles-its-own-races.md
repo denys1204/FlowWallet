@@ -1,8 +1,9 @@
 # 0024. Deposit initiation settles its own races, and its Stripe call ends before the wallet stops waiting
 
 - Status: Accepted, extends [0013](0013-deposit-initiation.md) and [0016](0016-error-model-and-status-codes.md),
-  supersedes the concurrent-reservation consequence of [0005](0005-client-supplied-idempotency-keys.md) and the
-  handling of `PaymentTransactionStore.reserve` in [0007](0007-unique-constraints-decide.md)
+  supersedes the concurrent-reservation consequence of [0005](0005-client-supplied-idempotency-keys.md) and the handling
+  of `PaymentTransactionStore.reserve` in [0007](0007-unique-constraints-decide.md), extended by
+  [0033](0033-withdrawals-are-debited-under-the-lock-and-settled-by-payout-events.md)
 - Date: 2026-09-27
 
 ## Context

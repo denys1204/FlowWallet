@@ -1,6 +1,6 @@
 # 0006. Transactions are short, database-only and entered across a bean boundary
 
-- Status: Accepted
+- Status: Accepted, extended by [0035](0035-payouts-run-as-a-step-machine-on-stripe-connect.md)
 - Date: 2026-07-25
 
 ## Context

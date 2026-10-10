@@ -1,7 +1,8 @@
 # 0019. Payment event amounts sit on the wallet's grid, and a refusal stores only an amount its column holds
 
 - Status: Accepted, extends [0010](0010-idempotent-payment-event-consumer.md) and
-  [0015](0015-currency-precision-and-no-rounding.md)
+  [0015](0015-currency-precision-and-no-rounding.md), extended by
+  [0033](0033-withdrawals-are-debited-under-the-lock-and-settled-by-payout-events.md)
 - Date: 2026-09-27
 
 ## Context

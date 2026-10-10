@@ -1,7 +1,8 @@
 # 0010. The wallet consumer credits each payment once and sends every failure to a durable place
 
-- Status: Accepted, extended by [0019](0019-payment-event-amounts-on-the-grid.md) and
-  [0020](0020-wallet-dead-letters-kept-and-counted.md)
+- Status: Accepted, extended by [0019](0019-payment-event-amounts-on-the-grid.md),
+  [0020](0020-wallet-dead-letters-kept-and-counted.md) and
+  [0033](0033-withdrawals-are-debited-under-the-lock-and-settled-by-payout-events.md)
 - Date: 2026-09-05
 
 ## Context

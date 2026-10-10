@@ -2,8 +2,9 @@
 
 - Status: Accepted, extended by [0017](0017-webhooks-verified-before-they-are-read.md),
   [0022](0022-stripe-charge-rules-checked-before-the-reservation.md),
-  [0024](0024-deposit-initiation-settles-its-own-races.md),
-  [0025](0025-unreachable-database-answers-503.md) and [0026](0026-problem-details-never-quote-rejected-input.md)
+  [0024](0024-deposit-initiation-settles-its-own-races.md), [0025](0025-unreachable-database-answers-503.md),
+  [0026](0026-problem-details-never-quote-rejected-input.md) and
+  [0033](0033-withdrawals-are-debited-under-the-lock-and-settled-by-payout-events.md)
 - Date: 2026-07-25
 
 ## Context

@@ -1,7 +1,8 @@
 # 0003. The caller is an opaque X-User-Id taken on trust behind a network boundary
 
-- Status: Accepted, extended by [0027](0027-user-ids-stay-out-of-logs-and-provider-metadata.md), intended authentication
-  model superseded by [0031](0031-callers-are-authenticated-in-front-of-the-gateway.md)
+- Status: Accepted, extended by [0027](0027-user-ids-stay-out-of-logs-and-provider-metadata.md) and
+  [0035](0035-payouts-run-as-a-step-machine-on-stripe-connect.md), intended authentication model superseded by
+  [0031](0031-callers-are-authenticated-in-front-of-the-gateway.md)
 - Date: 2026-07-03
 
 ## Context

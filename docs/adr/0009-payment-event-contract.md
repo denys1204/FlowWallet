@@ -1,6 +1,7 @@
 # 0009. Payment events evolve additively, are typed by header, deduplicated on eventId and need no ordering
 
-- Status: Accepted
+- Status: Accepted, extended by [0033](0033-withdrawals-are-debited-under-the-lock-and-settled-by-payout-events.md) and
+  [0034](0034-shared-outbox-and-the-wallet-withdrawals-command.md)
 - Date: 2026-07-25
 
 ## Context

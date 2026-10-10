@@ -1,6 +1,7 @@
 # 0008. Payment events leave through a transactional outbox with at-least-once delivery
 
-- Status: Accepted, extended by [0018](0018-outbox-sends-own-their-claim.md)
+- Status: Accepted, extended by [0018](0018-outbox-sends-own-their-claim.md) and
+  [0034](0034-shared-outbox-and-the-wallet-withdrawals-command.md)
 - Date: 2026-07-03
 
 ## Context

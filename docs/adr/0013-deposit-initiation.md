@@ -1,8 +1,9 @@
 # 0013. A deposit starts in Wallet Service and is reserved in Payment Service before Stripe is called
 
 - Status: Accepted, extended by [0022](0022-stripe-charge-rules-checked-before-the-reservation.md),
-  [0024](0024-deposit-initiation-settles-its-own-races.md), [0028](0028-deposits-accept-cards-only.md) and
-  [0032](0032-pending-payments-are-rechecked-with-the-provider.md)
+  [0024](0024-deposit-initiation-settles-its-own-races.md), [0028](0028-deposits-accept-cards-only.md),
+  [0032](0032-pending-payments-are-rechecked-with-the-provider.md) and
+  [0035](0035-payouts-run-as-a-step-machine-on-stripe-connect.md)
 - Date: 2026-09-05
 
 ## Context

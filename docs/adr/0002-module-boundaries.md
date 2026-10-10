@@ -1,6 +1,6 @@
 # 0002. Services share only a platform module and a wire contract
 
-- Status: Accepted
+- Status: Accepted, extended by [0034](0034-shared-outbox-and-the-wallet-withdrawals-command.md)
 - Date: 2026-08-30
 
 ## Context
