@@ -84,4 +84,37 @@ class PayoutPropertiesTest {
         runner.withPropertyValues("payment.payout.currencies[0].code=PLN", "payment.payout.currencies[0].min-amount=0")
                 .run(context -> assertThat(context).hasFailed());
     }
+
+    @Test
+    void theShippedYamlCarriesTheClassesTestIdentity() throws Exception {
+        // Guards the YAML identity drifting from the class: the values pass Stripe's test-mode checks only together,
+        // so one changed on its own side would make every account creation fail.
+        PropertySource<?> yaml = new YamlPropertySourceLoader()
+                .load("application", new ClassPathResource("application.yml"))
+                .getFirst();
+        ApplicationContextRunner shipped = runner.withInitializer(context -> context.getEnvironment()
+                .getPropertySources()
+                .addFirst(yaml));
+
+        shipped.run(context -> {
+            assertThat(context).hasNotFailed();
+            PayoutProperties.Account bound = context.getBean(PayoutProperties.class).getAccount();
+            PayoutProperties.Account defaults = new PayoutProperties.Account();
+
+            assertThat(bound).usingRecursiveComparison().isEqualTo(defaults);
+        });
+    }
+
+    @Test
+    void anIdentityStripeCannotTakeFailsStartup() {
+        // Guards an account creation that Stripe would refuse on every first bank account request, found only then.
+        runner.withPropertyValues("payment.payout.account.country=pl")
+                .run(context -> assertThat(context).hasFailed());
+        runner.withPropertyValues("payment.payout.account.merchant-category-code=57340")
+                .run(context -> assertThat(context).hasFailed());
+        runner.withPropertyValues("payment.payout.account.tos-ip=localhost")
+                .run(context -> assertThat(context).hasFailed());
+        runner.withPropertyValues("payment.payout.account.first-name= ")
+                .run(context -> assertThat(context).hasFailed());
+    }
 }

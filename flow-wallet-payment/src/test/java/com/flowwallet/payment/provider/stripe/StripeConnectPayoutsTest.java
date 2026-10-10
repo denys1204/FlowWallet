@@ -1,7 +1,9 @@
 package com.flowwallet.payment.provider.stripe;
 
+import com.flowwallet.payment.provider.dto.PayoutAccountHolder;
 import com.flowwallet.payment.provider.dto.PayoutCallResult;
 import com.flowwallet.payment.provider.dto.PayoutRefusal;
+import com.flowwallet.payment.provider.dto.ProviderBankAccount;
 import com.flowwallet.payment.provider.dto.ProviderPayout;
 import com.flowwallet.payment.provider.dto.ProviderPayoutStatus;
 import com.flowwallet.payment.provider.dto.ProviderTransfer;
@@ -15,11 +17,16 @@ import com.stripe.exception.InvalidRequestException;
 import com.stripe.exception.PermissionException;
 import com.stripe.exception.RateLimitException;
 import com.stripe.exception.StripeException;
+import com.stripe.model.Account;
 import com.stripe.model.Balance;
+import com.stripe.model.BankAccount;
+import com.stripe.model.ExternalAccountCollection;
 import com.stripe.model.Payout;
 import com.stripe.model.Transfer;
 import com.stripe.model.TransferReversal;
 import com.stripe.model.TransferReversalCollection;
+import com.stripe.param.AccountCreateParams;
+import com.stripe.param.ExternalAccountCollectionCreateParams;
 import com.stripe.param.PayoutCreateParams;
 import com.stripe.param.PayoutListParams;
 import com.stripe.param.TransferCreateParams;
@@ -33,6 +40,7 @@ import org.mockito.ArgumentCaptor;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
@@ -49,6 +57,21 @@ import static org.mockito.Mockito.when;
 class StripeConnectPayoutsTest {
     private static final String REFERENCE = "6f1d4c2a-8b3e-4f5a-9c7d-1e2f3a4b5c6d";
     private static final String ACCOUNT = "acct_unit_test";
+
+    private static final PayoutAccountHolder HOLDER = new PayoutAccountHolder(
+            "PL",
+            "Jenny",
+            "Rosen",
+            "jenny.rosen@example.com",
+            LocalDate.of(1901, 1, 1),
+            "address_full_match",
+            "Warszawa",
+            "00-001",
+            "+48500000000",
+            "Test-mode withdrawals",
+            "5734",
+            "127.0.0.1"
+    );
 
     private final StripeClient stripeClient = mock(StripeClient.class);
     private final StripeConnectPayouts payouts = new StripeConnectPayouts(stripeClient);
@@ -88,6 +111,184 @@ class StripeConnectPayoutsTest {
             case "connection" -> new ApiConnectionException("Read timed out");
             default -> throw new IllegalArgumentException(kind);
         };
+    }
+
+    private static BankAccount bankAccount(String status, boolean defaultForCurrency) {
+        var bank = new BankAccount();
+        bank.setId("ba_1");
+        bank.setLast4("2874");
+        bank.setCurrency("pln");
+        bank.setStatus(status);
+        bank.setDefaultForCurrency(defaultForCurrency);
+        return bank;
+    }
+
+    private static Account account(boolean payoutsEnabled, BankAccount... banks) {
+        var account = new Account();
+        account.setId(ACCOUNT);
+        account.setPayoutsEnabled(payoutsEnabled);
+        var externalAccounts = new ExternalAccountCollection();
+        externalAccounts.setData(List.of(banks));
+        account.setExternalAccounts(externalAccounts);
+        return account;
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void anAccountIsOpenedUnderItsKeyWithTheHoldersIdentityAndNoUserId() throws Exception {
+        // Guards an account that pays out on Stripe's schedule instead of the executor's, one the user could log in
+        // to, a retry that sends another acceptance time under the same key, and a user id sent to Stripe.
+        var created = new Account();
+        created.setId("acct_new");
+        when(stripeClient.createAccount(any(), anyString())).thenReturn(created);
+        Instant acceptedAt = Instant.parse("2026-10-10T08:00:00Z");
+
+        PayoutCallResult<String> result = payouts.createAccount("key-1", acceptedAt, HOLDER);
+
+        ArgumentCaptor<AccountCreateParams> params = ArgumentCaptor.forClass(AccountCreateParams.class);
+        verify(stripeClient).createAccount(params.capture(), eq("acct-key-1"));
+        Map<String, Object> sent = params.getValue().toMap();
+        assertThat(sent)
+                .containsEntry("country", "PL")
+                .containsEntry("business_type", "individual")
+                .containsEntry("metadata", Map.of(StripeConstants.META_PAYOUT_ACCOUNT, "key-1"));
+        assertThat((Map<String, Object>) sent.get("controller"))
+                .containsEntry("requirement_collection", "application")
+                .containsEntry("stripe_dashboard", Map.of("type", "none"))
+                .containsEntry("fees", Map.of("payer", "application"))
+                .containsEntry("losses", Map.of("payments", "application"));
+        assertThat(sent).containsEntry("capabilities", Map.of("transfers", Map.of("requested", true)));
+        assertThat((Map<String, Object>) sent.get("tos_acceptance"))
+                .containsEntry("date", acceptedAt.getEpochSecond())
+                .containsEntry("ip", "127.0.0.1")
+                .containsEntry("service_agreement", "full");
+        assertThat(sent).containsEntry("settings", Map.of("payouts", Map.of("schedule", Map.of("interval", "manual"))));
+        assertThat(result).isEqualTo(new PayoutCallResult.Done<>("acct_new"));
+    }
+
+    @ParameterizedTest(name = "{0} {1} {2}")
+    @CsvSource(nullValues = "NULL", value = {
+            "invalid,     400,  url_invalid",
+            "invalid,     400,  balance_insufficient",
+            "connection,  NULL, NULL",
+    })
+    void noFailureToOpenAnAccountIsARefusal(String kind, Integer status, String code) throws Exception {
+        // Guards a refusal of Payment Service's own account parameters being handed to the user as one to fix.
+        when(stripeClient.createAccount(any(), anyString())).thenThrow(failure(kind, status, code));
+
+        assertThat(payouts.createAccount("key-1", Instant.EPOCH, HOLDER)).isInstanceOf(PayoutCallResult.Unknown.class);
+    }
+
+    @Test
+    void aTokenIsAttachedAsTheDefaultForItsCurrencyUnderAKeyThatNamesIt() throws Exception {
+        // Guards a bank account attached beside the old one instead of replacing it as the default, and a key that
+        // a second token would share, which Stripe would answer with the first token's bank account.
+        Account before = account(false);
+        when(stripeClient.retrieveAccount(ACCOUNT)).thenReturn(before, account(true, bankAccount("new", true)));
+        when(stripeClient.createExternalAccount(eq(before), any(), anyString())).thenReturn(bankAccount("new", true));
+
+        PayoutCallResult<ProviderBankAccount> result = payouts.attachBankAccount(ACCOUNT, "key-1", "btok_1");
+
+        ArgumentCaptor<ExternalAccountCollectionCreateParams> params =
+                ArgumentCaptor.forClass(ExternalAccountCollectionCreateParams.class);
+        verify(stripeClient).createExternalAccount(eq(before), params.capture(), eq("bank-key-1-btok_1"));
+        assertThat(params.getValue().toMap())
+                .containsEntry("external_account", "btok_1")
+                .containsEntry("default_for_currency", true);
+        assertThat(result).isEqualTo(new PayoutCallResult.Done<>(new ProviderBankAccount("ba_1", "2874", "PLN", true)));
+    }
+
+    @ParameterizedTest(name = "payouts enabled {0}, status {1}")
+    @CsvSource({
+            "false, new",
+            "true,  errored",
+            "true,  verification_failed",
+    })
+    void aBankAccountIsReadyOnlyWhenTheAccountPaysOutToItsStatus(
+            boolean payoutsEnabled,
+            String status
+    ) throws Exception {
+        // Guards READY read from payouts_enabled alone: after a failed payout Stripe leaves it true and marks the
+        // bank account errored, and every later payout would fail the same way.
+        Account before = account(false);
+        when(stripeClient.retrieveAccount(ACCOUNT))
+                .thenReturn(before, account(payoutsEnabled, bankAccount(status, true)));
+        when(stripeClient.createExternalAccount(eq(before), any(), anyString())).thenReturn(bankAccount("new", true));
+
+        PayoutCallResult<ProviderBankAccount> result = payouts.attachBankAccount(ACCOUNT, "key-1", "btok_1");
+
+        assertThat(result)
+                .isEqualTo(new PayoutCallResult.Done<>(new ProviderBankAccount("ba_1", "2874", "PLN", false)));
+    }
+
+    @Test
+    void theDefaultBankAccountIsReportedEvenWhenAnotherRequestAttachedIt() throws Exception {
+        // Guards recording the bank account this request attached while Stripe pays out to another: a late retry of
+        // an older token, or a concurrent request, can leave a newer bank account the default.
+        Account before = account(false);
+        BankAccount newer = bankAccount("new", true);
+        newer.setId("ba_2");
+        newer.setLast4("3001");
+        BankAccount replayed = bankAccount("new", false);
+        when(stripeClient.retrieveAccount(ACCOUNT)).thenReturn(before, account(true, newer, replayed));
+        when(stripeClient.createExternalAccount(eq(before), any(), anyString())).thenReturn(bankAccount("new", true));
+
+        PayoutCallResult<ProviderBankAccount> result = payouts.attachBankAccount(ACCOUNT, "key-1", "btok_old");
+
+        assertThat(result).isEqualTo(new PayoutCallResult.Done<>(new ProviderBankAccount("ba_2", "3001", "PLN", true)));
+    }
+
+    @Test
+    void anAccountWithoutADefaultBankAccountForTheCurrencyIsUnknown() throws Exception {
+        // Guards reporting the attach's own answer as the default when the account Stripe holds says otherwise.
+        Account before = account(false);
+        when(stripeClient.retrieveAccount(ACCOUNT)).thenReturn(before, account(true, bankAccount("new", false)));
+        when(stripeClient.createExternalAccount(eq(before), any(), anyString())).thenReturn(bankAccount("new", true));
+
+        assertThat(payouts.attachBankAccount(ACCOUNT, "key-1", "btok_1")).isInstanceOf(PayoutCallResult.Unknown.class);
+    }
+
+    @Test
+    void anAccountReadWithoutItsExternalAccountsSendsNoToken() throws Exception {
+        // Guards a NullPointerException, a 500, when Stripe leaves out the list it shows only to the controller.
+        when(stripeClient.retrieveAccount(ACCOUNT)).thenReturn(new Account());
+
+        assertThat(payouts.attachBankAccount(ACCOUNT, "key-1", "btok_1")).isInstanceOf(PayoutCallResult.Defect.class);
+        verify(stripeClient, never()).createExternalAccount(any(), any(), anyString());
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"resource_missing", "token_already_used", "livemode_mismatch", "bank_account_unusable"})
+    void aRefusedTokenIsADefiniteBankAccountRefusal(String code) throws Exception {
+        // Guards a token Stripe will never accept being reported as unknown, which would send the user to retry the
+        // same dead token.
+        Account before = account(false);
+        when(stripeClient.retrieveAccount(ACCOUNT)).thenReturn(before);
+        when(stripeClient.createExternalAccount(eq(before), any(), anyString()))
+                .thenThrow(failure("invalid", 400, code));
+
+        assertThat(payouts.attachBankAccount(ACCOUNT, "key-1", "btok_1"))
+                .isEqualTo(new PayoutCallResult.Refused<>(PayoutRefusal.BANK_ACCOUNT, code));
+    }
+
+    @Test
+    void anAccountThatCannotBeReadSendsNoToken() throws Exception {
+        // Guards a token spent on an attach that runs blind, and a read failure reported as a refused token.
+        when(stripeClient.retrieveAccount(ACCOUNT)).thenThrow(failure("api", 500, null));
+
+        assertThat(payouts.attachBankAccount(ACCOUNT, "key-1", "btok_1")).isInstanceOf(PayoutCallResult.Unknown.class);
+        verify(stripeClient, never()).createExternalAccount(any(), any(), anyString());
+    }
+
+    @Test
+    void aBankAccountWhoseStateCannotBeReadAfterTheAttachIsUnknown() throws Exception {
+        // Guards recording a bank account as NOT_SET when only the read after the attach failed: the retry under the
+        // same key gets the attached bank account back and reads its state again.
+        Account before = account(false);
+        when(stripeClient.retrieveAccount(ACCOUNT)).thenReturn(before).thenThrow(failure("connection", null, null));
+        when(stripeClient.createExternalAccount(eq(before), any(), anyString())).thenReturn(bankAccount("new", true));
+
+        assertThat(payouts.attachBankAccount(ACCOUNT, "key-1", "btok_1")).isInstanceOf(PayoutCallResult.Unknown.class);
     }
 
     @Test

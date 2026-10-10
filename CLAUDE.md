@@ -35,8 +35,10 @@ nothing about wallets ([ADR 0002](docs/adr/0002-module-boundaries.md),
 - `flow-wallet-gateway`: reactive Spring Cloud Gateway, path routing only. It routes `/api/wallets/**` to the
   wallet and **only** `/api/payments/webhooks/**` to payment, so a payment can only be started through a wallet.
 - `flow-wallet-payment`: Stripe, `payment_transactions`, webhooks, the payment events it sends to Kafka through the
-  outbox, and the `payouts` it accepts from `wallet.withdrawals`.
-- `flow-wallet-service`: the Wallet Service. REST API, deposit initiation, transfers, and the Kafka consumer.
+  outbox, the `payouts` it accepts from `wallet.withdrawals`, and the connected account and bank account each user sets
+  for them.
+- `flow-wallet-service`: the Wallet Service. REST API, deposit initiation, transfers, the bank account relay to
+  Payment Service, and the Kafka consumer.
 
 In brief (the full flows are in `ARCHITECTURE.md`):
 
@@ -140,6 +142,9 @@ Each invariant here is stated once and links the ADR that holds its reasoning.
   write; it claims a row with a conditional update of `last_reconciled_at` before calling Stripe, holds nothing open
   during the call, and never cancels an intent
   ([ADR 0032](docs/adr/0032-pending-payments-are-rechecked-with-the-provider.md)).
+- Payment Service starts only with a Stripe test-mode key (`sk_test_` or `rk_test_`, checked in `StripeProperties`):
+  every connected account it opens carries the fake identity in `payment.payout.account`
+  ([ADR 0035](docs/adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md)).
 - Money leaving the platform (a transfer, a payout, a reversal) is refused for certain only on a 400 or 402 whose code
   is on `StripeConnectPayouts`' list for that call. Every other failure, a 409 included, leaves the outcome unknown:
   the step keeps its key generation and looks for the object before it creates again

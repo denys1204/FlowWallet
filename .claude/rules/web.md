@@ -8,10 +8,11 @@ paths:
 
 # Controllers, request and response DTOs
 
-- Without `produces` on the mapping, Spring MVC negotiates the response only after the handler has returned,
-  so a request whose `Accept` rules out JSON gets a 406 after the work is done. Every Wallet Service mapping that
-  changes state declares `produces = MediaType.APPLICATION_JSON_VALUE`: the transfer, the deposit (Payment Service
-  creates the intent) and opening a wallet (`TransferController`, `DepositController`, `WalletController.open`).
+- Without `produces` on the mapping, Spring MVC negotiates the response only after the handler has returned, so a
+  request whose `Accept` rules out JSON gets a 406 after the work is done. Every Wallet Service mapping that changes
+  state declares `produces = MediaType.APPLICATION_JSON_VALUE`: the transfer, the deposit (Payment Service creates the
+  intent), opening a wallet and setting the bank account (`TransferController`, `DepositController`,
+  `WalletController.open`, `BankAccountController.set`).
 - Spring MVC resolves arguments in declaration order, so `@CurrentUserId` is the first parameter of every
   mapping that takes it; declared later, a caller without `X-User-Id` and a bad body or parameter gets 400
   instead of 401.

@@ -121,6 +121,21 @@ payment:
     currencies:
       - code: ${PAYMENT_PAYOUT_CURRENCY:PLN}
         min-amount: ${PAYMENT_PAYOUT_MIN_AMOUNT:5.00}
+    # The fake identity of every connected account, Stripe's test values for a Polish individual. Fixed wiring, not
+    # a setting: the values pass Stripe's test-mode checks only together, and startup refuses a live key.
+    account:
+      country: PL
+      first-name: Jenny
+      last-name: Rosen
+      email: jenny.rosen@example.com
+      date-of-birth: 1901-01-01
+      address-line1: address_full_match
+      city: Warszawa
+      postal-code: 00-001
+      phone: "+48500000000"
+      product-description: Test-mode withdrawals from a FlowWallet wallet
+      merchant-category-code: "5734"
+      tos-ip: 127.0.0.1
   consumer:
     retry:
       max-attempts: ${PAYMENT_CONSUMER_RETRY_MAX_ATTEMPTS:3}

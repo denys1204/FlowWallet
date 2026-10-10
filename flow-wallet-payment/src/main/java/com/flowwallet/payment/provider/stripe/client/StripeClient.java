@@ -3,14 +3,18 @@ package com.flowwallet.payment.provider.stripe.client;
 import com.flowwallet.payment.provider.stripe.config.StripeProperties;
 import com.stripe.exception.SignatureVerificationException;
 import com.stripe.exception.StripeException;
+import com.stripe.model.Account;
 import com.stripe.model.Balance;
 import com.stripe.model.Event;
+import com.stripe.model.ExternalAccount;
 import com.stripe.model.PaymentIntent;
 import com.stripe.model.Payout;
 import com.stripe.model.Transfer;
 import com.stripe.model.TransferReversal;
 import com.stripe.net.RequestOptions;
 import com.stripe.net.Webhook;
+import com.stripe.param.AccountCreateParams;
+import com.stripe.param.ExternalAccountCollectionCreateParams;
 import com.stripe.param.PaymentIntentCreateParams;
 import com.stripe.param.PayoutCreateParams;
 import com.stripe.param.PayoutListParams;
@@ -44,6 +48,26 @@ public class StripeClient {
      */
     public PaymentIntent retrievePaymentIntent(String paymentIntentId) throws StripeException {
         return PaymentIntent.retrieve(paymentIntentId, requestOptions(null));
+    }
+
+    public Account createAccount(AccountCreateParams params, String idempotencyKey) throws StripeException {
+        return Account.create(params, requestOptions(idempotencyKey));
+    }
+
+    public Account retrieveAccount(String accountId) throws StripeException {
+        return Account.retrieve(accountId, requestOptions(null));
+    }
+
+    /**
+     * Attaches a bank account to a connected account. stripe-java's static API creates one only through the
+     * account's own external account list, so the caller passes the account it retrieved.
+     */
+    public ExternalAccount createExternalAccount(
+            Account account,
+            ExternalAccountCollectionCreateParams params,
+            String idempotencyKey
+    ) throws StripeException {
+        return account.getExternalAccounts().create(params, requestOptions(idempotencyKey));
     }
 
     /**

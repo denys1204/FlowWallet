@@ -14,10 +14,10 @@ consequences.
 
 ## Architecture
 
-FlowWallet is a 6-module Maven reactor. A reactive API Gateway sits in front of two servlet-based domain
-services. Wallet Service calls Payment Service over HTTP to start a deposit, directly rather than through
-the gateway, and Payment Service reports the outcome back over Kafka. The gateway exposes all of Wallet
-Service but only the webhook path of Payment Service.
+FlowWallet is a 6-module Maven reactor. A reactive API Gateway sits in front of two servlet-based domain services.
+Wallet Service calls Payment Service over HTTP to start a deposit and to relay the caller's bank account, directly
+rather than through the gateway, and Payment Service reports the outcome back over Kafka. The gateway exposes all of
+Wallet Service but only the webhook path of Payment Service.
 
 ```mermaid
 flowchart LR
@@ -36,7 +36,7 @@ flowchart LR
     Client -->|X-User-Id| GW
     GW -->|/api/wallets/**| WS
     GW -->|/api/payments/webhooks/**| PS
-    WS -->|POST /api/payments/intent<br/>direct HTTP, X-User-Id| PS
+    WS -->|POST /api/payments/intent<br/>PUT, GET /api/payments/payout-accounts<br/>direct HTTP, X-User-Id| PS
     PS <-->|create / retrieve PaymentIntent| Stripe
     Stripe -->|webhook| GW
     PS -->|outbox → publish| T
@@ -52,13 +52,13 @@ flowchart LR
   waits for an upstream to answer or to connect (`GATEWAY_HTTPCLIENT_RESPONSE_TIMEOUT` /
   `_CONNECT_TIMEOUT_MS`), because Spring Cloud Gateway's Netty client otherwise never times out a response
   and its connection pool is unbounded.
-- Payment Service handles the Stripe integration, transaction persistence, webhooks, the outbox and the payouts it
-  accepts from Wallet Service's withdrawal commands. It knows nothing about wallets: it takes an instruction and
-  answers.
-- Wallet Service owns wallets, balances and balance history (`wallet_db`) and serves `/api/wallets`. It
-  starts a deposit by checking that the wallet exists and then asking Payment Service for a PaymentIntent.
-  It consumes `payment.events`, crediting each completed payment exactly once and recording failed ones
-  without moving money. A transfer between two wallets stays inside it: Payment Service and Kafka take no
+- Payment Service handles the Stripe integration, transaction persistence, webhooks, the outbox, the payouts it accepts
+  from Wallet Service's withdrawal commands, and the connected account and bank account each user sets. It knows nothing
+  about wallets: it takes an instruction and answers.
+- Wallet Service owns wallets, balances and balance history (`wallet_db`) and serves `/api/wallets`. It starts a deposit
+  by checking that the wallet exists and then asking Payment Service for a PaymentIntent, and relays the caller's bank
+  account to Payment Service. It consumes `payment.events`, crediting each completed payment exactly once and recording
+  failed ones without moving money. A transfer between two wallets stays inside it: Payment Service and Kafka take no
   part.
 - Platform holds shared servlet-side infrastructure built on Spring Web MVC: RFC 9457 error handling and the
   `@CurrentUserId` resolver (both auto-configured, servlet apps only), plus an `@Iso4217Currency`
@@ -97,8 +97,8 @@ explained in [ADR 0002](docs/adr/0002-module-boundaries.md) and the contract rul
 | Module | Port | Responsibility |
 |--------|------|----------------|
 | `flow-wallet-gateway` | 8080 | Route `/api/wallets/**` to Wallet Service and only `/api/payments/webhooks/**` to Payment Service; CORS. |
-| `flow-wallet-service` | 8081 | List, open and read wallets; cursor-paged balance history; deposit initiation (calls Payment Service over HTTP); transfers between two users' wallets in one currency; Kafka consumer that credits balances idempotently, with a dead-letter topic. |
-| `flow-wallet-payment` | 8082 | Payment intents (internal), Stripe webhooks, transactional outbox → Kafka; Kafka consumer that accepts withdrawal commands as payouts, with a dead-letter topic. |
+| `flow-wallet-service` | 8081 | List, open and read wallets; cursor-paged balance history; deposit initiation (calls Payment Service over HTTP); transfers between two users' wallets in one currency; the caller's bank account, relayed to Payment Service; Kafka consumer that credits balances idempotently, with a dead-letter topic. |
+| `flow-wallet-payment` | 8082 | Payment intents and bank accounts (internal), Stripe webhooks, transactional outbox → Kafka; Kafka consumer that accepts withdrawal commands as payouts, with a dead-letter topic. |
 | `flow-wallet-platform` | (library) | RFC 9457 error handling, `@CurrentUserId` auto-configuration, `@Iso4217Currency`, the `X-User-Id` header constant. |
 | `flow-wallet-outbox` | (library) | Transactional outbox: the `outbox_events` entity and its claim queries, the send after the commit, the poller with its reaper and cleanup, the `outbox` endpoint and the `outbox.events.failed` gauge. |
 | `flow-wallet-contract` | (library) | `PaymentCompletedEvent`, `PaymentFailedEvent`, the payout events and `WithdrawalRequestedEvent`, the `payment.events` and `wallet.withdrawals` topics, the `eventType` header and its values. |

@@ -1,6 +1,8 @@
 package com.flowwallet.payment.provider;
 
+import com.flowwallet.payment.provider.dto.PayoutAccountHolder;
 import com.flowwallet.payment.provider.dto.PayoutCallResult;
+import com.flowwallet.payment.provider.dto.ProviderBankAccount;
 import com.flowwallet.payment.provider.dto.ProviderPayout;
 import com.flowwallet.payment.provider.dto.ProviderTransfer;
 
@@ -9,9 +11,9 @@ import java.time.Instant;
 import java.util.List;
 
 /**
- * Moves a withdrawal's money out in three steps: a transfer from the platform to the user's connected account, a
- * payout from that account to the user's bank, and, when the payout fails, a reversal of the transfer back to the
- * platform.
+ * Opens the user's connected account and attaches their bank account, then moves a withdrawal's money out in three
+ * steps: a transfer from the platform to the connected account, a payout from that account to the user's bank, and,
+ * when the payout fails, a reversal of the transfer back to the platform.
  * <p>
  * A create call reports a definite refusal only when the provider certainly created nothing. Any other failure leaves
  * the outcome unknown: the caller keeps the key generation and looks for the object before it creates again. A read
@@ -20,6 +22,22 @@ import java.util.List;
  * See docs/adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md.
  */
 public interface PayoutProvider {
+    /**
+     * Opens the connected account a user's payouts go through, with no bank account yet. The key and the terms'
+     * acceptance time come from the reserved row, so a retry sends the same parameters.
+     *
+     * @return the provider's id for the account
+     */
+    PayoutCallResult<String> createAccount(String accountKey, Instant tosAcceptedAt, PayoutAccountHolder holder);
+
+    /**
+     * Attaches the bank account a single-use token stands for as the account's default for its currency. A refusal
+     * means the token itself was refused.
+     *
+     * @return the account's default bank account for that currency after the attach
+     */
+    PayoutCallResult<ProviderBankAccount> attachBankAccount(String accountId, String accountKey, String token);
+
     /**
      * The platform's balance in the currency that a transfer can use now; zero when the provider holds none.
      */

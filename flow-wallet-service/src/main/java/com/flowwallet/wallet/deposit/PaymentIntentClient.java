@@ -7,7 +7,7 @@ import org.springframework.web.service.annotation.HttpExchange;
 import org.springframework.web.service.annotation.PostExchange;
 
 /**
- * The wallet's one outbound call.
+ * The call that starts a deposit.
  * <p>
  * The caller's id is an explicit parameter. An interceptor reading request-scoped state would send an empty
  * header, with no error, once the call leaves the request thread. See docs/adr/0013-deposit-initiation.md.

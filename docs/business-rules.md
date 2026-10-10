@@ -48,8 +48,8 @@ Details: [API reference](api.md#wallet-service). Reasoning:
 
 ## Deposits
 
-- A deposit tops up a wallet the user already holds, in that wallet's currency. The client pays Stripe
-  directly, so payment details never reach the wallet.
+- A deposit tops up a wallet the user already holds, in that wallet's currency. The client pays Stripe directly, so
+  payment details never reach the wallet.
 - A deposit is paid by card. Other methods Stripe offers, such as bank debits or payments that redirect to a
   bank's page, are not accepted.
 - The balance changes when Stripe confirms the payment. Starting a deposit moves no money.
@@ -83,6 +83,21 @@ Details: [deposit flow](../ARCHITECTURE.md#end-to-end-deposit-flow), [API refere
 Details: [transfers](../ARCHITECTURE.md#transfers-between-wallets), [API reference](api.md#wallet-service).
 Reasoning: [ADR 0014](adr/0014-transfers-in-one-local-transaction.md),
 [ADR 0011](adr/0011-wallet-row-locking.md).
+
+## Bank account
+
+- A user sets one bank account per currency to receive withdrawals. It belongs to the user, whatever wallets
+  they hold.
+- The bank details stay at Stripe. The client turns them into a single-use Stripe token, and FlowWallet sees only
+  the token, Stripe's ids and the last four digits. Raw bank numbers are refused.
+- Setting a bank account needs the user's acceptance of Stripe's Connected Account Agreement. The first one opens
+  the user's connected account at Stripe.
+- A new token replaces the bank account for its currency. A token works once: a refused token needs a new one, and
+  repeating the token that was last applied returns the stored answer.
+- A bank account is ready when Stripe can pay out to it now.
+
+Details: [API reference](api.md#wallet-service). Reasoning:
+[ADR 0035](adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md).
 
 ## Idempotency keys
 

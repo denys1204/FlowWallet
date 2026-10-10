@@ -128,4 +128,21 @@ class StripePropertiesTest {
         runner.withPropertyValues("stripe.payment-method-types=" + value)
                 .run(context -> assertThat(context).hasFailed());
     }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"sk_live_unit-test-key", "pk_test_unit-test-key", ""})
+    void anythingButATestModeSecretKeyFailsStartup(String key) {
+        // Guards a live key reaching a service that opens connected accounts with a fake identity, and a publishable
+        // key that would fail every call at runtime instead of at startup.
+        runner.withPropertyValues("stripe.api.key=" + key)
+                .run(context -> assertThat(context).hasFailed());
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"sk_test_unit-test-key", "rk_test_unit-test-key"})
+    void aTestModeSecretOrRestrictedKeyStarts(String key) {
+        // Guards refusing the restricted test keys a deployment may use instead of the full secret key.
+        runner.withPropertyValues("stripe.api.key=" + key)
+                .run(context -> assertThat(context).hasNotFailed());
+    }
 }

@@ -1,10 +1,10 @@
 # FlowWallet HTTP API
 
-This file lists the HTTP endpoints FlowWallet exposes: the wallet endpoints behind the gateway, the Stripe
-webhook, and the internal Payment Service call that starts a deposit. It also covers the error format the
-wallet and payment services share. For how the services fit together, see
-[ARCHITECTURE.md](../ARCHITECTURE.md); for the database tables behind these endpoints, see
-[the data model](data-model.md); for running the services locally, see [development](development.md).
+This file lists the HTTP endpoints FlowWallet exposes: the wallet endpoints behind the gateway, the Stripe webhook, and
+the internal Payment Service calls that start a deposit and set a bank account. It also covers the error format the
+wallet and payment services share. For how the services fit together, see [ARCHITECTURE.md](../ARCHITECTURE.md); for the
+database tables behind these endpoints, see [the data model](data-model.md); for running the services locally, see
+[development](development.md).
 
 ## API reference
 
@@ -42,10 +42,20 @@ whitespace is ignored, and an empty string counts as a missing amount.
 | `GET /api/wallets/{currency}/history?before={entryNo}&limit={n}` | (none) | `200` `{items, nextBefore}`, newest first |
 | `POST /api/wallets/{currency}/deposits` | `{"amount": "50.00"}` + `Idempotency-Key` header | `200` `{reference, provider, providerData}` |
 | `POST /api/wallets/{currency}/transfers` | `{"to": "<user id>", "amount": "25.00"}` + `Idempotency-Key` header | `200` `{reference, to, amount, currency, balanceAfter}` |
+| `PUT /api/wallets/bank-account` | `{"token": "btok_...", "tosAccepted": true}` | `200` `{state, last4, currency}`; `400` not a bank token, terms not accepted, or Stripe refused the token; `502` Payment Service or Stripe gave no settling answer |
+| `GET /api/wallets/bank-account` | (none) | `200` `{state, last4, currency}`, `NOT_SET` with nulls when none is set |
 
 On every wallet endpoint a missing or invalid `X-User-Id` gets `401` before the body or any parameter is
-checked. `POST /api/wallets`, deposits and transfers produce only JSON, so an `Accept` header that rules it out
-gets `406` before anything is created.
+checked. `POST /api/wallets`, deposits, transfers and `PUT /api/wallets/bank-account` produce only JSON, so an
+`Accept` header that rules it out gets `406` before anything is created.
+
+The bank account is the user's, not a wallet's, and withdrawals are paid out to it. The client creates a Stripe bank
+account token with the publishable key, so bank details never reach FlowWallet, and sends only the token with
+`tosAccepted: true`, the user's acceptance of Stripe's Connected Account Agreement. Wallet Service relays both routes to
+Payment Service and stores nothing. `state` is `READY` when a payout can go to the bank account now and `NOT_SET`
+otherwise. A new token replaces the bank account for its currency. A `400` for a refused token needs a new token,
+because Stripe accepts a token once; after a `502`, retry with the same token, which is answered from Payment Service's
+row if the first attempt went through ([ADR 0035](adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md)).
 
 Every movement on a wallet has an `entryNo`: the wallet's movements are numbered 1, 2, 3 in the order they
 committed, with no gaps. History is sorted by it, newest first, so the first page's first `balanceAfter` is
@@ -234,6 +244,32 @@ Stripe. The intent offers only the payment methods in `STRIPE_PAYMENT_METHOD_TYP
   of Stripe's currency page in `StripeChargeLimits`. Breaking any of these gives a `400` before a transaction
   row is written.
 
+```
+PUT /api/payments/payout-accounts
+X-User-Id: <uuid>
+Content-Type: application/json
+
+{"token": "btok_1PxYz...", "tosAccepted": true}
+
+GET /api/payments/payout-accounts
+X-User-Id: <uuid>
+```
+
+These set and read the caller's bank account for withdrawals. Both return `{state, last4, currency}`: `state` is
+`READY` when a payout can go to the bank account now and `NOT_SET` otherwise, `last4` the bank account's last four
+digits and `currency` its currency. A caller with no bank account gets `NOT_SET` with `last4` and `currency` null
+([ADR 0035](adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md)).
+
+- `token` is a Stripe bank account token (`btok_`) the client creates with the publishable key, so bank details
+  never reach FlowWallet. Anything else is a `400` that does not quote it.
+- `tosAccepted` must be `true`: the user accepts Stripe's Connected Account Agreement, which opening their
+  connected account needs. Anything else is a `400`.
+- The first request opens the user's connected account. Every request with another token attaches it as the default bank
+  account for the token's currency, replacing the previous one. A request with the token last applied is answered from
+  the stored row, because Stripe accepts a token once.
+- `400` when Stripe refuses the token (it does not exist, it was used already, or the bank account cannot take
+  payouts): create a new token. `502` when Stripe gives no answer that settles it: retry with the same token.
+
 ## Error responses
 
 The wallet and payment services return errors as RFC 9457 `application/problem+json`, produced by a shared
@@ -263,16 +299,16 @@ The status mapping lives in one place, and each status stands for one remedy
 ([ADR 0016](adr/0016-error-model-and-status-codes.md)):
 
 - `401`: missing or malformed `X-User-Id` (blank, over 64 characters, not a version 4 or 7 UUID).
-- `400`: invalid request, unknown provider, non-ISO-4217 currency, a new wallet in a code with no minor unit,
-  missing or non-UUID `Idempotency-Key`, a deposit Payment Service refuses (its message passed on, including
-  a currency Stripe doesn't charge, an amount below Stripe's minimum, and a payment Stripe refused, whose key
-  is spent), a transfer `to` that isn't a version 4 or 7 UUID, a transfer amount off its currency's grid or
-  too large for a balance, a transfer to oneself, a missing, malformed or invalid webhook signature, or any
-  webhook while no signing secret is configured.
+- `400`: invalid request, unknown provider, non-ISO-4217 currency, a new wallet in a code with no minor unit, missing or
+  non-UUID `Idempotency-Key`, a deposit Payment Service refuses (its message passed on, including a currency Stripe
+  doesn't charge, an amount below Stripe's minimum, and a payment Stripe refused, whose key is spent), a transfer `to`
+  that isn't a version 4 or 7 UUID, a transfer amount off its currency's grid or too large for a balance, a transfer to
+  oneself, a bank account request without a bank token or the terms accepted, a bank token Stripe refuses, a missing,
+  malformed or invalid webhook signature, or any webhook while no signing secret is configured.
 - `404`: wallet not found. Wallet lookups are scoped to the caller, so it is never `403`. On a transfer it
   always means the caller's own wallet; a recipient without a wallet gets `422`.
-- `406`: a transfer, a deposit or a wallet opening whose `Accept` header rules out JSON. It is refused before
-  anything runs.
+- `406`: a transfer, a deposit, a wallet opening or a bank account request whose `Accept` header rules out JSON. It is
+  refused before anything runs.
 - `409`: transaction reference already in use (another user, different terms, or already paid), wallet
   already exists, `Idempotency-Key` reused for a different or completed deposit or for a different transfer.
 - `413`: a webhook body larger than `PAYMENT_WEBHOOK_MAX_PAYLOAD_SIZE`, refused before its signature is
@@ -281,9 +317,9 @@ The status mapping lives in one place, and each status stands for one remedy
   request is well-formed and its key unspent, and the remedy is a smaller amount, a top-up or another
   recipient. On a transfer it is kept apart from `409`, whose remedy there is a new key, because without a
   `type` the status is all a client can branch on.
-- `502`: upstream failure, meaning the payment provider failing (not refusing), or Payment Service being
-  unreachable, timing out, failing to start the payment or answering unexpectedly. The detail says which.
-  Retrying a deposit with the same key is safe.
+- `502`: upstream failure, meaning the payment provider failing (not refusing), or Payment Service being unreachable,
+  timing out, failing to start the payment or to complete a bank account request, or answering unexpectedly. The detail
+  says which. Retrying a deposit with the same key, or a bank account with the same token, is safe.
 - `503`: a transfer that lost a lock or a version check (a deadlock, a lock wait that timed out, a version
   conflict), which the lock order is meant to rule out, or Payment Service's answer to a deposit whose twin
   request with the same key is still starting the payment (the wallet turns that one into a `502`). In these

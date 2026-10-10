@@ -22,14 +22,15 @@ import java.time.Duration;
 @ConfigurationProperties(prefix = "wallet.payment")
 public class WalletPaymentProperties {
     /**
-     * Payment Service's own address, not the gateway's, which has no route to the intent endpoint.
+     * Payment Service's own address, not the gateway's, which has no route to the intent or bank account endpoints.
      * See docs/adr/0013-deposit-initiation.md.
      */
     @NotBlank
     private String baseUrl = "http://localhost:8082";
 
     /**
-     * A zero timeout would fail every deposit at once with a 502 while health stays green, so startup refuses it.
+     * A zero timeout would fail every call to Payment Service at once with a 502 while health stays green, so
+     * startup refuses it.
      */
     @NotNull
     @DurationMin(millis = 1, message = "wallet.payment.connect-timeout must be at least 1ms")
@@ -37,7 +38,9 @@ public class WalletPaymentProperties {
 
     /**
      * Long enough for Payment Service's own call to the provider, whose budget ({@code STRIPE_API_*}) is set to
-     * end first. A wedged service accepts the connection and never answers, so only this bound ends the wait.
+     * end first. A bank account request makes up to four such calls and can outlast it; each Stripe write is keyed,
+     * so the caller's retry is safe. A wedged service accepts the connection and never answers, so only this bound
+     * ends the wait.
      * See docs/adr/0024-deposit-initiation-settles-its-own-races.md.
      */
     @NotNull

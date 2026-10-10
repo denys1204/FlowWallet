@@ -40,15 +40,15 @@ timeouts of [0024](0024-deposit-initiation-settles-its-own-races.md).
 
 A user who sets a bank account gets one connected account: v1 Accounts with `controller` (no Stripe dashboard; the
 platform collects requirements and carries fees and losses), an individual, the `full` agreement with only the
-`transfers` capability, and a manual payout schedule. The country and the test identity, including the IP address
-that accepts Stripe's terms, come from `PayoutProperties`, because the services never see the client's address; the
-identity gives `product_description` and `mcc` instead of a URL. `PayoutProperties` fails startup unless the Stripe
-key starts with `sk_test_` or `rk_test_`, because the identity is fake. A `payout_accounts` row (migration
+`transfers` capability, and a manual payout schedule. The country and the test identity, including the IP address that
+accepts Stripe's terms, come from `PayoutProperties`, because the services never see the client's address; the identity
+gives `product_description` and `mcc` instead of a URL. Startup fails unless the Stripe key starts with `sk_test_` or
+`rk_test_` (`StripeProperties`), because the identity is fake. A `payout_accounts` row (migration
 `008-create-payout-accounts`, one per user) is reserved first, with a server-generated `account_key`; a lost race reads
-the winner ([0007](0007-unique-constraints-decide.md)). The account is created under `acct-<account_key>` without a
-bank account, and every token, the first one included, is attached afterwards under `bank-<account_key>-<token>` as
-the default external account for its currency. The row stores `tos_accepted_at` and sends it verbatim, so a retry
-under either key sends the same parameters.
+the winner ([0007](0007-unique-constraints-decide.md)). The account is created under `acct-<account_key>` without a bank
+account, and every token, the first one included, is attached afterwards under `bank-<account_key>-<token>` as the
+default external account for its currency. The row stores `tos_accepted_at` and sends it verbatim, so a retry under
+either key sends the same parameters.
 
 Bank details reach FlowWallet only as a Stripe bank token (`btok_`) that the client makes with the publishable key.
 FlowWallet sees tokens, Stripe ids and the last four digits, and the rule that payment details never reach the wallet

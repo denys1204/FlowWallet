@@ -151,9 +151,9 @@ comments. The main ones:
 | `KAFKA_TOPIC_WALLET_WITHDRAWALS_DLT_PARTITIONS` / `_REPLICAS` | `3` / `1` | Payment: applied when `wallet.withdrawals.payment.DLT` is created; on an existing topic only a higher partition count takes effect |
 | `WALLET_CONSUMER_RETRY_MAX_ATTEMPTS` | `3` | Wallet: retries before dead-lettering, with backoff from `WALLET_CONSUMER_RETRY_INITIAL_INTERVAL_MS` (`500`) up to `_MAX_INTERVAL_MS` (`10000`, at most `60000`) by `_MULTIPLIER` (`2.0`). The backoff sleeps on the consumer thread without polling, so the cap stays well below Kafka's `max.poll.interval.ms` (`300000`) |
 | `WALLET_PAYMENT_BASE_URL` | `http://localhost:${PAYMENT_SERVICE_PORT}` | Wallet (Payment Service's own address, not the gateway's) |
-| `WALLET_PAYMENT_CONNECT_TIMEOUT` / `_READ_TIMEOUT` | `2s` / `10s` | Wallet; at least 1ms each |
+| `WALLET_PAYMENT_CONNECT_TIMEOUT` / `_READ_TIMEOUT` | `2s` / `10s` | Wallet; at least 1ms each. A bank account request makes up to four Stripe calls in a row and can outlast the read timeout; the wallet then answers `502`, and the retry with the same token is safe, because each Stripe write is keyed and a read changes nothing |
 | `WALLET_PAYMENT_PROVIDER` | `STRIPE` | Wallet; `STRIPE` is the only accepted value |
-| `STRIPE_API_KEY` / `STRIPE_WEBHOOK_SECRET` | `sk_test_dummy` / none (webhooks disabled) | Payment |
+| `STRIPE_API_KEY` / `STRIPE_WEBHOOK_SECRET` | `sk_test_dummy` / none (webhooks disabled) | Payment: only a test-mode key (`sk_test_` or `rk_test_`) starts |
 | `STRIPE_WEBHOOK_TOLERANCE_SECONDS` | `300` | Payment: how old a webhook's signed timestamp may be |
 | `STRIPE_PAYMENT_METHOD_TYPES` | `card` | Payment: the methods a deposit can be paid with. `card` is the only known one; any other name, or an empty value, fails startup |
 | `STRIPE_API_CONNECT_TIMEOUT` / `_READ_TIMEOUT` | `2s` / `6s` | Payment: how long a Stripe API call may take to connect and to answer |
@@ -178,17 +178,20 @@ Service timeout below 1ms, a provider other than `STRIPE`, a `wallet.withdrawals
 replicas, or an outbox batch size, attempt count, backoff, retention or stuck-processing threshold below 1 or a backoff
 base above its maximum. The payment service does the same for a deposit range that is inverted, not positive, or too
 wide for `NUMERIC(19,4)`, a Stripe timeout below 1ms or a negative Stripe retry count, a webhook tolerance that isn't
-positive, a payment method list that is empty or names a method it doesn't know, a webhook size limit outside 1B to
-16MB, the same outbox values, a reconciler interval below 1000 ms, a reconciler batch below 1, a reconciler `min-age` or
-`max-age` below 1s or a `min-age` that is not shorter than the `max-age`, a `payment.events` topic with more in-sync
-replicas than replicas, a `wallet.withdrawals.payment.DLT` topic with fewer than one partition or replica, consumer
-retry values the wallet would refuse, and a payout currency list that is empty, names a code that is not an upper-case
-ISO 4217 code, or has a minimum that is missing, not positive or off the payout grid. A missing webhook secret doesn't
-stop it starting; it only disables webhooks.
+positive, a Stripe key that is not a test-mode key (`sk_test_` or `rk_test_`), a payment method list that is empty or
+names a method it doesn't know, a webhook size limit outside 1B to 16MB, the same outbox values, a reconciler interval
+below 1000 ms, a reconciler batch below 1, a reconciler `min-age` or `max-age` below 1s or a `min-age` that is not
+shorter than the `max-age`, a `payment.events` topic with more in-sync replicas than replicas, a
+`wallet.withdrawals.payment.DLT` topic with fewer than one partition or replica, consumer retry values the wallet would
+refuse, a payout currency list that is empty, names a code that is not an upper-case ISO 4217 code, or has a minimum
+that is missing, not positive or off the payout grid, and a connected account identity with a blank field, a date of
+birth that is not in the past, a country that is not two capital letters, a merchant category code that is not four
+digits or a terms IP that is not an IPv4 address. A missing webhook secret doesn't stop it starting; it only disables
+webhooks.
 
 ## Testing
 
-There are 895 tests, all green: 468 in the payment service, 321 in the wallet service, 53 in the outbox module, 44 in
+There are 955 tests, all green: 510 in the payment service, 339 in the wallet service, 53 in the outbox module, 44 in
 platform and 9 in the gateway. The gateway's tests bind its own `application.yml`, so a YAML regression that drops the
 response or connect timeout, or binds the gateway beyond loopback, fails there rather than in a live request; they also
 check that `BindAddressCheck` runs when the application is ready, warns for `0.0.0.0`, a LAN address and no address at
@@ -225,15 +228,34 @@ dead-lettered, a command the payout terms refuse returned with `TERMS_REFUSED` a
 after the row, any other failure dead-lettered only after its retries, each dead letter counted, and the dead-letter
 topic created with unlimited retention.
 
-For the payout calls to Stripe they cover the unit each amount is sent in, the platform's available card funds read for
-one currency in major units, the connected account named on a payout and its lookups, the transfer group and the
-metadata that carry the reference and nothing else, the idempotency key with its step and key generation, a refusal
-counted as definite only for a listed code on a 400 or 402 (a 409, a 404, a 5xx, a rate limit, a timeout or an unlisted
-code leaves the outcome unknown, and an idempotency error is a defect), a payout's bank account, funds and daily limit
-refusals told apart, the payout lookup matched on its metadata, a status this service does not know treated as one whose
-money may still reach the bank, a failed read never taken as an empty answer, and a reversal that sends only the part
-not yet reversed or reports the earlier reversal labelled with the reference, and a page that fails mid-list surfacing
-as a lookup failure.
+For the payout calls to Stripe they cover the connected account opened under its key with the configured identity, a
+manual payout schedule and no user id, a bank token attached as the default for its currency, the account's default bank
+account for that currency read back after the attach (another request's included) and ready only when the account pays
+out and its status is one Stripe pays out to, a refused token told apart from an unsettled attach, the unit each amount
+is sent in, the platform's available card funds read for one currency in major units, the connected account named on a
+payout and its lookups, the transfer group and the metadata that carry the reference and nothing else, the idempotency
+key with its step and key generation, a refusal counted as definite only for a listed code on a 400 or 402 (a 409, a
+404, a 5xx, a rate limit, a timeout or an unlisted code leaves the outcome unknown, and an idempotency error is a
+defect), a payout's bank account, funds and daily limit refusals told apart, the payout lookup matched on its metadata,
+a status this service does not know treated as one whose money may still reach the bank, a failed read never taken as an
+empty answer, and a reversal that sends only the part not yet reversed or reports the earlier reversal labelled with the
+reference, and a page that fails mid-list surfacing as a lookup failure.
+
+For Payment Service's bank account endpoint they cover the first request reserving the row, opening the account under
+its key and acceptance time and attaching the token, a later request attaching only the new token, the token last
+applied answered from the row, a lost reservation continuing with the winner's row, a refused token answered `400` with
+nothing recorded, an unsettled attach or an account Stripe did not open answered `502`, a bank account outside the
+payout currencies recorded as not ready, the terms accepted at a whole second, a caller without a row read as `NOT_SET`,
+`tosAccepted` and the `btok_` pattern checked before the service runs (a refused value is never quoted), `401` before
+the body, the field names on both sides of the relay, and no log line naming the user.
+
+For the wallet's bank account relay they cover the caller's token and acceptance reaching Payment Service, a refused
+token passed on as a `400` in Payment Service's words, any other refusal treated as the wallet's own fault and a `502`,
+a failure, a timeout or an unreadable answer answered `502` with a retry under the same token (and a plain retry for a
+read), an answer without a body treated as unreadable, the real client proxy called over HTTP, a `406` before Stripe is
+called, the `btok_` pattern and `tosAccepted` checked before the relay (a refused value is never quoted), `401` before
+the body, no log line naming the user or the token on any failure path, and the bank account client built from Boot's
+builder.
 
 For transfers they cover the lock order in both directions, the key judged only after both locks, and no other wallet
 read in the transaction. With the sender sorting first and last, they cover a retry that still gets its receipt after

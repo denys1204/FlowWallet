@@ -15,7 +15,6 @@ import org.springframework.web.client.RestClientException;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.Locale;
-import java.util.StringJoiner;
 
 /**
  * Starts a deposit into a wallet the caller actually holds.
@@ -88,7 +87,9 @@ public class DepositService {
             return new ConflictingDepositException();
         }
         if (e.getStatusCode() == HttpStatus.BAD_REQUEST) {
-            return new DepositRejectedException(detailFrom(e));
+            return new DepositRejectedException(
+                    PaymentServiceProblems.reasonOf(e, objectMapper, "Payment Service rejected the deposit.")
+            );
         }
         // Any other 4xx is a fault in the wallet's own request, not the caller's, so it is not passed through.
         log.error(
@@ -97,32 +98,5 @@ public class DepositService {
                 e.getResponseBodyAsString()
         );
         return new PaymentUnavailableException("Payment Service refused the request.");
-    }
-
-    /**
-     * Pulls the reason out of the problem+json body, preferring the field-level {@code errors} over
-     * {@code detail}: for a bean-validation failure, {@code detail} is Spring's generic "Invalid request
-     * content." and the crossed bound is only in {@code errors}. Anything unexpected falls back to plain wording
-     * rather than throwing. See docs/adr/0013-deposit-initiation.md.
-     */
-    private String detailFrom(HttpClientErrorException e) {
-        try {
-            var body = objectMapper.readTree(e.getResponseBodyAsString());
-
-            var errors = body.get("errors");
-            if (errors != null && errors.isArray() && !errors.isEmpty()) {
-                var joined = new StringJoiner("; ");
-                errors.forEach(error -> joined.add(error.stringValue()));
-                return joined.toString();
-            }
-
-            var detail = body.get("detail");
-            if (detail != null && !detail.stringValue().isBlank()) {
-                return detail.stringValue();
-            }
-        } catch (RuntimeException ignored) {
-            // Falls through to the generic wording below.
-        }
-        return "Payment Service rejected the deposit.";
     }
 }

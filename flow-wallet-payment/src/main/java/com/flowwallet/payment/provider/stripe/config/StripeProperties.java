@@ -1,6 +1,7 @@
 package com.flowwallet.payment.provider.stripe.config;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
@@ -71,6 +72,15 @@ public class StripeProperties {
          */
         @PositiveOrZero(message = "stripe.api.max-network-retries must not be negative")
         private int maxNetworkRetries = 0;
+
+        /**
+         * FlowWallet runs in Stripe test mode only, and every connected account it opens carries a fake identity, so
+         * a live key must never reach it. See docs/adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md.
+         */
+        @AssertTrue(message = "stripe.api.key must be a test-mode key: FlowWallet runs in Stripe test mode only")
+        public boolean isTestModeKey() {
+            return key != null && (key.startsWith("sk_test_") || key.startsWith("rk_test_"));
+        }
     }
 
     @Getter

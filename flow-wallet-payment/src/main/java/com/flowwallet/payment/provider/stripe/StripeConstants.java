@@ -14,6 +14,11 @@ public final class StripeConstants {
      */
     public static final String META_WITHDRAWAL_REF = "flowwallet_withdrawal";
 
+    /**
+     * Metadata key of a connected account, holding its server-generated account key and never a user id.
+     */
+    public static final String META_PAYOUT_ACCOUNT = "flowwallet_account";
+
     public static final String EVENT_PAYMENT_SUCCEEDED = "payment_intent.succeeded";
 
     public static final String EVENT_PAYMENT_FAILED = "payment_intent.payment_failed";

@@ -41,10 +41,10 @@ database-per-service isolation; and clean module boundaries.
 
 ## How it works
 
-FlowWallet runs as six Maven modules. A reactive API gateway sits in front of two servlet-based domain
-services, and each service keeps its own Postgres database. Wallet Service calls Payment Service directly
-over HTTP to start a deposit, and Payment Service reports the outcome back through Kafka once Stripe
-confirms the payment.
+FlowWallet runs as six Maven modules. A reactive API gateway sits in front of two servlet-based domain services, and
+each service keeps its own Postgres database. Wallet Service calls Payment Service directly over HTTP to start a deposit
+and to relay the caller's bank account, and Payment Service reports the outcome back through Kafka once Stripe confirms
+the payment.
 
 ```mermaid
 flowchart LR
@@ -63,7 +63,7 @@ flowchart LR
     Client -->|X-User-Id| GW
     GW -->|/api/wallets/**| WS
     GW -->|/api/payments/webhooks/**| PS
-    WS -->|POST /api/payments/intent<br/>direct HTTP, X-User-Id| PS
+    WS -->|POST /api/payments/intent<br/>PUT, GET /api/payments/payout-accounts<br/>direct HTTP, X-User-Id| PS
     PS <-->|create / retrieve PaymentIntent| Stripe
     Stripe -->|webhook| GW
     PS -->|outbox → publish| T
