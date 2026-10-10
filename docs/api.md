@@ -667,24 +667,8 @@ A return from `REVERSING` credits the wallet with the full amount while the part
 brought back stays in the connected account. `leftInConnectedAccount` states that part, and it is the platform's loss. A
 return from `ACCEPTED` costs nothing, because no transfer holds money.
 
-Prefer `requeue` once the cause has cleared: Stripe reachable again, a limit lifted, a live payout reported failed or
-canceled, or, from `TRANSFERRED`, one live payout with the payout's terms, which a `reverse` points to. The executor
-repeats the step under the same key generation after looking for what Stripe holds, so it adopts what an earlier try
-created and completes the payout. A return pays the wallet back at once, and `reverse` brings the transfer back out of
-the connected account once no payout of it can reach the bank.
-
-Some payouts still need correction by hand:
-
-- A payout in `REVERSING` with a second payout that was paid. The money reached the bank and the wallet shows
-  `RETURN_PENDING`, so both rows need correcting by hand
-  ([ADR 0035](adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md)).
-- A payout that may reach the bank and has other terms than the row's, from `TRANSFERRED` or `REVERSING`. Wait until
-  Stripe reports it failed or canceled, then the actions apply. When it was paid, correct the rows by hand.
-- A payout in `ACCEPTED` with stray transfers (`MULTIPLE` or `MISMATCH`). Reverse them in the Dashboard, then use
-  `return-without-reversal`, which a transfer reversed in full does not block. `requeue` keeps meeting `MULTIPLE` or
-  `MISMATCH`, because the executor's lookup counts a transfer reversed in full.
-- Objects created by hand at Stripe without the `flowwallet_withdrawal` metadata. The executor and this endpoint cannot
-  see them.
+Which action fits which cause, and the cases that still need correction by hand, are in the
+[operator runbook](operations.md#payouts-waiting-for-an-operator).
 
 ## Error responses
 

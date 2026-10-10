@@ -53,6 +53,7 @@ live in this file.
 | `docs/data-model.md` | The schema of each service's database |
 | `docs/events.md` | Kafka topics and event contracts |
 | `docs/development.md` | Running, configuring and testing |
+| `docs/operations.md` | The operator runbook: what an operator checks and does when a withdrawal, payout or deposit is stuck |
 | `docs/adr/` | One decision that spans files, with its context and rejected alternatives |
 | `CLAUDE.md` | A summary of the architecture, each invariant as a one-line rule with its ADR, framework traps |
 | `.claude/rules/*.md` | A convention or trap for one kind of file, loaded through its `paths:` glob |

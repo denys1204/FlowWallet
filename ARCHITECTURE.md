@@ -10,6 +10,7 @@ is and its status, see [README.md](README.md); to run, configure and test it, se
 - [API reference](docs/api.md)
 - [Data model](docs/data-model.md)
 - [Kafka topics & events](docs/events.md)
+- [Operator runbook](docs/operations.md)
 
 ## Architecture
 
