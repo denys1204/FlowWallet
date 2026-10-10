@@ -3,13 +3,26 @@ package com.flowwallet.payment.provider.stripe.client;
 import com.flowwallet.payment.provider.stripe.config.StripeProperties;
 import com.stripe.exception.SignatureVerificationException;
 import com.stripe.exception.StripeException;
+import com.stripe.model.Balance;
 import com.stripe.model.Event;
 import com.stripe.model.PaymentIntent;
+import com.stripe.model.Payout;
+import com.stripe.model.Transfer;
+import com.stripe.model.TransferReversal;
 import com.stripe.net.RequestOptions;
 import com.stripe.net.Webhook;
 import com.stripe.param.PaymentIntentCreateParams;
+import com.stripe.param.PayoutCreateParams;
+import com.stripe.param.PayoutListParams;
+import com.stripe.param.TransferCreateParams;
+import com.stripe.param.TransferListParams;
+import com.stripe.param.TransferReversalCollectionCreateParams;
 import lombok.RequiredArgsConstructor;
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Component;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Wrapper for Stripe static methods to allow for easy unit testing via mocking.
@@ -34,13 +47,77 @@ public class StripeClient {
     }
 
     /**
-     * Sets the timeouts and retries on every call, so none of stripe-java's global defaults applies.
+     * The platform's balance, available and pending, per currency.
+     */
+    public Balance retrieveBalance() throws StripeException {
+        return Balance.retrieve(requestOptions(null));
+    }
+
+    public Transfer createTransfer(TransferCreateParams params, String idempotencyKey) throws StripeException {
+        return Transfer.create(params, requestOptions(idempotencyKey));
+    }
+
+    /**
+     * Every transfer the filter matches, read page by page.
+     */
+    public List<Transfer> listTransfers(TransferListParams params) throws StripeException {
+        RequestOptions options = requestOptions(null);
+        return collect(Transfer.list(params, options).autoPagingIterable(params.toMap(), options));
+    }
+
+    public Transfer retrieveTransfer(String transferId) throws StripeException {
+        return Transfer.retrieve(transferId, requestOptions(null));
+    }
+
+    /**
+     * Reverses part of a transfer the platform made. stripe-java's static API creates a reversal only through the
+     * transfer's own reversal list, so the caller passes the transfer it retrieved.
+     */
+    public TransferReversal createReversal(
+            Transfer transfer,
+            TransferReversalCollectionCreateParams params,
+            String idempotencyKey
+    ) throws StripeException {
+        return transfer.getReversals().create(params, requestOptions(idempotencyKey));
+    }
+
+    /**
+     * Pays out of the connected account, not the platform.
+     */
+    public Payout createPayout(
+            PayoutCreateParams params,
+            String idempotencyKey,
+            String stripeAccount
+    ) throws StripeException {
+        return Payout.create(params, requestOptions(idempotencyKey, stripeAccount));
+    }
+
+    /**
+     * Every payout of the connected account that the filter matches, read page by page.
+     */
+    public List<Payout> listPayouts(PayoutListParams params, String stripeAccount) throws StripeException {
+        RequestOptions options = requestOptions(null, stripeAccount);
+        return collect(Payout.list(params, options).autoPagingIterable(params.toMap(), options));
+    }
+
+    public Payout retrievePayout(String payoutId, String stripeAccount) throws StripeException {
+        return Payout.retrieve(payoutId, requestOptions(null, stripeAccount));
+    }
+
+    RequestOptions requestOptions(@Nullable String idempotencyKey) {
+        return requestOptions(idempotencyKey, null);
+    }
+
+    /**
+     * Sets the timeouts and retries on every call, so none of stripe-java's global defaults applies. A Connect call
+     * on a connected account names it as {@code stripeAccount}; a call on the platform leaves it null.
      * See docs/adr/0024-deposit-initiation-settles-its-own-races.md.
      */
-    RequestOptions requestOptions(String idempotencyKey) {
+    RequestOptions requestOptions(@Nullable String idempotencyKey, @Nullable String stripeAccount) {
         StripeProperties.Api api = stripe.getApi();
         return RequestOptions.builder()
                 .setIdempotencyKey(idempotencyKey)
+                .setStripeAccount(stripeAccount)
                 .setConnectTimeout(Math.toIntExact(api.getConnectTimeout().toMillis()))
                 .setReadTimeout(Math.toIntExact(api.getReadTimeout().toMillis()))
                 .setMaxNetworkRetries(api.getMaxNetworkRetries())
@@ -75,5 +152,22 @@ public class StripeClient {
                 stripe.getWebhook().getSecret(),
                 stripe.getWebhook().getToleranceSeconds()
         );
+    }
+
+    /**
+     * Reads every page. A page after the first is fetched inside the iterator, which wraps its
+     * {@link StripeException} in a {@code RuntimeException}; it is unwrapped so the caller sees one kind of failure.
+     */
+    static <T> List<T> collect(Iterable<T> pages) throws StripeException {
+        List<T> all = new ArrayList<>();
+        try {
+            pages.forEach(all::add);
+        } catch (RuntimeException e) {
+            if (e.getCause() instanceof StripeException stripeException) {
+                throw stripeException;
+            }
+            throw e;
+        }
+        return all;
     }
 }

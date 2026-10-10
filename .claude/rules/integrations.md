@@ -26,15 +26,20 @@ paths:
 - A deposit intent lists its payment methods (`stripe.payment-method-types`, cards only) instead of enabling
   automatic ones, so a server-side confirm needs no `return_url`
   ([ADR 0028](../../docs/adr/0028-deposits-accept-cards-only.md)).
-- `StripeClient` is the only class that calls Stripe, and every call goes through its `requestOptions`, so the
-  connect and read timeouts apply to reads such as the reconciler's as well; a read passes no idempotency key
+- `StripeClient` is the only class that calls Stripe, and every call goes through its `requestOptions`, so the connect
+  and read timeouts apply to reads such as the reconciler's as well; a read passes no idempotency key, and a Connect
+  call on a connected account (a payout, its list and its retrieval) names it as `stripeAccount`
   ([ADR 0024](../../docs/adr/0024-deposit-initiation-settles-its-own-races.md),
-  [ADR 0032](../../docs/adr/0032-pending-payments-are-rechecked-with-the-provider.md)).
-- `StripeChargeLimits` (chargeable currencies, minimum charges) is a dated copy of Stripe's currency page, like
-  the tables in `StripeCurrencyRules`; update the retrieval date with the lists. Only a 400
-  `InvalidRequestException` or a 402 `CardException` from Stripe is a refusal (400); every other
-  `StripeException` stays a 502
-  ([ADR 0022](../../docs/adr/0022-stripe-charge-rules-checked-before-the-reservation.md)).
+  [ADR 0032](../../docs/adr/0032-pending-payments-are-rechecked-with-the-provider.md),
+  [ADR 0035](../../docs/adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md)).
+- `StripeChargeLimits` (chargeable currencies, minimum charges) is a dated copy of Stripe's currency page, like the
+  tables in `StripeCurrencyRules`; update the retrieval date with the lists. Only a 400 `InvalidRequestException` or a
+  402 `CardException` from Stripe is a refusal (400); every other `StripeException` stays a 502
+  ([ADR 0022](../../docs/adr/0022-stripe-charge-rules-checked-before-the-reservation.md)). Money leaving the platform
+  needs the narrower rule in `StripeConnectPayouts`: a transfer, payout or reversal is refused for certain only on a 400
+  or 402 whose code is on that call's list, and anything else, a 409 included, leaves its outcome unknown
+  ([ADR 0035](../../docs/adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md)). Those code lists are a dated
+  copy of Stripe's error codes page as well.
 - Test values for Stripe keys and signing secrets are visibly fake and break the key shape with hyphens
   (`whsec_unit-test-signing-secret`, not a `whsec_`/`sk_test_` prefix followed by a long alphanumeric run).
   GitHub secret scanning flags anything shaped like a real key in this public repository, including the

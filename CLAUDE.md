@@ -140,6 +140,10 @@ Each invariant here is stated once and links the ADR that holds its reasoning.
   write; it claims a row with a conditional update of `last_reconciled_at` before calling Stripe, holds nothing open
   during the call, and never cancels an intent
   ([ADR 0032](docs/adr/0032-pending-payments-are-rechecked-with-the-provider.md)).
+- Money leaving the platform (a transfer, a payout, a reversal) is refused for certain only on a 400 or 402 whose code
+  is on `StripeConnectPayouts`' list for that call. Every other failure, a 409 included, leaves the outcome unknown:
+  the step keeps its key generation and looks for the object before it creates again
+  ([ADR 0035](docs/adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md)).
 - `FAILED` outbox rows are never deleted automatically; they are the dead-letter store
   ([ADR 0008](docs/adr/0008-transactional-outbox.md)).
 - A `PaymentFailedEvent` moves no money, which is why the consumer does not depend on event order

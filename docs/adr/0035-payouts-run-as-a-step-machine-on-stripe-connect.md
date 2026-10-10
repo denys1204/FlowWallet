@@ -28,8 +28,8 @@ A spike in the test-mode sandbox settled the facts the design rests on:
   key returns the same error with `Idempotent-Replayed: true`.
 - `GET /v1/transfers` filters by `transfer_group`. `GET /v1/payouts` has no metadata filter but returns the metadata.
 - Each test-mode charge pays a Stripe fee, which the platform covers. A sandbox allows 25 requests per second.
-- stripe-java 33.1.0 reports Stripe's 409 `idempotency_key_in_use` as a plain `ApiException`, and it reverses a
-  transfer only through `Transfer.getReversals().create`.
+- stripe-java 33.1.0 reports Stripe's 409 `idempotency_key_in_use` as a plain `ApiException`, and its static API
+  reverses a transfer only through `Transfer.getReversals().create`.
 
 ## Decision
 

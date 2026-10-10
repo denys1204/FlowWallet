@@ -8,6 +8,12 @@ public final class StripeConstants {
 
     public static final String META_TRANSACTION_REF = "transactionReference";
 
+    /**
+     * Metadata key of a withdrawal's Stripe objects, holding its reference. A payout list has no metadata filter, so
+     * the payouts for a reference are matched on it.
+     */
+    public static final String META_WITHDRAWAL_REF = "flowwallet_withdrawal";
+
     public static final String EVENT_PAYMENT_SUCCEEDED = "payment_intent.succeeded";
 
     public static final String EVENT_PAYMENT_FAILED = "payment_intent.payment_failed";

@@ -188,7 +188,7 @@ stop it starting; it only disables webhooks.
 
 ## Testing
 
-There are 841 tests, all green: 414 in the payment service, 321 in the wallet service, 53 in the outbox module, 44 in
+There are 895 tests, all green: 468 in the payment service, 321 in the wallet service, 53 in the outbox module, 44 in
 platform and 9 in the gateway. The gateway's tests bind its own `application.yml`, so a YAML regression that drops the
 response or connect timeout, or binds the gateway beyond loopback, fails there rather than in a live request; they also
 check that `BindAddressCheck` runs when the application is ready, warns for `0.0.0.0`, a LAN address and no address at
@@ -224,6 +224,16 @@ unreadable or invalid one dead-lettered at once), a redelivery with the same ter
 dead-lettered, a command the payout terms refuse returned with `TERMS_REFUSED` and its `PayoutReturnedEvent` written
 after the row, any other failure dead-lettered only after its retries, each dead letter counted, and the dead-letter
 topic created with unlimited retention.
+
+For the payout calls to Stripe they cover the unit each amount is sent in, the platform's available card funds read for
+one currency in major units, the connected account named on a payout and its lookups, the transfer group and the
+metadata that carry the reference and nothing else, the idempotency key with its step and key generation, a refusal
+counted as definite only for a listed code on a 400 or 402 (a 409, a 404, a 5xx, a rate limit, a timeout or an unlisted
+code leaves the outcome unknown, and an idempotency error is a defect), a payout's bank account, funds and daily limit
+refusals told apart, the payout lookup matched on its metadata, a status this service does not know treated as one whose
+money may still reach the bank, a failed read never taken as an empty answer, and a reversal that sends only the part
+not yet reversed or reports the earlier reversal labelled with the reference, and a page that fails mid-list surfacing
+as a lookup failure.
 
 For transfers they cover the lock order in both directions, the key judged only after both locks, and no other wallet
 read in the transaction. With the sender sorting first and last, they cover a retry that still gets its receipt after
