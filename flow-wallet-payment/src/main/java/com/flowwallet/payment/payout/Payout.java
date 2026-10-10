@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.jspecify.annotations.Nullable;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -15,16 +16,17 @@ import java.util.Set;
  * One withdrawal's payout under its reference, a namespace of its own apart from {@code payment_transactions}. It
  * holds the terms, the Stripe ids, the outcome and the bookkeeping of the executor's steps.
  * <p>
- * Every mutator applies one transition of ADR 0035's table and returns whether the status changed; a call from any
- * other status changes nothing, and the caller writes the outbox row only when it did. Every transition clears
- * {@code claimedUntil}, and every move into {@code ACCEPTED}, {@code TRANSFERRED} or {@code REVERSING} makes the
- * row due at once with its attempts counted from zero.
+ * Every mutator applies one transition of ADR 0035's table, as ADR 0037 extends it, and returns whether the status
+ * changed; a call from any other status changes nothing, and the caller writes the outbox row only when it did. Every
+ * transition clears {@code claimedUntil}, and every move into {@code ACCEPTED}, {@code TRANSFERRED} or
+ * {@code REVERSING} makes the row due at once with its attempts counted from zero.
  * <p>
  * {@code claimedUntil} and the {@code *AttemptedAt} columns are also written by the executor's conditional claim,
  * which raises {@code version}, and {@code lastReconciledAt} only by the reconciler's, so a writer loads the row with
  * its lock before it saves. A step's {@code *AttemptedAt} keeps the time of its first claim: an executor that finds
  * an earlier time than its own claim's looks for what Stripe may already hold before it creates anything.
- * See docs/adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md.
+ * See docs/adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md and
+ * docs/adr/0037-operator-actions-decide-from-the-row-and-stripe-as-they-are.md.
  */
 @Entity
 @Getter
@@ -38,6 +40,11 @@ public class Payout {
             PayoutStatus.TRANSFERRED,
             PayoutStatus.REVERSING
     );
+
+    /**
+     * The width of {@code attention_detail}: a longer detail is cut to it.
+     */
+    static final int ATTENTION_DETAIL_LENGTH = 255;
 
     private static final Set<PayoutStatus> REVERSIBLE = EnumSet.of(
             PayoutStatus.TRANSFERRED,
@@ -115,6 +122,13 @@ public class Payout {
     @Enumerated(EnumType.STRING)
     @Column(name = "attention_from", length = 20)
     private PayoutStatus attentionFrom;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "attention_cause", length = 20)
+    private AttentionCause attentionCause;
+
+    @Column(name = "attention_detail", length = ATTENTION_DETAIL_LENGTH)
+    private String attentionDetail;
 
     /**
      * When the reconciler last asked Stripe about this payout. Only its conditional update writes the column, so a
@@ -237,26 +251,30 @@ public class Payout {
 
     /**
      * {@code ACCEPTED}, {@code TRANSFERRED} or {@code REVERSING} to {@code NEEDS_ATTENTION}, remembering the step for
-     * {@link #requeue}.
+     * {@link #requeue}, and the cause and detail for the operator. The detail is cut to its column.
      */
-    public boolean needAttention(Instant now) {
+    public boolean needAttention(AttentionCause cause, @Nullable String detail, Instant now) {
+        Objects.requireNonNull(cause, "cause");
         if (!ATTENTION_FROM.contains(status)) {
             return false;
         }
         this.attentionFrom = status;
+        this.attentionCause = cause;
+        this.attentionDetail = cut(detail);
         moveTo(PayoutStatus.NEEDS_ATTENTION, now);
         return true;
     }
 
     /**
-     * {@code NEEDS_ATTENTION} back to the step it came from, due at once with the step's wait started again.
+     * {@code NEEDS_ATTENTION} back to the step it came from, due at once with the step's wait started again. The key
+     * generation and the step's {@code *AttemptedAt} stay, so the step looks for what Stripe holds before it creates.
      */
     public boolean requeue(Instant now) {
         if (status != PayoutStatus.NEEDS_ATTENTION) {
             return false;
         }
         PayoutStatus step = attentionFrom;
-        this.attentionFrom = null;
+        leaveAttention();
         moveTo(step, now);
         return true;
     }
@@ -270,9 +288,26 @@ public class Payout {
         if (status != PayoutStatus.NEEDS_ATTENTION || attentionFrom == PayoutStatus.TRANSFERRED) {
             return false;
         }
-        this.attentionFrom = null;
+        leaveAttention();
         this.reasonCode = PayoutReason.OPERATOR_RETURNED;
         moveTo(PayoutStatus.RETURNED, now);
+        return true;
+    }
+
+    /**
+     * {@code NEEDS_ATTENTION} from {@code TRANSFERRED} to {@code REVERSING} by an operator, once Stripe shows no payout
+     * of the transfer that may reach the bank. The executor's reversal step lists the payouts again before it
+     * reverses, and the wallet learns of it as of any payout that failed.
+     * See docs/adr/0037-operator-actions-decide-from-the-row-and-stripe-as-they-are.md.
+     */
+    public boolean operatorReverse(Instant now) {
+        if (status != PayoutStatus.NEEDS_ATTENTION || attentionFrom != PayoutStatus.TRANSFERRED) {
+            return false;
+        }
+        leaveAttention();
+        this.reasonCode = PayoutReason.PAYOUT_FAILED;
+        this.failureCode = null;
+        moveTo(PayoutStatus.REVERSING, now);
         return true;
     }
 
@@ -323,6 +358,25 @@ public class Payout {
      */
     public void raiseKeyGen() {
         this.keyGen++;
+    }
+
+    /**
+     * A detail cut to its column, never through a surrogate pair, which the driver would store as '?'.
+     */
+    private static @Nullable String cut(@Nullable String detail) {
+        if (detail == null || detail.length() <= ATTENTION_DETAIL_LENGTH) {
+            return detail;
+        }
+        int end = Character.isHighSurrogate(detail.charAt(ATTENTION_DETAIL_LENGTH - 1))
+                ? ATTENTION_DETAIL_LENGTH - 1
+                : ATTENTION_DETAIL_LENGTH;
+        return detail.substring(0, end);
+    }
+
+    private void leaveAttention() {
+        this.attentionFrom = null;
+        this.attentionCause = null;
+        this.attentionDetail = null;
     }
 
     private void moveTo(PayoutStatus target, Instant now) {

@@ -8,13 +8,21 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.lang.reflect.RecordComponent;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Stream;
 
@@ -23,6 +31,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Named.named;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -39,6 +48,9 @@ class PayoutStoreTest {
     private static final Instant TOKEN = Instant.parse("2026-10-10T09:02:00.123456Z");
     private static final Instant NOW = Instant.parse("2026-10-10T09:00:30Z");
     private static final Instant PAID_AT = Instant.parse("2026-10-08T15:00:00Z");
+    private static final Instant ACTED_AT = Instant.parse("2026-10-10T09:05:00Z");
+    private static final long READ_VERSION = 4L;
+    private static final long MOVED_VERSION = 5L;
 
     private final PayoutRepository payouts = mock(PayoutRepository.class);
     private final PayoutAccountRepository accounts = mock(PayoutAccountRepository.class);
@@ -365,6 +377,22 @@ class PayoutStoreTest {
 
         assertThat(payout.getStatus()).isEqualTo(PayoutStatus.NEEDS_ATTENTION);
         assertThat(payout.getKeyGen()).isEqualTo(2);
+    }
+
+    @Test
+    void anAttentionOutcomeStoresItsCauseAndDetailOnTheRow() {
+        // Guards a hand-over that reaches the row without why it waits, which leaves the operator's list with a
+        // reason to guess.
+        Payout payout = recorded(
+                row(PayoutStatus.REVERSING).build(),
+                new StepOutcome.Attention(AttentionCause.LIVE_PAYOUT, false, "payout po_1 is in transit")
+        );
+
+        assertThat(payout.getStatus()).isEqualTo(PayoutStatus.NEEDS_ATTENTION);
+        assertThat(payout.getAttentionFrom()).isEqualTo(PayoutStatus.REVERSING);
+        assertThat(payout.getAttentionCause()).isEqualTo(AttentionCause.LIVE_PAYOUT);
+        assertThat(payout.getAttentionDetail()).isEqualTo("payout po_1 is in transit");
+        verifyNoInteractions(outbox);
     }
 
     @Test
@@ -965,5 +993,394 @@ class PayoutStoreTest {
 
         assertThat(store.findCreatedToReconcile(lookedAtBefore, 50)).containsExactly(created);
         assertThat(store.findPaidToReconcile(paidAfter, lookedAtBefore, 49)).containsExactly(paid);
+    }
+
+    /**
+     * A row waiting for an operator since the step it came from, at the version the operator's Stripe check read.
+     */
+    private static Payout.PayoutBuilder waiting(PayoutStatus from) {
+        return row(from)
+                .status(PayoutStatus.NEEDS_ATTENTION)
+                .attentionFrom(from)
+                .attentionCause(AttentionCause.UNKNOWN_LIMIT)
+                .attentionDetail("timed out")
+                .claimedUntil(null)
+                .version(READ_VERSION);
+    }
+
+    private static PayoutSnapshot snapshotOf(OperatorWrite write) {
+        return Objects.requireNonNull(write.payout());
+    }
+
+    private OperatorWrite operatorWrite(String write, long seenVersion) {
+        return switch (write) {
+            case "operatorReturn" -> store.operatorReturn(1L, seenVersion, ACTED_AT);
+            case "operatorReverse" -> store.operatorReverse(1L, seenVersion, ACTED_AT);
+            default -> throw new IllegalArgumentException(write);
+        };
+    }
+
+    /**
+     * Notes the status and reason the row shows when each event is queued, since the event is built from them.
+     */
+    private List<String> queuedEvents(Payout payout) {
+        List<String> queued = new ArrayList<>();
+        doAnswer(call -> {
+            queued.add("Returned: " + payout.getStatus() + ", " + payout.getReasonCode());
+            return null;
+        }).when(outbox).publishReturned(any(), any());
+        doAnswer(call -> {
+            queued.add("Failed: " + payout.getStatus() + ", " + payout.getReasonCode());
+            return null;
+        }).when(outbox).publishFailed(any(), any());
+        return queued;
+    }
+
+    @ParameterizedTest(name = "from {0}")
+    @EnumSource(value = PayoutStatus.class, names = {"ACCEPTED", "TRANSFERRED", "REVERSING"})
+    void aRequeueReturnsAWaitingPayoutToItsStepAndWritesNoEvent(PayoutStatus step) {
+        // Guards a requeue that leaves the row waiting, that moves it to another step than it came from, that keeps
+        // the old backoff or the spent attempts, or that tells the wallet of a payout that has not ended.
+        Payout payout = waiting(step).build();
+        when(payouts.lockByTransactionReference(REF)).thenReturn(Optional.of(payout));
+
+        OperatorWrite write = store.requeue(REF, ACTED_AT);
+
+        assertThat(write.kind()).isEqualTo(OperatorWrite.Kind.APPLIED);
+        assertThat(snapshotOf(write).status()).isEqualTo(step);
+        assertThat(snapshotOf(write).attentionFrom()).isNull();
+        assertThat(payout.getStatus()).isEqualTo(step);
+        assertThat(payout.getAttentionCause()).isNull();
+        assertThat(payout.getAttentionDetail()).isNull();
+        assertThat(payout.getNextAttemptAt()).isEqualTo(ACTED_AT);
+        assertThat(payout.getAttempts()).isZero();
+        assertThat(payout.getKeyGen()).isEqualTo(2);
+        verifyNoInteractions(outbox, accounts);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(value = PayoutStatus.class, mode = EnumSource.Mode.EXCLUDE, names = "NEEDS_ATTENTION")
+    void aRequeueOfAPayoutInAnyOtherStatusChangesNothing(PayoutStatus status) {
+        // Guards a repeated requeue, after a lost answer or by a second operator, moving a row the executor has
+        // claimed since or one that already ended.
+        Payout payout = row(status).build();
+        when(payouts.lockByTransactionReference(REF)).thenReturn(Optional.of(payout));
+
+        OperatorWrite write = store.requeue(REF, ACTED_AT);
+
+        assertThat(write.kind()).isEqualTo(OperatorWrite.Kind.NOT_WAITING);
+        assertThat(snapshotOf(write).status()).isEqualTo(status);
+        assertThat(payout.getStatus()).isEqualTo(status);
+        assertThat(payout.getClaimedUntil()).isEqualTo(TOKEN);
+        assertThat(payout.getAttempts()).isEqualTo(3);
+        assertThat(payout.getNextAttemptAt()).isEqualTo(NOW);
+        verifyNoInteractions(outbox, accounts);
+    }
+
+    @Test
+    void aRequeueOfAnUnknownReferenceFindsNothing() {
+        // Guards a requeue of a reference no row holds answering as if a row had moved.
+        OperatorWrite write = store.requeue(OTHER_REF, ACTED_AT);
+
+        assertThat(write.kind()).isEqualTo(OperatorWrite.Kind.NOT_FOUND);
+        assertThat(write.payout()).isNull();
+        verify(payouts).lockByTransactionReference(OTHER_REF);
+        verifyNoInteractions(outbox, accounts);
+    }
+
+    @ParameterizedTest(name = "from {0}")
+    @EnumSource(value = PayoutStatus.class, names = {"ACCEPTED", "REVERSING"})
+    void anOperatorReturnWritesOneReturnedEventInTheTransactionThatMovesTheRow(PayoutStatus step) {
+        // Guards a return that credits the wallet for a row that did not move, a move without its event, a second
+        // event, and an event queued before the move, which would carry no reason.
+        Payout payout = waiting(step).build();
+        when(payouts.lockById(1L)).thenReturn(Optional.of(payout));
+        List<String> queued = queuedEvents(payout);
+
+        OperatorWrite write = store.operatorReturn(1L, READ_VERSION, ACTED_AT);
+
+        assertThat(write.kind()).isEqualTo(OperatorWrite.Kind.APPLIED);
+        assertThat(snapshotOf(write).status()).isEqualTo(PayoutStatus.RETURNED);
+        assertThat(snapshotOf(write).reasonCode()).isEqualTo(PayoutReason.OPERATOR_RETURNED);
+        assertThat(payout.getAttentionFrom()).isNull();
+        assertThat(queued).containsExactly("Returned: RETURNED, OPERATOR_RETURNED");
+        verify(outbox).publishReturned(payout, ACTED_AT);
+        verifyNoMoreInteractions(outbox);
+        verifyNoInteractions(accounts);
+    }
+
+    @Test
+    void anOperatorReturnUnderAnOlderVersionChangesNothingAndWritesNoEvent() {
+        // Guards a return decided on a Stripe check of a row that has since been requeued, claimed and handed over
+        // again: the check described another state, and the wallet would be credited on it.
+        Payout payout = waiting(PayoutStatus.ACCEPTED).version(MOVED_VERSION).build();
+        when(payouts.lockById(1L)).thenReturn(Optional.of(payout));
+
+        OperatorWrite write = store.operatorReturn(1L, READ_VERSION, ACTED_AT);
+
+        assertThat(write.kind()).isEqualTo(OperatorWrite.Kind.CHANGED);
+        assertThat(snapshotOf(write).reference()).isEqualTo(REF);
+        assertThat(payout.getStatus()).isEqualTo(PayoutStatus.NEEDS_ATTENTION);
+        assertThat(payout.getAttentionFrom()).isEqualTo(PayoutStatus.ACCEPTED);
+        assertThat(payout.getReasonCode()).isNull();
+        verifyNoInteractions(outbox, accounts);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(value = PayoutStatus.class, mode = EnumSource.Mode.EXCLUDE, names = "NEEDS_ATTENTION")
+    void anOperatorReturnOfAPayoutThatLeftNeedsAttentionChangesNothing(PayoutStatus status) {
+        // Guards a return of a row that was requeued and has run on since, with the version the check read: a row
+        // out of NEEDS_ATTENTION is refused as not waiting, and neither a status nor an event changes.
+        Payout payout = row(status).version(MOVED_VERSION).build();
+        when(payouts.lockById(1L)).thenReturn(Optional.of(payout));
+
+        OperatorWrite write = store.operatorReturn(1L, READ_VERSION, ACTED_AT);
+
+        assertThat(write.kind()).isEqualTo(OperatorWrite.Kind.NOT_WAITING);
+        assertThat(snapshotOf(write).status()).isEqualTo(status);
+        assertThat(payout.getStatus()).isEqualTo(status);
+        assertThat(payout.getClaimedUntil()).isEqualTo(TOKEN);
+        verifyNoInteractions(outbox, accounts);
+    }
+
+    @Test
+    void anOperatorReversalWritesOneFailedEventAndNoReturnedEvent() {
+        // Guards a reversal that tells the wallet the money is back before the executor has reversed the transfer,
+        // that sends no Failed event, which the row in TRANSFERRED never sent, or that sends two.
+        Payout payout = waiting(PayoutStatus.TRANSFERRED).build();
+        when(payouts.lockById(1L)).thenReturn(Optional.of(payout));
+        List<String> queued = queuedEvents(payout);
+
+        OperatorWrite write = store.operatorReverse(1L, READ_VERSION, ACTED_AT);
+
+        assertThat(write.kind()).isEqualTo(OperatorWrite.Kind.APPLIED);
+        assertThat(snapshotOf(write).status()).isEqualTo(PayoutStatus.REVERSING);
+        assertThat(snapshotOf(write).reasonCode()).isEqualTo(PayoutReason.PAYOUT_FAILED);
+        assertThat(payout.getAttentionFrom()).isNull();
+        assertThat(queued).containsExactly("Failed: REVERSING, PAYOUT_FAILED");
+        verify(outbox).publishFailed(payout, ACTED_AT);
+        verify(outbox, never()).publishReturned(any(), any());
+        verifyNoMoreInteractions(outbox);
+        verifyNoInteractions(accounts);
+    }
+
+    @Test
+    void anOperatorReversalUnderAnOlderVersionChangesNothing() {
+        // Guards a reversal decided on a Stripe check of a row that has since changed: the check may not have seen
+        // the payout that now exists, and a reversal of money that reached a bank cannot be taken back.
+        Payout payout = waiting(PayoutStatus.TRANSFERRED).version(MOVED_VERSION).build();
+        when(payouts.lockById(1L)).thenReturn(Optional.of(payout));
+
+        OperatorWrite write = store.operatorReverse(1L, READ_VERSION, ACTED_AT);
+
+        assertThat(write.kind()).isEqualTo(OperatorWrite.Kind.CHANGED);
+        assertThat(payout.getStatus()).isEqualTo(PayoutStatus.NEEDS_ATTENTION);
+        assertThat(payout.getAttentionFrom()).isEqualTo(PayoutStatus.TRANSFERRED);
+        assertThat(payout.getReasonCode()).isNull();
+        verifyNoInteractions(outbox, accounts);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(value = PayoutStatus.class, mode = EnumSource.Mode.EXCLUDE, names = "NEEDS_ATTENTION")
+    void anOperatorReversalOfAPayoutThatLeftNeedsAttentionChangesNothing(PayoutStatus status) {
+        // Guards a reversal of a row that is already in another step, such as one whose payout the webhook adopted
+        // while Stripe was asked, which would reverse money on its way to a bank.
+        Payout payout = row(status).version(MOVED_VERSION).build();
+        when(payouts.lockById(1L)).thenReturn(Optional.of(payout));
+
+        OperatorWrite write = store.operatorReverse(1L, READ_VERSION, ACTED_AT);
+
+        assertThat(write.kind()).isEqualTo(OperatorWrite.Kind.NOT_WAITING);
+        assertThat(payout.getStatus()).isEqualTo(status);
+        assertThat(payout.getClaimedUntil()).isEqualTo(TOKEN);
+        verifyNoInteractions(outbox, accounts);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"operatorReturn", "operatorReverse"})
+    void anOperatorWriteOnAnUnknownRowFindsNothing(String write) {
+        // Guards a write on a row that was deleted or never existed answering as if it had moved something.
+        OperatorWrite written = operatorWrite(write, READ_VERSION);
+
+        assertThat(written.kind()).isEqualTo(OperatorWrite.Kind.NOT_FOUND);
+        assertThat(written.payout()).isNull();
+        verify(payouts).lockById(1L);
+        verifyNoInteractions(outbox, accounts);
+    }
+
+    @ParameterizedTest(name = "{0} from {1}")
+    @CsvSource({"operatorReturn, TRANSFERRED", "operatorReverse, ACCEPTED", "operatorReverse, REVERSING"})
+    void aWriteTheRowRefusesUnderTheVersionReadIsADefectThatWritesNoEvent(String write, PayoutStatus from) {
+        // Guards the second layer under the operations class's own checks: a return of a transfer that may still be
+        // paid out, or a reversal of a row with no transfer to reverse, fails and rolls back instead of crediting
+        // the wallet or telling it a payout failed.
+        Payout payout = waiting(from).build();
+        when(payouts.lockById(1L)).thenReturn(Optional.of(payout));
+
+        assertThatThrownBy(() -> operatorWrite(write, READ_VERSION))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining(REF);
+        assertThat(payout.getStatus()).isEqualTo(PayoutStatus.NEEDS_ATTENTION);
+        assertThat(payout.getAttentionFrom()).isEqualTo(from);
+        verifyNoInteractions(outbox, accounts);
+    }
+
+    @Test
+    void theOperatorsWritesEachRunInOneTransactionAndItsReadsOnlyRead() throws NoSuchMethodException {
+        // Guards a dropped @Transactional: the row's pessimistic lock is refused outside a transaction, and a move
+        // could commit apart from its event. A read that opens as a write holds a connection it has no use for.
+        List<Transactional> writes = List.of(
+                transactionOf("requeue", String.class, Instant.class),
+                transactionOf("operatorReturn", Long.class, Long.class, Instant.class),
+                transactionOf("operatorReverse", Long.class, Long.class, Instant.class)
+        );
+        List<Transactional> reads = List.of(
+                transactionOf("findForOperator", String.class),
+                transactionOf("findAwaitingOperator", int.class),
+                transactionOf("countAwaitingOperator", PayoutStatus.class)
+        );
+
+        assertThat(writes).doesNotContainNull().noneMatch(Transactional::readOnly);
+        assertThat(reads).doesNotContainNull().allMatch(Transactional::readOnly);
+    }
+
+    private static Transactional transactionOf(String method, Class<?>... parameters) throws NoSuchMethodException {
+        return PayoutStore.class.getMethod(method, parameters).getAnnotation(Transactional.class);
+    }
+
+    @Test
+    void theOperatorSnapshotCarriesNoUserId() {
+        // Guards the user id, which spends the user's balance, reaching a log line or an answer through the
+        // snapshot the operator's code reads, logs and answers with.
+        assertThat(Arrays.stream(PayoutSnapshot.class.getRecordComponents()).map(RecordComponent::getName))
+                .noneMatch(name -> name.toLowerCase(Locale.ROOT).contains("user"));
+        assertThat(PayoutSnapshot.of(waiting(PayoutStatus.TRANSFERRED).build()).toString()).doesNotContain(USER);
+    }
+
+    @Test
+    void aSnapshotCopiesEachFieldOfTheRowUnderItsOwnName() {
+        // Guards a field swapped or dropped when the row is copied, such as the transfer id shown as the payout id,
+        // which an operator would act on. Every field holds a value of its own.
+        Instant created = NOW.minusSeconds(7200);
+        Instant transferred = NOW.minusSeconds(3600);
+        Instant updated = NOW.plusSeconds(60);
+        Payout payout = Payout.builder()
+                .id(11L)
+                .version(READ_VERSION)
+                .transactionReference(REF)
+                .userId(USER)
+                .amount(new BigDecimal("75.0000"))
+                .currency("PLN")
+                .status(PayoutStatus.NEEDS_ATTENTION)
+                .attentionFrom(PayoutStatus.TRANSFERRED)
+                .attentionCause(AttentionCause.MULTIPLE)
+                .attentionDetail("two live payouts")
+                .reasonCode(PayoutReason.PAYOUT_FAILED)
+                .failureCode("account_closed")
+                .keyGen(2)
+                .attempts(12)
+                .nextAttemptAt(NOW)
+                .stripeAccountId("acct_1")
+                .stripeTransferId("tr_1")
+                .stripePayoutId("po_1")
+                .stripeReversalId("trr_1")
+                .transferredAt(transferred)
+                .paidAt(PAID_AT)
+                .createdAt(created)
+                .updatedAt(updated)
+                .build();
+
+        assertThat(PayoutSnapshot.of(payout)).isEqualTo(new PayoutSnapshot(
+                11L,
+                READ_VERSION,
+                REF,
+                PayoutStatus.NEEDS_ATTENTION,
+                PayoutStatus.TRANSFERRED,
+                AttentionCause.MULTIPLE,
+                "two live payouts",
+                new BigDecimal("75.0000"),
+                "PLN",
+                PayoutReason.PAYOUT_FAILED,
+                "account_closed",
+                2,
+                12,
+                NOW,
+                "acct_1",
+                "tr_1",
+                "po_1",
+                "trr_1",
+                transferred,
+                PAID_AT,
+                created,
+                updated
+        ));
+    }
+
+    @Test
+    void anOperatorFindsAPayoutInAnyStatusByItsReference() {
+        // Guards a read that finds only waiting rows, which could not tell an operator what became of a payout a
+        // repeated action found already moved.
+        when(payouts.findByTransactionReference(REF)).thenReturn(Optional.of(row(PayoutStatus.PAID).build()));
+
+        assertThat(store.findForOperator(REF)).hasValueSatisfying(found -> {
+            assertThat(found.reference()).isEqualTo(REF);
+            assertThat(found.status()).isEqualTo(PayoutStatus.PAID);
+        });
+        assertThat(store.findForOperator(OTHER_REF)).isEmpty();
+    }
+
+    @Test
+    void theStoreKeepsTheRepositorysOrderAndAsksForAFirstPageOfTheLimit() {
+        // Guards a store that reads past its limit, that skips the first page, or that reorders the repository's
+        // longest-waiting-first answer, which would put the newest hand-over ahead of the one that has waited most.
+        // The order itself is the query's, pinned by the test of its text below.
+        Payout longest = waiting(PayoutStatus.REVERSING).id(1L).transactionReference(OTHER_REF).build();
+        Payout newest = waiting(PayoutStatus.ACCEPTED).id(2L).build();
+        when(payouts.findAwaitingOperator(PageRequest.of(0, 100))).thenReturn(List.of(longest, newest));
+
+        List<PayoutSnapshot> listed = store.findAwaitingOperator(100);
+
+        assertThat(listed).extracting(PayoutSnapshot::reference).containsExactly(OTHER_REF, REF);
+        assertThat(listed)
+                .extracting(PayoutSnapshot::attentionFrom)
+                .containsExactly(PayoutStatus.REVERSING, PayoutStatus.ACCEPTED);
+        verify(payouts).findAwaitingOperator(PageRequest.of(0, 100));
+    }
+
+    @Test
+    void theCountOfPayoutsAwaitingAnOperatorAsksForTheStepGiven() {
+        // Guards a count taken over every step or for another one, which would show the wrong series in the gauge
+        // an operator is paged by.
+        when(payouts.countAwaitingOperator(PayoutStatus.ACCEPTED)).thenReturn(1L);
+        when(payouts.countAwaitingOperator(PayoutStatus.TRANSFERRED)).thenReturn(2L);
+        when(payouts.countAwaitingOperator(PayoutStatus.REVERSING)).thenReturn(3L);
+
+        assertThat(store.countAwaitingOperator(PayoutStatus.ACCEPTED)).isEqualTo(1L);
+        assertThat(store.countAwaitingOperator(PayoutStatus.TRANSFERRED)).isEqualTo(2L);
+        assertThat(store.countAwaitingOperator(PayoutStatus.REVERSING)).isEqualTo(3L);
+    }
+
+    @Test
+    void theWaitingPayoutQueriesWriteTheStatusIntoThemAndListTheLongestWaitingFirst() throws NoSuchMethodException {
+        // Guards a bound status parameter, which hides the predicate from the partial index idx_payouts_attention
+        // in a generic plan, and a listing that is not ordered by the hand-over and then the id.
+        String waitingStatus = "p.status = " + PayoutStatus.class.getName() + ".NEEDS_ATTENTION";
+        String list = queryOf("findAwaitingOperator", Pageable.class);
+        String count = queryOf("countAwaitingOperator", PayoutStatus.class);
+
+        assertThat(list).contains(waitingStatus).contains("order by p.updatedAt, p.id");
+        assertThat(count).contains(waitingStatus).contains("p.attentionFrom = :from");
+    }
+
+    /**
+     * The query's text with every run of whitespace, line breaks of a text block included, as one space, so a
+     * reflowed query still matches what a test looks for.
+     */
+    private static String queryOf(String method, Class<?>... parameters) throws NoSuchMethodException {
+        return PayoutRepository.class.getMethod(method, parameters)
+                .getAnnotation(Query.class)
+                .value()
+                .replaceAll("\\s+", " ")
+                .trim();
     }
 }

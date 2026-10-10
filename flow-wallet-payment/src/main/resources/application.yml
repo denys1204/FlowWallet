@@ -210,9 +210,13 @@ outbox:
   stuck-processing-threshold-ms: ${OUTBOX_STUCK_PROCESSING_THRESHOLD_MS:300000}
 
 management:
+  # management.server.port stays unset: ManagementPortCheck fails startup on a separate management port, whose server
+  # would listen on every interface and run without ActuatorRequestGuard.
   endpoints:
     web:
       exposure:
+        # payouts is left out on purpose: its writes credit wallets and authenticate nobody. Expose it for one
+        # process only while acting. See docs/adr/0037-operator-actions-decide-from-the-row-and-stripe-as-they-are.md.
         include: ${ACTUATOR_EXPOSED_ENDPOINTS:health,info,metrics,outbox}
 
 logging:

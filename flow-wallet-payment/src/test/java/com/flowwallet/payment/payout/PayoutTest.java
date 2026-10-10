@@ -3,6 +3,8 @@ package com.flowwallet.payment.payout;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import java.math.BigDecimal;
@@ -19,6 +21,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class PayoutTest {
     private static final Instant NOW = Instant.parse("2026-10-10T12:00:00Z");
     private static final Instant LATER = Instant.parse("2026-10-10T13:00:00Z");
+    private static final Instant ACTED_AT = Instant.parse("2026-10-10T14:00:00Z");
 
     private static final Map<String, BiFunction<Payout, Instant, Boolean>> MUTATORS = Map.of(
             "recordTransfer", (payout, now) -> payout.recordTransfer("acct_1", "tr_1", now),
@@ -27,15 +30,16 @@ class PayoutTest {
             "markPaid", Payout::markPaid,
             "startReversal", (payout, now) -> payout.startReversal(PayoutReason.PAYOUT_FAILED, "no_account", now),
             "recordReversal", (payout, now) -> payout.recordReversal("trr_1", now),
-            "needAttention", Payout::needAttention,
+            "needAttention", (payout, now) -> payout.needAttention(AttentionCause.UNKNOWN_LIMIT, "d", now),
             "requeue", Payout::requeue,
-            "operatorReturn", Payout::operatorReturn
+            "operatorReturn", Payout::operatorReturn,
+            "operatorReverse", Payout::operatorReverse
     );
 
     /**
-     * ADR 0035's table, as the move each mutator may make from a status, or null when it changes nothing. A payout in
-     * {@code NEEDS_ATTENTION} goes back to its step, and an operator may return it unless it came from
-     * {@code TRANSFERRED}.
+     * ADR 0035's table, as ADR 0037 extends it: the move each mutator may make from a status, or null when it changes
+     * nothing. A payout in {@code NEEDS_ATTENTION} goes back to its step, an operator may return it unless it came
+     * from {@code TRANSFERRED}, and may send it to its reversal only when it came from there.
      */
     private static PayoutStatus expected(String mutator, PayoutStatus from, PayoutStatus attentionFrom) {
         return switch (mutator) {
@@ -48,6 +52,7 @@ class PayoutTest {
             case "needAttention" -> from.isExecutorStep() ? NEEDS_ATTENTION : null;
             case "requeue" -> from == NEEDS_ATTENTION ? attentionFrom : null;
             case "operatorReturn" -> from == NEEDS_ATTENTION && attentionFrom != TRANSFERRED ? RETURNED : null;
+            case "operatorReverse" -> from == NEEDS_ATTENTION && attentionFrom == TRANSFERRED ? REVERSING : null;
             default -> throw new IllegalArgumentException(mutator);
         };
     }
@@ -55,7 +60,7 @@ class PayoutTest {
     /**
      * A payout in any status, with the ids its status needs, its attempts spent and a claim held.
      */
-    private static Payout inStatus(PayoutStatus status, PayoutStatus attentionFrom) {
+    private static Payout.PayoutBuilder rowIn(PayoutStatus status, PayoutStatus attentionFrom) {
         return Payout.builder()
                 .transactionReference("ref-1")
                 .userId("alice")
@@ -68,8 +73,11 @@ class PayoutTest {
                 .attentionFrom(attentionFrom)
                 .attempts(3)
                 .nextAttemptAt(LATER)
-                .claimedUntil(LATER)
-                .build();
+                .claimedUntil(LATER);
+    }
+
+    private static Payout inStatus(PayoutStatus status, PayoutStatus attentionFrom) {
+        return rowIn(status, attentionFrom).build();
     }
 
     private static Payout inStatus(PayoutStatus status) {
@@ -171,7 +179,7 @@ class PayoutTest {
         // attempts, which would send it straight back to NEEDS_ATTENTION.
         Payout payout = inStatus(REVERSING);
 
-        payout.needAttention(NOW);
+        payout.needAttention(AttentionCause.UNKNOWN_LIMIT, "timed out", NOW);
         assertThat(payout.getAttentionFrom()).isEqualTo(REVERSING);
 
         payout.requeue(LATER);
@@ -192,6 +200,163 @@ class PayoutTest {
 
         assertThat(payout.getReasonCode()).isEqualTo(PayoutReason.OPERATOR_RETURNED);
         assertThat(payout.getAttentionFrom()).isNull();
+    }
+
+    @ParameterizedTest(name = "from {0}")
+    @EnumSource(value = PayoutStatus.class, names = {"ACCEPTED", "TRANSFERRED", "REVERSING"})
+    void needAttentionRecordsItsCauseAndDetailWithTheStep(PayoutStatus step) {
+        // Guards a hand-over that forgets why the row waits, which the operator's list has to show, or that stores
+        // the cause under a step other than the one the row left.
+        Payout payout = inStatus(step);
+
+        boolean changed = payout.needAttention(AttentionCause.MISMATCH, "transfer tr_9 has other terms", NOW);
+
+        assertThat(changed).isTrue();
+        assertThat(payout.getStatus()).isEqualTo(NEEDS_ATTENTION);
+        assertThat(payout.getAttentionFrom()).isEqualTo(step);
+        assertThat(payout.getAttentionCause()).isEqualTo(AttentionCause.MISMATCH);
+        assertThat(payout.getAttentionDetail()).isEqualTo("transfer tr_9 has other terms");
+    }
+
+    @Test
+    void anAttentionDetailLongerThanTheColumnIsCutToIt() {
+        // Guards a Stripe error message longer than attention_detail reaching the insert, which Postgres refuses, so
+        // the row could not be handed over. The cut keeps the start, where the error type is, and a detail that
+        // fits the column exactly stays whole.
+        String fitting = "a".repeat(Payout.ATTENTION_DETAIL_LENGTH);
+        Payout tooLong = inStatus(ACCEPTED);
+        Payout exact = inStatus(ACCEPTED);
+
+        tooLong.needAttention(AttentionCause.UNKNOWN_LIMIT, fitting + "b", NOW);
+        exact.needAttention(AttentionCause.UNKNOWN_LIMIT, fitting, NOW);
+
+        assertThat(tooLong.getAttentionDetail()).isEqualTo(fitting);
+        assertThat(exact.getAttentionDetail()).isEqualTo(fitting);
+        assertThat(Payout.ATTENTION_DETAIL_LENGTH).as("the width of attention_detail").isEqualTo(255);
+    }
+
+    @Test
+    void anAttentionDetailCutBetweenTheHalvesOfASurrogatePairEndsBeforeThePair() {
+        // Guards a cut that leaves a lone high surrogate at the end of the column, which the driver stores as '?', so
+        // the operator would read a mangled last character. Character 255, at index 254, opens a pair here, so the
+        // cut stops one character short of the column.
+        String start = "a".repeat(Payout.ATTENTION_DETAIL_LENGTH - 1);
+        Payout payout = inStatus(ACCEPTED);
+
+        payout.needAttention(AttentionCause.UNKNOWN_LIMIT, start + "\uD83D\uDE00 and more", NOW);
+
+        String stored = payout.getAttentionDetail();
+        assertThat(stored).isEqualTo(start).hasSize(254);
+        assertThat(stored.chars().noneMatch(unit -> Character.isSurrogate((char) unit))).isTrue();
+    }
+
+    @Test
+    void anAttentionDetailCutAfterAWholeSurrogatePairKeepsThePair() {
+        // Guards a cut that is too careful: a pair that ends on the last character of the column fits it whole, and
+        // dropping it would shorten the detail for nothing.
+        String start = "a".repeat(Payout.ATTENTION_DETAIL_LENGTH - 2);
+        Payout payout = inStatus(ACCEPTED);
+
+        payout.needAttention(AttentionCause.UNKNOWN_LIMIT, start + "\uD83D\uDE00 and more", NOW);
+
+        assertThat(payout.getAttentionDetail()).isEqualTo(start + "\uD83D\uDE00").hasSize(255);
+    }
+
+    @Test
+    void anAttentionWithoutADetailStoresNone() {
+        // Guards a hand-over with no detail failing on the cut, which would leave the row unable to wait for an
+        // operator.
+        Payout payout = inStatus(TRANSFERRED);
+
+        payout.needAttention(AttentionCause.DEFECT, null, NOW);
+
+        assertThat(payout.getStatus()).isEqualTo(NEEDS_ATTENTION);
+        assertThat(payout.getAttentionCause()).isEqualTo(AttentionCause.DEFECT);
+        assertThat(payout.getAttentionDetail()).isNull();
+    }
+
+    @Test
+    void aHandOverWithoutACauseIsRefused() {
+        // Guards a hand-over that leaves the operator's list without a reason, which the column allows only for rows
+        // that waited before the cause was stored.
+        Payout payout = inStatus(ACCEPTED);
+
+        assertThatThrownBy(() -> payout.needAttention(null, "d", NOW))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("cause");
+        assertThat(payout.getStatus()).isEqualTo(ACCEPTED);
+        assertThat(payout.getAttentionCause()).isNull();
+        assertThat(payout.getAttentionFrom()).isNull();
+    }
+
+    @ParameterizedTest(name = "{0} from {1}")
+    @CsvSource({
+            "requeue, ACCEPTED",
+            "requeue, TRANSFERRED",
+            "requeue, REVERSING",
+            "operatorReturn, ACCEPTED",
+            "operatorReturn, REVERSING",
+            "operatorReverse, TRANSFERRED"
+    })
+    void everyExitFromNeedsAttentionClearsTheCauseAndDetail(String exit, PayoutStatus step) {
+        // Guards a stale cause on a row that no longer waits: payouts_attention_cause_only_when_needed refuses it at
+        // the update, and the operator's view would show it as a reason to act.
+        Payout payout = inStatus(step);
+        payout.needAttention(AttentionCause.UNKNOWN_LIMIT, "timed out", NOW);
+
+        boolean changed = MUTATORS.get(exit).apply(payout, ACTED_AT);
+
+        assertThat(changed).isTrue();
+        assertThat(payout.getAttentionFrom()).isNull();
+        assertThat(payout.getAttentionCause()).isNull();
+        assertThat(payout.getAttentionDetail()).isNull();
+    }
+
+    @Test
+    void anOperatorReversalSendsAStuckTransferToItsReversalAsAFailedPayout() {
+        // Guards a reversal that reaches the wallet without the reason the Failed event reads, that carries a failure
+        // code Stripe never gave, that loses the transfer the reversal needs, or that waits behind the old backoff
+        // and spent attempts.
+        Payout payout = rowIn(TRANSFERRED, null).failureCode("stale_code").build();
+        payout.needAttention(AttentionCause.UNKNOWN_LIMIT, "timed out", NOW);
+
+        boolean changed = payout.operatorReverse(ACTED_AT);
+
+        assertThat(changed).isTrue();
+        assertThat(payout.getStatus()).isEqualTo(REVERSING);
+        assertThat(payout.getReasonCode()).isEqualTo(PayoutReason.PAYOUT_FAILED);
+        assertThat(payout.getFailureCode()).isNull();
+        assertThat(payout.getStripeTransferId()).isEqualTo("tr_1");
+        assertThat(payout.getStripeAccountId()).isEqualTo("acct_1");
+        assertThat(payout.getNextAttemptAt()).isEqualTo(ACTED_AT);
+        assertThat(payout.getAttempts()).isZero();
+        assertThat(payout.getClaimedUntil()).isNull();
+    }
+
+    @ParameterizedTest(name = "from {0}")
+    @EnumSource(value = PayoutStatus.class, names = {"ACCEPTED", "TRANSFERRED", "REVERSING"})
+    void aRequeueKeepsTheKeyGenerationAndTheStepsFirstAttemptTime(PayoutStatus step) {
+        // Guards a requeue that skips the lookup or moves to a fresh key after an unknown outcome, which could
+        // create a second transfer, payout or reversal at Stripe for one withdrawal.
+        Instant transferTried = NOW.minusSeconds(900);
+        Instant payoutTried = NOW.minusSeconds(600);
+        Instant reversalTried = NOW.minusSeconds(300);
+        Payout payout = rowIn(step, null)
+                .keyGen(2)
+                .transferAttemptedAt(transferTried)
+                .payoutAttemptedAt(payoutTried)
+                .reversalAttemptedAt(reversalTried)
+                .build();
+        payout.needAttention(AttentionCause.UNKNOWN_LIMIT, "timed out", NOW);
+
+        payout.requeue(ACTED_AT);
+
+        assertThat(payout.getStatus()).isEqualTo(step);
+        assertThat(payout.getKeyGen()).isEqualTo(2);
+        assertThat(payout.getTransferAttemptedAt()).isEqualTo(transferTried);
+        assertThat(payout.getPayoutAttemptedAt()).isEqualTo(payoutTried);
+        assertThat(payout.getReversalAttemptedAt()).isEqualTo(reversalTried);
+        assertThat(payout.attemptedBefore(ACTED_AT)).isTrue();
     }
 
     @Test

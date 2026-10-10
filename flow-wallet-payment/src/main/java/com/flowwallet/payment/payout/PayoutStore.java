@@ -12,6 +12,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Consumer;
 
 /**
  * The short transactions around the Stripe calls of payouts, so no connection is held while Stripe answers. For the
@@ -20,10 +21,13 @@ import java.util.Optional;
  * writer overtook changes nothing and writes no second event. For the Connect webhook and the payout reconciler: the
  * settlement of a payout from its status at Stripe, which locks the row by its payout id or reference and goes
  * through the same guarded transitions without a token, the reconciler's selections and its claim, and the reset of
- * the stored bank account after a failed payout. Rows are locked in the order payouts, then payout accounts.
+ * the stored bank account after a failed payout. For the {@code payouts} actuator endpoint: the operator's snapshot,
+ * a requeue under the row's lock, and a return or reversal that writes only while the row's {@code version} is the
+ * one read before Stripe was asked. Rows are locked in the order payouts, then payout accounts.
  * See docs/adr/0006-short-transactions-across-bean-boundaries.md,
- * docs/adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md and
- * docs/adr/0036-connect-webhooks-have-their-own-endpoint-and-secret.md.
+ * docs/adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md,
+ * docs/adr/0036-connect-webhooks-have-their-own-endpoint-and-secret.md and
+ * docs/adr/0037-operator-actions-decide-from-the-row-and-stripe-as-they-are.md.
  */
 @Component
 @RequiredArgsConstructor
@@ -227,6 +231,80 @@ public class PayoutStore {
         };
     }
 
+    @Transactional(readOnly = true)
+    public Optional<PayoutSnapshot> findForOperator(String reference) {
+        return payouts.findByTransactionReference(reference).map(PayoutSnapshot::of);
+    }
+
+    @Transactional(readOnly = true)
+    public List<PayoutSnapshot> findAwaitingOperator(int limit) {
+        return payouts.findAwaitingOperator(PageRequest.of(0, limit)).stream().map(PayoutSnapshot::of).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public long countAwaitingOperator(PayoutStatus from) {
+        return payouts.countAwaitingOperator(from);
+    }
+
+    /**
+     * Returns a waiting payout to the step it came from. It needs no Stripe check: the step looks for what Stripe holds
+     * before it creates, under the key generation it had, so it writes no event.
+     */
+    @Transactional
+    public OperatorWrite requeue(String reference, Instant now) {
+        Optional<Payout> row = payouts.lockByTransactionReference(reference);
+        if (row.isEmpty()) {
+            return OperatorWrite.notFound();
+        }
+        Payout payout = row.get();
+        if (payout.getStatus() != PayoutStatus.NEEDS_ATTENTION) {
+            return new OperatorWrite(OperatorWrite.Kind.NOT_WAITING, PayoutSnapshot.of(payout));
+        }
+        require(payout, payout.requeue(now));
+        return new OperatorWrite(OperatorWrite.Kind.APPLIED, PayoutSnapshot.of(payout));
+    }
+
+    /**
+     * Returns a waiting payout to the wallet without a reversal, with its {@code PayoutReturnedEvent}, if the row is
+     * still the one the caller's Stripe check read.
+     */
+    @Transactional
+    public OperatorWrite operatorReturn(Long id, Long seenVersion, Instant now) {
+        return operatorWrite(id, seenVersion, payout -> {
+            require(payout, payout.operatorReturn(now));
+            outbox.publishReturned(payout, now);
+        });
+    }
+
+    /**
+     * Sends a payout waiting from {@code TRANSFERRED} to its reversal, with its {@code PayoutFailedEvent}, the only one
+     * it gets: a row in {@code TRANSFERRED} never sent one. Only while the row is the one the caller's Stripe check
+     * read.
+     */
+    @Transactional
+    public OperatorWrite operatorReverse(Long id, Long seenVersion, Instant now) {
+        return operatorWrite(id, seenVersion, payout -> {
+            require(payout, payout.operatorReverse(now));
+            outbox.publishFailed(payout, now);
+        });
+    }
+
+    private OperatorWrite operatorWrite(Long id, Long seenVersion, Consumer<Payout> write) {
+        Optional<Payout> row = payouts.lockById(id);
+        if (row.isEmpty()) {
+            return OperatorWrite.notFound();
+        }
+        Payout payout = row.get();
+        if (payout.getStatus() != PayoutStatus.NEEDS_ATTENTION) {
+            return new OperatorWrite(OperatorWrite.Kind.NOT_WAITING, PayoutSnapshot.of(payout));
+        }
+        if (!payout.getVersion().equals(seenVersion)) {
+            return new OperatorWrite(OperatorWrite.Kind.CHANGED, PayoutSnapshot.of(payout));
+        }
+        write.accept(payout);
+        return new OperatorWrite(OperatorWrite.Kind.APPLIED, PayoutSnapshot.of(payout));
+    }
+
     private void apply(Payout payout, StepOutcome outcome, Instant now) {
         switch (outcome) {
             case StepOutcome.Transferred transferred -> {
@@ -285,7 +363,7 @@ public class PayoutStore {
                 if (attention.raiseKeyGen()) {
                     payout.raiseKeyGen();
                 }
-                require(payout, payout.needAttention(now));
+                require(payout, payout.needAttention(attention.cause(), attention.detail(), now));
             }
             case StepOutcome.Released _ -> payout.releaseClaim();
             case StepOutcome.Postponed postponed -> payout.postpone(postponed.nextAttemptAt());

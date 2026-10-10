@@ -10,6 +10,7 @@ import com.flowwallet.payment.provider.exception.PayoutLookupException;
 import com.flowwallet.payment.provider.stripe.config.StripeProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
@@ -258,8 +259,19 @@ class PayoutSteps {
     }
 
     private List<ProviderPayout> listPayouts(ClaimedPayout claim) {
-        Instant since = claim.transferredAt() == null ? Instant.EPOCH : claim.transferredAt().minus(LOOKBACK);
-        return provider.findPayouts(claim.stripeAccountId(), claim.reference(), since);
+        return provider.findPayouts(
+                claim.stripeAccountId(),
+                claim.reference(),
+                payoutsListedSince(claim.transferredAt())
+        );
+    }
+
+    /**
+     * Where a listing of a transfer's payouts starts: {@link #LOOKBACK} before the transfer, or from the beginning when
+     * its time is unknown. The operator's checks list the same window.
+     */
+    static Instant payoutsListedSince(@Nullable Instant transferredAt) {
+        return transferredAt == null ? Instant.EPOCH : transferredAt.minus(LOOKBACK);
     }
 
     private StepOutcome unknown(ClaimedPayout claim, String cause) {

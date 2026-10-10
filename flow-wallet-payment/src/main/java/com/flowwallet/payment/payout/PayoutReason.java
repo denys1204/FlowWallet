@@ -23,7 +23,9 @@ public enum PayoutReason {
      */
     BANK_ACCOUNT_REJECTED,
     /**
-     * Stripe failed, canceled or refused the payout, or its funds never became available in the connected account.
+     * Stripe failed, canceled or refused the payout, or its funds never became available in the connected account; or
+     * an operator sent a stuck transfer to its reversal, with no failure code.
+     * See docs/adr/0037-operator-actions-decide-from-the-row-and-stripe-as-they-are.md.
      */
     PAYOUT_FAILED,
     /**

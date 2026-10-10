@@ -36,8 +36,8 @@ nothing about wallets ([ADR 0002](docs/adr/0002-module-boundaries.md),
   wallet and **only** `/api/payments/webhooks/**` to payment, so a payment can only be started through a wallet.
 - `flow-wallet-payment`: Stripe, `payment_transactions`, webhooks, the payment events it sends to Kafka through the
   outbox, the `payouts` it accepts from `wallet.withdrawals` and works through Stripe Connect in `PayoutExecutor`,
-  settled from the Connect webhook and `PayoutReconciler`, and the connected account and bank account each user sets for
-  them.
+  settled from the Connect webhook and `PayoutReconciler`, the connected account and bank account each user sets for
+  them, and the `payouts` actuator endpoint, an operator's exit from `NEEDS_ATTENTION`.
 - `flow-wallet-service`: the Wallet Service. REST API, deposit initiation, transfers, the bank account relay to
   Payment Service, and the Kafka consumer.
 
@@ -119,7 +119,10 @@ Each invariant here is stated once and links the ADR that holds its reasoning.
   `GlobalExceptionHandler` answers a database the service cannot reach (a failed begin, a lost connection,
   SQLState class 08 or 57P0x) and any `TransientDataAccessException` (a query timeout, a lock failure) with that
   503, whose detail does not claim that nothing moved
-  ([ADR 0025](docs/adr/0025-unreachable-database-answers-503.md)).
+  ([ADR 0025](docs/adr/0025-unreachable-database-answers-503.md)). On the `payouts` actuator endpoint, 422 names the
+  action to use instead, and its own 503 (the quiet period, a row that changed while Stripe was asked) means nothing
+  moved and a retry is safe
+  ([ADR 0037](docs/adr/0037-operator-actions-decide-from-the-row-and-stripe-as-they-are.md)).
 - The consumer's `DefaultErrorHandler` is the wallet's only retry of a consumed record; do not add Spring Retry there.
   Refusals the wallet understands (invalid amount or envelope, unknown wallet, duplicate reference, an unknown or
   mismatched withdrawal) are stored as acknowledged `REJECTED` rows with the payload; unreadable records and exhausted
@@ -163,6 +166,15 @@ Each invariant here is stated once and links the ADR that holds its reasoning.
   is on `StripeConnectPayouts`' list for that call. Every other failure, a 409 included, leaves the outcome unknown:
   the step keeps its key generation and looks for the object before it creates again
   ([ADR 0035](docs/adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md)).
+- A payout leaves `NEEDS_ATTENTION` only through the `payouts` actuator endpoint, which is web-only, absent from the
+  default `ACTUATOR_EXPOSED_ENDPOINTS`, answers only a loopback `Host`, takes a write only with the
+  `X-FlowWallet-Operator` header and creates nothing at Stripe; `ActuatorRequestGuard` refuses every actuator request a
+  web page sends. `requeue` returns the row to `attention_from` under its key generation. `return-without-reversal` and
+  `reverse` wait out `unknown-backoff` after the hand-over, read Stripe with no transaction open, refuse while a payout
+  of the reference may reach the bank or, from `ACCEPTED`, a transfer is not reversed in full, and write through
+  `PayoutStore` only while the row's `version` is the one read before Stripe was asked
+  ([ADR 0035](docs/adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md),
+  [ADR 0037](docs/adr/0037-operator-actions-decide-from-the-row-and-stripe-as-they-are.md)).
 - `FAILED` outbox rows are never deleted automatically; they are the dead-letter store
   ([ADR 0008](docs/adr/0008-transactional-outbox.md)).
 - A `PaymentFailedEvent` moves no money, which is why the consumer does not depend on event order

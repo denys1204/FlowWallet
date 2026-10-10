@@ -32,11 +32,20 @@ events that connect these two databases.
   `stripe_reversal_id`, `status` (`ACCEPTED`/`TRANSFERRED`/`PAYOUT_CREATED`/`PAID`/`REVERSING`/`RETURNED`/
   `NEEDS_ATTENTION`), `reason_code`, `failure_code`, and the executor's bookkeeping: `key_gen`, each step's
   `*_attempted_at` (the time of its first claim), `transferred_at`, `paid_at`, `attempts`, `next_attempt_at` (NOT NULL),
-  `claimed_until` (the lease, also its ownership token), `attention_from` and `last_reconciled_at`, plus `version` and
-  timestamps. CHECKs keep the amount positive, the status known, a reason on a payout on its way back or returned, the
-  Stripe ids each status needs, and `attention_from` set exactly in `NEEDS_ATTENTION`. Partial indexes serve the
-  executor's scan of due rows and the reconciler's scan of created and paid ones
-  ([ADR 0035](adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md)).
+  `claimed_until` (the lease, also its ownership token), `attention_from`, `attention_cause` and `attention_detail` (why
+  the payout waits for an operator and what the executor saw, cut to 255 characters; set only in `NEEDS_ATTENTION`, with
+  the cause one of `UNKNOWN_LIMIT`/`DEFECT`/`MISMATCH`/`MULTIPLE`/`LIVE_PAYOUT`/`REVERSAL_REFUSED`) and
+  `last_reconciled_at`, plus `version` and timestamps. While a payout waits, `updated_at` is the time it was handed
+  over, because nothing writes a waiting row until an operator acts, and the `payouts` actuator endpoint counts its
+  quiet period from it. CHECKs keep the amount positive, the status known, a reason on a payout on its way back or
+  returned, the Stripe ids each status needs, `attention_from` set exactly in `NEEDS_ATTENTION`, the cause one the code
+  knows (`payouts_attention_cause_known`) and the cause and detail empty outside `NEEDS_ATTENTION`
+  (`payouts_attention_cause_only_when_needed`). Neither cause CHECK requires a cause inside `NEEDS_ATTENTION`, because a
+  row handed over before the columns existed has none, and the code sets one on every hand-over. Partial indexes serve
+  the executor's scan of due rows, the reconciler's scan of created and paid ones, and the operator's list and count of
+  waiting ones (`idx_payouts_attention`, on `updated_at` and `id`)
+  ([ADR 0035](adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md),
+  [ADR 0037](adr/0037-operator-actions-decide-from-the-row-and-stripe-as-they-are.md)).
 
 `wallet_db` is managed by Liquibase in `flow-wallet-service`:
 

@@ -1,0 +1,38 @@
+databaseChangeLog:
+  - changeSet:
+      id: 010-add-payouts-attention-columns
+      author: flow-wallet
+      comment: >-
+        Why a payout waits for an operator, so the payouts actuator endpoint can say it. Both are set when the row moves
+        to NEEDS_ATTENTION and cleared when it leaves. See
+        docs/adr/0037-operator-actions-decide-from-the-row-and-stripe-as-they-are.md.
+      changes:
+        - addColumn:
+            tableName: payouts
+            columns:
+              - column:
+                  name: attention_cause
+                  type: VARCHAR(20)
+                  remarks: The AttentionCause of the hand-over, set only in NEEDS_ATTENTION.
+              - column:
+                  name: attention_detail
+                  type: VARCHAR(255)
+                  remarks: What the executor saw, cut to the column; never a user id.
+  - changeSet:
+      id: 010-add-payouts-attention-checks-and-index
+      author: flow-wallet
+      comment: >-
+        The cause is one the code knows, and both columns are empty outside NEEDS_ATTENTION. The check runs one way
+        only, because a row handed over before these columns existed has no cause. The partial index serves the
+        operator's list, oldest first, and the count by step. Written as raw SQL because addCheckConstraint is a
+        Liquibase Pro change type.
+      changes:
+        - sql:
+            sql: >-
+              ALTER TABLE payouts ADD CONSTRAINT payouts_attention_cause_known
+              CHECK (attention_cause IS NULL OR attention_cause IN ('UNKNOWN_LIMIT', 'DEFECT', 'MISMATCH', 'MULTIPLE',
+              'LIVE_PAYOUT', 'REVERSAL_REFUSED'));
+              ALTER TABLE payouts ADD CONSTRAINT payouts_attention_cause_only_when_needed
+              CHECK (status = 'NEEDS_ATTENTION' OR (attention_cause IS NULL AND attention_detail IS NULL));
+              CREATE INDEX idx_payouts_attention ON payouts (updated_at, id)
+              WHERE status = 'NEEDS_ATTENTION'

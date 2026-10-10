@@ -1,8 +1,8 @@
 package com.flowwallet.payment.payout;
 
 /**
- * Why the executor handed a payout to an operator. Logged and counted; the row records only that it needs attention
- * and the step it came from.
+ * Why the executor handed a payout to an operator. Logged, counted, and stored on the row with its detail until an
+ * operator acts. See docs/adr/0037-operator-actions-decide-from-the-row-and-stripe-as-they-are.md.
  */
 public enum AttentionCause {
     /**

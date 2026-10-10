@@ -5,7 +5,8 @@
   [0015](0015-currency-precision-and-no-rounding.md),
   [0022](0022-stripe-charge-rules-checked-before-the-reservation.md), [0023](0023-isk-charged-in-whole-units.md),
   [0026](0026-problem-details-never-quote-rejected-input.md) and
-  [0027](0027-user-ids-stay-out-of-logs-and-provider-metadata.md)
+  [0027](0027-user-ids-stay-out-of-logs-and-provider-metadata.md), extended by
+  [0037](0037-operator-actions-decide-from-the-row-and-stripe-as-they-are.md)
 - Date: 2026-10-10
 
 ## Context

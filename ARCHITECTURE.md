@@ -98,7 +98,7 @@ explained in [ADR 0002](docs/adr/0002-module-boundaries.md) and the contract rul
 |--------|------|----------------|
 | `flow-wallet-gateway` | 8080 | Route `/api/wallets/**` to Wallet Service and only `/api/payments/webhooks/**` to Payment Service; CORS. |
 | `flow-wallet-service` | 8081 | List, open and read wallets; cursor-paged balance history; deposit initiation (calls Payment Service over HTTP); transfers between two users' wallets in one currency; the caller's bank account, relayed to Payment Service; Kafka consumer that credits balances idempotently, with a dead-letter topic. |
-| `flow-wallet-payment` | 8082 | Payment intents and bank accounts (internal), Stripe webhooks, transactional outbox → Kafka; Kafka consumer that accepts withdrawal commands as payouts, with a dead-letter topic; payout executor that transfers, pays out and reverses through Stripe Connect. |
+| `flow-wallet-payment` | 8082 | Payment intents and bank accounts (internal), Stripe webhooks, transactional outbox → Kafka; Kafka consumer that accepts withdrawal commands as payouts, with a dead-letter topic; payout executor that transfers, pays out and reverses through Stripe Connect; payout reconciler that settles payouts whose Connect webhook is lost; the `payouts` actuator endpoint, off by default, as an operator's exit from `NEEDS_ATTENTION`. |
 | `flow-wallet-platform` | (library) | RFC 9457 error handling, `@CurrentUserId` auto-configuration, `@Iso4217Currency`, the `X-User-Id` header constant. |
 | `flow-wallet-outbox` | (library) | Transactional outbox: the `outbox_events` entity and its claim queries, the send after the commit, the poller with its reaper and cleanup, the `outbox` endpoint and the `outbox.events.failed` gauge. |
 | `flow-wallet-contract` | (library) | `PaymentCompletedEvent`, `PaymentFailedEvent`, the payout events and `WithdrawalRequestedEvent`, the `payment.events` and `wallet.withdrawals` topics, the `eventType` header and its values. |
@@ -365,7 +365,9 @@ comes back before the gateway's 20 s response timeout would answer `504`
   ([ADR 0017](docs/adr/0017-webhooks-verified-before-they-are-read.md)), Wallet Service only from the gateway, and
   Payment Service only from the
   gateway (for Stripe webhooks) and from Wallet Service (which forwards `X-User-Id` when it starts a
-  payment). In a cluster, neither service gets a public route.
+  payment). In a cluster, neither service gets a public route. Payment Service's `payouts` actuator endpoint sits behind
+  the same boundary: its writes credit wallets and nothing authenticates them, so it is off by default
+  ([ADR 0037](docs/adr/0037-operator-actions-decide-from-the-row-and-stripe-as-they-are.md)).
 - `X-User-Id` must be a random-based UUID, version 4 or 7, and the resolver enforces it. An identity has to
   be opaque, so versions 1, 3 and 5 are refused even though they pass a naive UUID check. Versions 3 and 5
   are hashes of a name, so anyone who guesses the name can compute the id, and version 1 embeds a MAC

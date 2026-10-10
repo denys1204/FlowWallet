@@ -1,10 +1,10 @@
 # FlowWallet HTTP API
 
-This file lists the HTTP endpoints FlowWallet exposes: the wallet endpoints behind the gateway, the Stripe webhook, and
-the internal Payment Service calls that start a deposit, set a bank account and check a withdrawal. It also covers the
-error format the wallet and payment services share. For how the services fit together, see
-[ARCHITECTURE.md](../ARCHITECTURE.md); for the database tables behind these endpoints, see
-[the data model](data-model.md); for running the services locally, see [development](development.md).
+This file lists the HTTP endpoints FlowWallet exposes: the wallet endpoints behind the gateway, the Stripe webhook,
+the internal Payment Service calls that start a deposit, set a bank account and check a withdrawal, and the operator
+endpoint for payouts that wait for a person. It also covers the error format the wallet and payment services share. For
+how the services fit together, see [ARCHITECTURE.md](../ARCHITECTURE.md); for the database tables behind these
+endpoints, see [the data model](data-model.md); for running the services locally, see [development](development.md).
 
 ## API reference
 
@@ -324,6 +324,192 @@ balance is not read then ([ADR 0035](adr/0035-payouts-run-as-a-step-machine-on-s
 - The check is not atomic: two withdrawals can pass it together, as can one whose command is still on its way, and
   the transfer that finds the balance short returns its money.
 
+### Operator: the `payouts` actuator endpoint (`:8082` directly)
+
+A payout the executor cannot finish waits in `NEEDS_ATTENTION` until a person acts. This endpoint lists those payouts,
+shows one payout and moves a waiting payout on. It is a web-only actuator endpoint on Payment Service's own port, and
+the gateway does not route to it. It authenticates nobody and its writes credit wallets, so it is in no default
+exposure: with the default `ACTUATOR_EXPOSED_ENDPOINTS` every path below answers `404`
+([ADR 0037](adr/0037-operator-actions-decide-from-the-row-and-stripe-as-they-are.md)).
+
+To use it, add `payouts` to `ACTUATOR_EXPOSED_ENDPOINTS` for the one Payment Service process, and never in `.env`, which
+the gateway and Wallet Service read too (the command and the reason are in the
+[configuration table](development.md#configuration)). A value of `*` exposes it as well. In a cluster, set the variable
+on Payment Service's workload only while acting, reach the pod with `kubectl port-forward`, and remove the variable
+afterwards. Send the requests with curl from the service's host or through the port-forward: Payment Service answers
+`payouts` only under a loopback `Host` (`localhost`, `127.0.0.1` or `[::1]`), and refuses with `403` every actuator
+request that a web page sends, one with an `Origin` header or a `Sec-Fetch-Site` other than `none`, because a page open
+in the operator's browser could otherwise send the writes to `localhost`.
+
+| Request | Answer |
+|---------|--------|
+| `GET /actuator/payouts` | `200` the payouts in `NEEDS_ATTENTION`, longest-waiting first |
+| `GET /actuator/payouts/{reference}` | `200` one payout in any status |
+| `POST /actuator/payouts/{reference}/{action}` with `X-FlowWallet-Operator` | `200` the action's result; `action` is `requeue`, `return-without-reversal` or `reverse` |
+
+`{reference}` is the withdrawal's transaction reference, in either case. A write carries the header
+`X-FlowWallet-Operator` with any value, for example
+`curl -X POST -H 'X-FlowWallet-Operator: on-call' http://localhost:8082/actuator/payouts/{reference}/requeue`: a web
+page cannot set a custom header across origins without a preflight, which the actuator never answers, so the header
+keeps even a browser that sends no `Origin` from posting a write. No request takes a body, a query string or a user id,
+and one that has a body or a query string gets `400`, because the actuator would merge their fields over the reference
+and the action in the path; and no answer carries a user id, the row's id or its `version`. A field without a value is
+`null`. Amounts are decimal strings at the currency's payout scale and times are ISO-8601 text.
+
+The list answer is `{needsAttention, byFrom, truncated, payouts}`:
+
+```json
+{
+  "needsAttention": 3,
+  "byFrom": {"ACCEPTED": 1, "TRANSFERRED": 1, "REVERSING": 1},
+  "truncated": false,
+  "payouts": [ { "...": "a payout, as below" } ]
+}
+```
+
+`payouts` holds at most 100 payouts. `needsAttention` counts every waiting payout and `byFrom` counts them by the step
+they came from, and `truncated` is `true` when more wait than `payouts` lists, which one row read beyond the 100
+decides. The counts and the list are read one after another, so they can differ by a payout that moved in between. A
+payout looks like this in the list, in the single read and in an action's answer:
+
+```json
+{
+  "reference": "6f1d4c2a-8b3e-4f5a-9c7d-1e2f3a4b5c6d",
+  "status": "NEEDS_ATTENTION",
+  "attentionFrom": "ACCEPTED",
+  "cause": "MULTIPLE",
+  "detail": "2 transfers in the group",
+  "since": "2026-10-10T09:00:30.123456Z",
+  "amount": "75.00",
+  "currency": "PLN",
+  "reasonCode": null,
+  "failureCode": null,
+  "keyGen": 0,
+  "attempts": 1,
+  "nextAttemptAt": null,
+  "stripeAccountId": null,
+  "stripeTransferId": null,
+  "stripePayoutId": null,
+  "stripeReversalId": null,
+  "transferredAt": null,
+  "paidAt": null,
+  "createdAt": "2026-10-10T08:59:12.404118Z",
+  "actions": ["requeue", "return-without-reversal"]
+}
+```
+
+- `since` is when the payout was handed over to an operator, `cause` says why and `detail` is what the executor saw, cut
+  to 255 characters. All three are set only while the payout waits, and `cause` and `detail` are `null` for a payout
+  handed over before changeset 010 stored them. `cause` is one of:
+  - `UNKNOWN_LIMIT`: the step's outcome stayed unknown for `PAYMENT_PAYOUT_EXECUTOR_UNKNOWN_ATTEMPTS` tries.
+  - `DEFECT`: an idempotency key was sent with other parameters, which only a defect causes.
+  - `MISMATCH`: Stripe holds an object for the reference whose terms or destination are not the payout's.
+  - `MULTIPLE`: Stripe holds more than one transfer, or more than one live payout, for the reference.
+  - `LIVE_PAYOUT`: a reversal was due while a payout for the reference may still reach the bank.
+  - `REVERSAL_REFUSED`: Stripe kept refusing the reversal for `PAYMENT_PAYOUT_EXECUTOR_REVERSAL_RETRY_ATTEMPTS` tries.
+- `attentionFrom` is the step a `requeue` returns the payout to. `nextAttemptAt` is set only in an executor step
+  (`ACCEPTED`, `TRANSFERRED` or `REVERSING`). `attempts` counts the executor's tries, and the try that handed the payout
+  over is not counted, so `UNKNOWN_LIMIT` shows one less than `PAYMENT_PAYOUT_EXECUTOR_UNKNOWN_ATTEMPTS`.
+- `actions` lists what the payout's state allows and promises nothing about Stripe, whose checks can still refuse:
+  `requeue` and `return-without-reversal` from `ACCEPTED` and `REVERSING`, `requeue` and `reverse` from `TRANSFERRED`,
+  and none for a payout that is not waiting.
+
+The three actions:
+
+| Action | Allowed from | Result |
+|--------|--------------|--------|
+| `requeue` | any waiting payout | Back to `attentionFrom`, with its key generation kept. Stripe is not asked and no event is written. The executor takes the step up at its next run and looks for what Stripe holds before it creates anything |
+| `return-without-reversal` | `ACCEPTED`, `REVERSING` | `RETURNED` with the reason `OPERATOR_RETURNED` and a `PayoutReturnedEvent`, which credits the wallet |
+| `reverse` | `TRANSFERRED` | `REVERSING` with the reason `PAYOUT_FAILED` and a `PayoutFailedEvent`. The executor then reverses the transfer and ends the payout in `RETURNED`, which credits the wallet |
+
+The wallet's withdrawal follows the payout's events. A `requeue` changes nothing there. A return from `ACCEPTED` takes
+it from `PENDING` to `RETURNED` and credits the amount, and a return from `REVERSING` takes it from `RETURN_PENDING` to
+`RETURNED` and credits it. `reverse` takes it from `PENDING` to `RETURN_PENDING` at once, and to `RETURNED` with the
+credit after the executor's reversal. A `requeue` or `reverse` hands the payout back to the executor, so with
+`PAYMENT_PAYOUT_EXECUTOR_ENABLED=false` nothing works it, and the single read shows it in its step.
+
+The endpoint creates nothing at Stripe: only the executor's claimed steps create transfers, payouts and reversals, and a
+waiting payout is never claimed. `return-without-reversal` and `reverse` decide in this order, and a refusal at any
+point writes nothing:
+
+1. The payout must be in `NEEDS_ATTENTION`. A return from `TRANSFERRED` is refused without asking Stripe, because the
+   transfer sits in the connected account and a reversal can still bring it back. A `reverse` from `ACCEPTED` is
+   refused, because nothing was transferred, and so is one from `REVERSING`, which is already being reversed.
+2. A quiet period must have passed since `since`, `PAYMENT_PAYOUT_EXECUTOR_UNKNOWN_BACKOFF` (1 minute by default). The
+   payout is handed over right after the last Stripe call of its try, and a request of that try may still be running at
+   Stripe, so nothing is decided before the executor's own wait for such a request is over.
+3. Stripe is read with no transaction open:
+   - A return from `ACCEPTED` lists the transfers in the payout's transfer group and is refused while one is not
+     reversed in full. A transfer reversed in full by hand does not block it.
+   - A return from `REVERSING` lists the connected account's payouts for the reference over the executor's window, from
+     an hour before the transfer, and adds the row's own payout by id when the listing lacks it. It is refused while any
+     of them may reach the bank, which is every status but failed and canceled, an unrecognized one included. It then
+     reads the transfer and is refused when it is reversed in full.
+   - A `reverse` lists the payouts the same way and is refused while any of them may reach the bank.
+4. The write is one short transaction that locks the row and applies the move only while the row's `version` is the one
+   read before Stripe was asked, so a decision never rests on a row that changed in between.
+
+An answer to a write is `{action, payout, leftInConnectedAccount}`, where `payout` is the payout after the write and
+`leftInConnectedAccount` is set only for a return from `REVERSING`.
+
+A refusal is an `application/problem+json` response in the shape of [Error responses](#error-responses). The detail
+is written by the server, never quotes the request and names only Stripe ids and statuses. The checks run in this
+order:
+
+| Status | Action | Condition | The detail |
+|--------|--------|-----------|------------|
+| `403` | all | the request came from a web page, or reached `payouts` under a host other than loopback | Says which |
+| `400` | all | the path has a path parameter (`;`), an escape (`%`), a doubled slash or a dot segment, refused on every route of Payment Service | Says the path must be plain |
+| `400` | all | the request has a query string or a body | Says the endpoint takes neither |
+| `400` | write | the `X-FlowWallet-Operator` header is missing or blank | Names the header |
+| `400` | write | `action` is none of the three | Names the three actions |
+| `404` | all | no payout has the reference | Says so, without quoting the reference |
+| `422` | write | the payout is not in `NEEDS_ATTENTION` | Gives its status, and the reason of a `RETURNED` one; also the answer to a repeated write |
+| `422` | return | the payout waits from `TRANSFERRED` | Names the transfer and its account; use `reverse` once no payout of it may reach the bank, or `requeue` |
+| `422` | `reverse` | the payout waits from `ACCEPTED` | Nothing was transferred; use `requeue` or `return-without-reversal` |
+| `422` | `reverse` | the payout waits from `REVERSING` | It is already being reversed; `requeue` retries the reversal |
+| `503` | return, `reverse` | the quiet period has not passed | Gives `since` and the time to retry after |
+| `422` | return from `ACCEPTED` | a transfer in the group is not reversed in full | Names it; `requeue` adopts it if it is the only one and has the payout's terms, otherwise reverse it in the Dashboard, then return the payout |
+| `422` | `reverse` | exactly one payout of the transfer may reach the bank, and it has the payout's amount and currency | Names it and its status; `requeue`, and the payout step adopts it |
+| `422` | return from `REVERSING`, `reverse` | any other payout of the transfer that may reach the bank | Names it and its status; `requeue` once Stripe reports it failed or canceled, and a paid one needs correction by hand |
+| `422` | return from `REVERSING` | the transfer is reversed in full | Names it; `requeue`, and the reversal step records it with the payout's own reason |
+| `502` | return, `reverse` | Stripe could not be asked | Nothing was changed; retry |
+| `503` | return, `reverse` | the payout changed while Stripe was asked | Nothing was changed; read it again |
+| `503` | all | the database cannot be reached | The detail of [ADR 0025](adr/0025-unreachable-database-answers-503.md) |
+| `500` | all | a defect | "Internal server error" |
+
+On this endpoint `422` means the payout's state or what Stripe holds refuses the action, and the detail names the action
+to use instead. `503` means nothing moved and a retry is safe, and `502` means Stripe could not be asked and nothing
+moved. `409` is not used, because [ADR 0016](adr/0016-error-model-and-status-codes.md) keeps it for a key already taken.
+A `requeue` makes no Stripe call, so it can answer only `404`, `422`, `503` for the database or `500`, and it is the
+action that works while Stripe is down.
+
+A response can be lost after the write committed. A repeat then answers `422` with the payout's current status, which
+tells what the first call did, so read `GET /actuator/payouts/{reference}` before repeating a write.
+
+A return from `REVERSING` credits the wallet with the full amount while the part of the transfer that no reversal
+brought back stays in the connected account. `leftInConnectedAccount` states that part, and it is the platform's loss. A
+return from `ACCEPTED` costs nothing, because no transfer holds money.
+
+Prefer `requeue` once the cause has cleared: Stripe reachable again, a limit lifted, a live payout reported failed or
+canceled, or, from `TRANSFERRED`, one live payout with the payout's terms, which a `reverse` points to. The executor
+repeats the step under the same key generation after looking for what Stripe holds, so it adopts what an earlier try
+created and completes the payout. A return pays the wallet back at once, and `reverse` brings the transfer back out of
+the connected account once no payout of it can reach the bank.
+
+Some payouts still need correction by hand:
+
+- A payout in `REVERSING` with a second payout that was paid. The money reached the bank and the wallet shows
+  `RETURN_PENDING`, so both rows need correcting by hand
+  ([ADR 0035](adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md)).
+- A payout that may reach the bank and has other terms than the row's, from `TRANSFERRED` or `REVERSING`. Wait until
+  Stripe reports it failed or canceled, then the actions apply. When it was paid, correct the rows by hand.
+- A payout in `ACCEPTED` with stray transfers (`MULTIPLE` or `MISMATCH`). Reverse them in the Dashboard, then use
+  `return-without-reversal`, which a transfer reversed in full does not block. `requeue` keeps meeting `MULTIPLE` or
+  `MISMATCH`, because the executor's lookup counts a transfer reversed in full.
+- Objects created by hand at Stripe without the `flowwallet_withdrawal` metadata. The executor and this endpoint cannot
+  see them.
+
 ## Error responses
 
 The wallet and payment services return errors as RFC 9457 `application/problem+json`, produced by a shared
@@ -386,3 +572,7 @@ The status mapping lives in one place, and each status stands for one remedy
 - `500`: a correctly signed webhook payload that can't be processed, a transfer that broke a database CHECK
   or overflowed a column, or anything unexpected. The detail stays generic; the specifics go to the logs and
   are never returned.
+
+The `payouts` actuator endpoint answers in this format too, and gives `422`, `502` and `503` meanings of their own, so
+its statuses are listed in [its section](#operator-the-payouts-actuator-endpoint-8082-directly)
+([ADR 0037](adr/0037-operator-actions-decide-from-the-row-and-stripe-as-they-are.md)).

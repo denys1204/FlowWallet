@@ -86,8 +86,9 @@ The contract also defines the events of a withdrawal
 ([ADR 0033](adr/0033-withdrawals-are-debited-under-the-lock-and-settled-by-payout-events.md),
 [ADR 0034](adr/0034-shared-outbox-and-the-wallet-withdrawals-command.md)). Payment Service consumes the commands and
 Wallet Service the payout events. Payment Service sends `PayoutReturnedEvent` for a command whose terms it refuses and
-when the payout executor returns a payout, `PayoutFailedEvent` when a reversal starts, and `PayoutPaidEvent` when the
-Connect webhook or the payout reconciler finds the payout paid
+when the payout executor or an operator returns a payout
+([ADR 0037](adr/0037-operator-actions-decide-from-the-row-and-stripe-as-they-are.md)), `PayoutFailedEvent` when a
+reversal starts, and `PayoutPaidEvent` when the Connect webhook or the payout reconciler finds the payout paid
 ([ADR 0036](adr/0036-connect-webhooks-have-their-own-endpoint-and-secret.md)). Stripe can fail a payout days after it
 was paid, so a `PayoutFailedEvent` can follow the `PayoutPaidEvent` for the same reference. `paidAt` is when Payment
 Service saw the payout paid, not Stripe's arrival date. No command is sent before withdrawals are switched on. They ship

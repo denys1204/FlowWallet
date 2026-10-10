@@ -114,6 +114,26 @@ public interface PayoutRepository extends JpaRepository<Payout, Long> {
     );
 
     /**
+     * The payouts waiting for an operator, the longest-waiting first: {@code updated_at} is the hand-over, since
+     * nothing writes a waiting row until an operator moves it. The status is written into the query so the predicate
+     * matches {@code idx_payouts_attention}.
+     * See docs/adr/0037-operator-actions-decide-from-the-row-and-stripe-as-they-are.md.
+     */
+    @Query("""
+            select p from Payout p
+            where p.status = com.flowwallet.payment.payout.PayoutStatus.NEEDS_ATTENTION
+            order by p.updatedAt, p.id
+            """)
+    List<Payout> findAwaitingOperator(Pageable page);
+
+    @Query("""
+            select count(p) from Payout p
+            where p.status = com.flowwallet.payment.payout.PayoutStatus.NEEDS_ATTENTION
+              and p.attentionFrom = :from
+            """)
+    long countAwaitingOperator(@Param("from") PayoutStatus from);
+
+    /**
      * Locks the row before an outcome is recorded, so the token it is checked against cannot change underneath.
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)

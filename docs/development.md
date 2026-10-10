@@ -170,8 +170,8 @@ their reconcilers. `.env.example` has the full list with comments. The main ones
 | `PAYMENT_RECONCILIATION_INTERVAL_MS` / `_MIN_AGE` / `_MAX_AGE` / `_BATCH_SIZE` | `300000` / `15m` / `24h` / `50` | Payment: how often the reconciler asks Stripe about deposits still pending or failed, from what age and until what age, and how many per run; `PAYMENT_RECONCILIATION_ENABLED` (`true`) turns it off ([ADR 0032](adr/0032-pending-payments-are-rechecked-with-the-provider.md)) |
 | `PAYMENT_SCHEDULING_ENABLED` | `true` | Payment: `false` stops every scheduled job, the outbox poller, the reconciler, the payout executor and the payout reconciler included; only for a test that drives those steps itself |
 | `PAYMENT_PAYOUT_CURRENCY` / `PAYMENT_PAYOUT_MIN_AMOUNT` | `PLN` / `5.00` | Payment: the currency a withdrawal is paid out in and its minimum ([ADR 0035](adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md)) |
-| `PAYMENT_PAYOUT_EXECUTOR_ENABLED` / `_INTERVAL_MS` / `_BATCH_SIZE` / `_LEASE` | `true` / `10000` / `20` / `2m` | Payment: whether the payout executor runs, its pause between runs, rows per run, and how long a claim owns a row. The lease must cover three Stripe calls plus two 10s margins (44s with the defaults); instances' clocks must agree to within that margin. Outcomes are counted in `payment.payouts.executor.outcomes` (tags `step`, `outcome`) and hand-overs to an operator in `payment.payouts.needs.attention` (tags `from`, `cause`) |
-| `PAYMENT_PAYOUT_EXECUTOR_UNKNOWN_*` / `_PAYOUT_RETRY_*` / `_REVERSAL_RETRY_*` | see `.env.example` | Payment: how long an unknown outcome, a payout refused for funds or a limit, and a refused reversal are retried before the money comes back or an operator takes over (about 7 h, 24 h and 6 h by default) |
+| `PAYMENT_PAYOUT_EXECUTOR_ENABLED` / `_INTERVAL_MS` / `_BATCH_SIZE` / `_LEASE` | `true` / `10000` / `20` / `2m` | Payment: whether the payout executor runs, its pause between runs, rows per run, and how long a claim owns a row. The lease must cover three Stripe calls plus two 10s margins (44s with the defaults); instances' clocks must agree to within that margin. Outcomes are counted in `payment.payouts.executor.outcomes` (tags `step`, `outcome`), hand-overs to an operator in `payment.payouts.needs.attention` (tags `from`, `cause`) and an operator's actions in `payment.payouts.operator.actions` (tag `action`: `requeue`, `return_without_reversal` or `reverse`; tag `outcome`: `applied`, `refused` for a `404` or `422`, `retry` for a `503` from the quiet period or a changed row, or `stripe_unavailable` for a `502`). The gauge `payment.payouts.awaiting.operator` (tag `from`: `accepted`, `transferred` or `reversing`) is the number of payouts waiting for an operator. It reads the database each time it is read, and exists whether or not the `payouts` endpoint is exposed. Alert on it above 0 for 15 minutes: with `from=transferred` the money sits in a connected account and the wallet shows `PENDING`, with `from=reversing` the wallet shows `RETURN_PENDING`, and with `from=accepted` the money is still on the platform |
+| `PAYMENT_PAYOUT_EXECUTOR_UNKNOWN_*` / `_PAYOUT_RETRY_*` / `_REVERSAL_RETRY_*` | see `.env.example` | Payment: how long an unknown outcome, a payout refused for funds or a limit, and a refused reversal are retried before the money comes back or an operator takes over (about 7 h, 24 h and 6 h by default). `_UNKNOWN_BACKOFF` is also how long after a hand-over the `payouts` endpoint waits before it returns or reverses a payout ([api.md](api.md#operator-the-payouts-actuator-endpoint-8082-directly)) |
 | `PAYMENT_PAYOUT_RECONCILER_ENABLED` / `_INTERVAL_MS` / `_BATCH_SIZE` / `_RUN_BUDGET` | `true` / `60000` / `50` / `60s` | Payment: whether the payout reconciler runs, its pause between runs, payouts asked about per run (one Stripe read each) and how long a run may take. It settles a payout whose Connect webhook is lost; outcomes are counted in `payment.payouts.reconciler.outcomes` (tags `status`, `outcome`) ([ADR 0036](adr/0036-connect-webhooks-have-their-own-endpoint-and-secret.md)) |
 | `PAYMENT_PAYOUT_RECONCILER_CREATED_MIN_AGE` / `_PAID_RECHECK` / `_PAID_PERIOD` | `15m` / `6h` / `10d` | Payment: a created payout is asked about from this age on and at most this often; a paid one every `_PAID_RECHECK` for `_PAID_PERIOD` after it was paid, because Stripe can fail a paid payout days later. `_PAID_RECHECK` must be shorter than `_PAID_PERIOD` |
 | `WALLET_SCHEDULING_ENABLED` | `true` | Wallet: `false` stops the outbox poller, reaper and cleanup; only for a test that drives those steps itself |
@@ -180,7 +180,7 @@ their reconcilers. `.env.example` has the full list with comments. The main ones
 | `OUTBOX_MAX_RETRIES` | `10` | Payment, Wallet: send attempts, the first included, before a row becomes `FAILED`, with backoff from `OUTBOX_RETRY_BACKOFF_BASE_MS` (`1000`) doubling up to `_MAX_MS` (`60000`). The default spends about four minutes in backoff (1, 2, 4, 8, 16, 32 s, then 60 s three times); the poll interval and each send's wait on the broker (up to the producer's `max.block.ms`, 60 s by default, when it is unreachable) add to that |
 | `OUTBOX_REAPER_INTERVAL_MS` / `OUTBOX_STUCK_PROCESSING_THRESHOLD_MS` | `60000` / `300000` | Payment, Wallet |
 | `OUTBOX_RETENTION_DAYS` / `OUTBOX_CLEANUP_CRON` | `7` / `0 0 3 * * *` | Payment, Wallet (`COMPLETED` rows only) |
-| `ACTUATOR_EXPOSED_ENDPOINTS` | Payment and Wallet `health,info,metrics,outbox`; Gateway `health,info` | All three. It is one shared name, so a value set in `.env` replaces all three defaults at once; the template leaves it commented for that reason |
+| `ACTUATOR_EXPOSED_ENDPOINTS` | Payment and Wallet `health,info,metrics,outbox`; Gateway `health,info` | All three. It is one shared name, so a value set in `.env` replaces all three defaults at once; the template leaves it commented for that reason. Payment's `payouts` endpoint is in no default, because its writes credit wallets and it authenticates nobody. Export it for the one Payment Service process, only while acting, as in `ACTUATOR_EXPOSED_ENDPOINTS=health,info,metrics,outbox,payouts ./mvnw -pl flow-wallet-payment spring-boot:run`, and never in `.env`, which all three services read. A value of `*` exposes it too. Its use is in [api.md](api.md#operator-the-payouts-actuator-endpoint-8082-directly) |
 | `LOG_LEVEL` / `APP_LOG_LEVEL` | `INFO` / `DEBUG` | Payment, Wallet |
 | `KAFKA_EXTERNAL_PORT` / `KAFKA_UI_PORT` | `9092` / `8090` | Docker Compose |
 
@@ -207,7 +207,7 @@ endpoint's webhooks.
 
 ## Testing
 
-There are 1367 tests, all green: 922 in the payment service, 339 in the wallet service, 53 in the outbox module, 44 in
+There are 1819 tests, all green: 1374 in the payment service, 339 in the wallet service, 53 in the outbox module, 44 in
 platform and 9 in the gateway. The gateway's tests bind its own `application.yml`, so a YAML regression that drops the
 response or connect timeout, or binds the gateway beyond loopback, fails there rather than in a live request; they also
 check that `BindAddressCheck` runs when the application is ready, warns for `0.0.0.0`, a LAN address and no address at
@@ -305,6 +305,30 @@ status, with payouts enabled and in a payout currency; a replaced default or a c
 read first and paid ones filling the batch, each row claimed under its own status's cutoff before Stripe is read, a lost
 claim costing no read, a run stopped by three failures in a row, its budget or an interrupt, a move logged and counted,
 and the reconciler's settings, defaults and switch.
+
+For the operator endpoint they cover a web-only endpoint under the id `payouts` whose write takes the reference and then
+the action, a reference folded to lower case, an unknown action refused without being quoted and reaching no operation,
+each action reaching its own operation, the list counting waiting payouts by step and saying when it is cut, a payout
+offering only the actions its state allows, amounts printed on the payout grid and times as text, no answer carrying a
+user id, the row's id or its version, a `requeue` that asks Stripe nothing, a return from the transfer step and a return
+or reversal inside the quiet period refused before Stripe is asked, a return from `ACCEPTED` refused by a transfer not
+reversed in full and passed when every transfer in the group is or none exists, a return from `REVERSING` refused while
+a payout may reach the bank (pending, in transit, paid, unrecognized, or a failed one beside a paid one) and passed when
+every payout failed or was canceled, the row's own payout retrieved when the listing lacks it, a transfer reversed in
+full refused and the part left in the connected account reported, the listing window the executor's, a reversal refused
+from `ACCEPTED` and `REVERSING` with the action to use, refused while a payout may reach the bank and inside the quiet
+period, and sent to the executor otherwise, a failed Stripe read answered `502` and a row that changed while Stripe was
+asked answered `503`, each writing nothing, the version read before Stripe was asked passed to the write, every Stripe
+read ended before the write begins, no Stripe create ever called, operations that hold no transaction, refusals naming
+Stripe's ids and never a user id or the rejected input, applied actions logged by reference, and actions counted by
+action and outcome. For the store they cover the cause and detail recorded on a hand-over and cleared on every exit, a
+requeue returning a waiting payout to its step with no event and changing nothing in any other status, a return or a
+reversal writing exactly one event in the transaction that moves the row and nothing under an older version or once the
+row left the wait, the waiting list oldest first up to its limit, and a snapshot without a user id. For the `Payout`
+entity they cover the table of transitions with the operator's reversal, a detail cut to its column and a requeue that
+keeps the key generation and the step's first attempt time. The gauge is checked to count waiting payouts by step under
+a name apart from the hand-over counter, and a test of the shipped exposure keeps `payouts` out of Payment Service's
+default.
 
 For the wallet's bank account relay they cover the caller's token and acceptance reaching Payment Service, a refused
 token passed on as a `400` in Payment Service's words, any other refusal treated as the wallet's own fault and a `502`,
