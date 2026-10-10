@@ -68,14 +68,15 @@ and set the state from it ([0036](0036-connect-webhooks-have-their-own-endpoint-
 `POST /api/payments/payouts/preflight` answers 400 for the terms Payment Service owns: a currency outside the configured
 list, an amount below its minimum, an amount off the payout grid. The list is indexed in configuration
 (`payment.payout.currencies[n].code` and `.min-amount`), because Spring lower-cases map keys bound from environment
-variables, and startup fails on an unknown code or a minimum that is not positive or off the grid. 1.0 lists PLN only,
-with a minimum no lower than the 5 PLN Stripe documents. `StripeCurrencyRules.payoutScale` is the grid: HUF and TWD in
-whole units sent as multiples of 100, the zero-decimal currencies and ISK in whole units, every other currency in
-hundredths. Its HUF and TWD entries are the payout rule that [0023](0023-isk-charged-in-whole-units.md) set aside, and
-it extends the grid of [0015](0015-currency-precision-and-no-rounding.md) with a rule `AmountPrecision` does not copy,
-since only a payout applies it. Otherwise the preflight answers 200 with the bank account's state and
-`reserveSufficient`: whether the platform's `available` balance in the currency (`Balance.retrieve`), less the amounts
-of payouts not yet transferred (`ACCEPTED`, or `NEEDS_ATTENTION` from `ACCEPTED`), covers the amount.
+variables, and startup fails on an unknown code or a minimum that is not positive, below Stripe's minimum payout for the
+account's country (`StripePayoutMinimums`) or off the grid. 1.0 lists PLN only, with a minimum no lower than the 5 PLN
+Stripe documents. `StripeCurrencyRules.payoutScale` is the grid: HUF and TWD in whole units sent as multiples of 100,
+the zero-decimal currencies and ISK in whole units, every other currency in hundredths. Its HUF and TWD entries are the
+payout rule that [0023](0023-isk-charged-in-whole-units.md) set aside, and it extends the grid of
+[0015](0015-currency-precision-and-no-rounding.md) with a rule `AmountPrecision` does not copy, since only a payout
+applies it. Otherwise the preflight answers 200 with the bank account's state and `reserveSufficient`: whether the
+platform's `available` balance in the currency (`Balance.retrieve`), less the amounts of payouts not yet transferred
+(`ACCEPTED`, or `NEEDS_ATTENTION` from `ACCEPTED`), covers the amount.
 
 `payouts` (migration `009-create-payouts`) is a reference namespace of its own, apart from `payment_transactions`. A row
 holds the terms (`transaction_reference` unique, `user_id`, `amount`, `currency`, `stripe_account_id`), the Stripe ids,

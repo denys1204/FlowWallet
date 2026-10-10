@@ -2,16 +2,21 @@ package com.flowwallet.payment.contract;
 
 import com.flowwallet.payment.dto.PayoutAccountRequest;
 import com.flowwallet.payment.dto.PayoutAccountResponse;
+import com.flowwallet.payment.dto.PayoutPreflightRequest;
+import com.flowwallet.payment.dto.PayoutPreflightResponse;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
 
+import java.math.BigDecimal;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Freezes the field names of {@code PUT|GET /api/payments/payout-accounts}, Payment Service's side of the relay.
- * Wallet Service keeps its own copies of these records, and its {@code PayoutWireFormatTest} pins the same names.
+ * Freezes the field names of {@code PUT|GET /api/payments/payout-accounts} and
+ * {@code POST /api/payments/payouts/preflight}, Payment Service's side of both calls.
+ * Wallet Service keeps its own copies of the payout-account records, and its {@code PayoutWireFormatTest} pins the
+ * same names; its copies of the preflight records come with withdrawals.
  * See docs/adr/0002-module-boundaries.md.
  */
 class PayoutWireFormatTest {
@@ -44,5 +49,22 @@ class PayoutWireFormatTest {
 
         assertThat(mapper.readTree(mapper.writeValueAsString(response)).propertyNames())
                 .containsExactlyInAnyOrderElementsOf(RESPONSE_FIELDS);
+    }
+
+    @Test
+    void thePreflightReadsEveryFieldTheWalletSendsAndAnswersWithExactlyTwo() {
+        // Guards a renamed component: a currency the caller sends would be read as null, or a reserve answer would
+        // reach the caller as null and hold every withdrawal.
+        PayoutPreflightRequest request = mapper.readValue(
+                """
+                {"currency": "PLN", "amount": 75.00}
+                """,
+                PayoutPreflightRequest.class
+        );
+
+        assertThat(request).isEqualTo(new PayoutPreflightRequest("PLN", new BigDecimal("75.00")));
+        String response = mapper.writeValueAsString(new PayoutPreflightResponse("READY", true));
+        assertThat(mapper.readTree(response).propertyNames())
+                .containsExactlyInAnyOrder("bankAccount", "reserveSufficient");
     }
 }

@@ -1,10 +1,10 @@
 # FlowWallet HTTP API
 
 This file lists the HTTP endpoints FlowWallet exposes: the wallet endpoints behind the gateway, the Stripe webhook, and
-the internal Payment Service calls that start a deposit and set a bank account. It also covers the error format the
-wallet and payment services share. For how the services fit together, see [ARCHITECTURE.md](../ARCHITECTURE.md); for the
-database tables behind these endpoints, see [the data model](data-model.md); for running the services locally, see
-[development](development.md).
+the internal Payment Service calls that start a deposit, set a bank account and check a withdrawal. It also covers the
+error format the wallet and payment services share. For how the services fit together, see
+[ARCHITECTURE.md](../ARCHITECTURE.md); for the database tables behind these endpoints, see
+[the data model](data-model.md); for running the services locally, see [development](development.md).
 
 ## API reference
 
@@ -269,6 +269,30 @@ digits and `currency` its currency. A caller with no bank account gets `NOT_SET`
   the stored row, because Stripe accepts a token once.
 - `400` when Stripe refuses the token (it does not exist, it was used already, or the bank account cannot take
   payouts): create a new token. `502` when Stripe gives no answer that settles it: retry with the same token.
+
+```
+POST /api/payments/payouts/preflight
+X-User-Id: <uuid>
+Content-Type: application/json
+
+{"currency": "PLN", "amount": 75.00}
+```
+
+Withdrawals are not open yet; once they are, Wallet Service asks this before it debits one
+([ADR 0033](adr/0033-withdrawals-are-debited-under-the-lock-and-settled-by-payout-events.md)). It returns
+`{bankAccount, reserveSufficient}`: `bankAccount` is `READY` when the caller's bank account takes payouts in the
+currency and `NOT_SET` otherwise, and `reserveSufficient` says whether the platform's available Stripe balance, less
+what payouts not yet transferred still owe, covers the amount. It is `null` while no bank account is ready, because the
+balance is not read then ([ADR 0035](adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md)).
+
+- `400` when the withdrawal misses Payment Service's terms: a currency it does not pay out in (PLN only by default),
+  an amount below the minimum (`PAYMENT_PAYOUT_MIN_AMOUNT`, 5.00 by default and never below Stripe's own minimum
+  payout where `StripePayoutMinimums` lists one), more decimals than a payout in the currency allows, or more than 15
+  integer digits. The detail names the rule and never the amount.
+- `400` also when `currency` is not three capital letters or `currency` or `amount` is missing.
+- `502` when Stripe cannot report the platform's balance. Nothing is written; retry.
+- The check is not atomic: two withdrawals can pass it together, as can one whose command is still on its way, and
+  the transfer that finds the balance short returns its money.
 
 ## Error responses
 

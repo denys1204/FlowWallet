@@ -651,4 +651,20 @@ class StripeConnectPayoutsTest {
         assertThat(payouts.availableBalance("PLN")).isEqualByComparingTo("8148.24");
         assertThat(payouts.availableBalance("EUR")).isEqualByComparingTo("0");
     }
+
+    @Test
+    void aBalanceWithSourceTypesButNoCardFundsCoversNothing() throws Exception {
+        // Guards counting bank or FPX funds, which a transfer without a source type cannot draw on, as cover.
+        var bankFundsOnly = new Balance.Available.SourceTypes();
+        bankFundsOnly.setBankAccount(5000L);
+        var pln = new Balance.Available();
+        pln.setCurrency("pln");
+        pln.setAmount(5000L);
+        pln.setSourceTypes(bankFundsOnly);
+        var balance = new Balance();
+        balance.setAvailable(List.of(pln));
+        when(stripeClient.retrieveBalance()).thenReturn(balance);
+
+        assertThat(payouts.availableBalance("PLN")).isEqualByComparingTo("0");
+    }
 }

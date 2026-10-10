@@ -41,8 +41,6 @@ public class WithdrawalCommandListener {
 
     private static final Pattern CURRENCY = Pattern.compile("[A-Za-z]{3}");
 
-    private static final int MAX_INTEGER_DIGITS = 15;
-
     private final ObjectMapper objectMapper;
     private final PayoutAcceptance acceptance;
 
@@ -109,11 +107,8 @@ public class WithdrawalCommandListener {
         if (amount == null || amount.signum() <= 0) {
             throw new UnreadableWithdrawalCommandException("Withdrawal command has no positive amount");
         }
-        // Subtracted in long: an exponent near Integer.MIN_VALUE as the scale would wrap an int difference to a
-        // negative count and let a huge amount through.
-        BigDecimal stripped = amount.stripTrailingZeros();
-        boolean fits = (long) stripped.precision() - stripped.scale() <= MAX_INTEGER_DIGITS
-                && stripped.scale() <= StripeCurrencyRules.of(command.currency()).acceptedScale();
+        boolean fits = PayoutTerms.fitsIntegerDigits(amount)
+                && amount.stripTrailingZeros().scale() <= StripeCurrencyRules.of(command.currency()).acceptedScale();
         if (!fits) {
             throw new UnreadableWithdrawalCommandException("Withdrawal command's amount is off its currency's grid");
         }

@@ -184,14 +184,14 @@ below 1000 ms, a reconciler batch below 1, a reconciler `min-age` or `max-age` b
 shorter than the `max-age`, a `payment.events` topic with more in-sync replicas than replicas, a
 `wallet.withdrawals.payment.DLT` topic with fewer than one partition or replica, consumer retry values the wallet would
 refuse, a payout currency list that is empty, names a code that is not an upper-case ISO 4217 code, or has a minimum
-that is missing, not positive or off the payout grid, and a connected account identity with a blank field, a date of
-birth that is not in the past, a country that is not two capital letters, a merchant category code that is not four
-digits or a terms IP that is not an IPv4 address. A missing webhook secret doesn't stop it starting; it only disables
-webhooks.
+that is missing, not positive, below Stripe's minimum payout where `StripePayoutMinimums` lists one for the account's
+country, or off the payout grid, and a connected account identity with a blank field, a date of birth that is not in the
+past, a country that is not two capital letters, a merchant category code that is not four digits or a terms IP that is
+not an IPv4 address. A missing webhook secret doesn't stop it starting; it only disables webhooks.
 
 ## Testing
 
-There are 955 tests, all green: 510 in the payment service, 339 in the wallet service, 53 in the outbox module, 44 in
+There are 979 tests, all green: 534 in the payment service, 339 in the wallet service, 53 in the outbox module, 44 in
 platform and 9 in the gateway. The gateway's tests bind its own `application.yml`, so a YAML regression that drops the
 response or connect timeout, or binds the gateway beyond loopback, fails there rather than in a live request; they also
 check that `BindAddressCheck` runs when the application is ready, warns for `0.0.0.0`, a LAN address and no address at
@@ -248,6 +248,15 @@ nothing recorded, an unsettled attach or an account Stripe did not open answered
 payout currencies recorded as not ready, the terms accepted at a whole second, a caller without a row read as `NOT_SET`,
 `tosAccepted` and the `btok_` pattern checked before the service runs (a refused value is never quoted), `401` before
 the body, the field names on both sides of the relay, and no log line naming the user.
+
+For the preflight they cover a withdrawal outside the terms refused with a `400` before anything is read (a currency not
+offered, an amount below the minimum, zero or negative, off the payout grid, over 15 integer digits, or with an exponent
+that would wrap an int digit count), the detail never quoting the amount, no Stripe call while no bank account is ready
+(one in another currency included), the owed sum read before the balance, the reserve as the available balance less what
+untransferred payouts owe, a balance Stripe cannot report answered `502`, a lower-case or missing currency refused
+before the service runs, `401` before the body, the field names, a configured minimum below Stripe's own for the
+account's country refused at startup and one Stripe lists none for accepted, and only the card part of the balance
+counted.
 
 For the wallet's bank account relay they cover the caller's token and acceptance reaching Payment Service, a refused
 token passed on as a `400` in Payment Service's words, any other refusal treated as the wallet's own fault and a `502`,

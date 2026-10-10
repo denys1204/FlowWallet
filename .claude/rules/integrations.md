@@ -39,7 +39,8 @@ paths:
   needs the narrower rule in `StripeConnectPayouts`: a transfer, payout or reversal is refused for certain only on a 400
   or 402 whose code is on that call's list, and anything else, a 409 included, leaves its outcome unknown
   ([ADR 0035](../../docs/adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md)). Those code lists are a dated
-  copy of Stripe's error codes page as well.
+  copy of Stripe's error codes page as well, and `StripePayoutMinimums` (minimum payouts per account country) one of
+  Stripe's payouts page; update each date with its table.
 - Test values for Stripe keys and signing secrets are visibly fake and break the key shape with hyphens
   (`whsec_unit-test-signing-secret`, not a `whsec_`/`sk_test_` prefix followed by a long alphanumeric run).
   GitHub secret scanning flags anything shaped like a real key in this public repository, including the

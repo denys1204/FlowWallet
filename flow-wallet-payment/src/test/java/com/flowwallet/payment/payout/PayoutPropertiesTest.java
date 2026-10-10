@@ -117,4 +117,33 @@ class PayoutPropertiesTest {
         runner.withPropertyValues("payment.payout.account.first-name= ")
                 .run(context -> assertThat(context).hasFailed());
     }
+
+    @Test
+    void aMinimumBelowStripesMinimumPayoutFailsStartup() {
+        // Guards a minimum Stripe refuses at the payout step, after the transfer: the money would come back only by
+        // a reversal, days later.
+        runner.withPropertyValues(
+                "payment.payout.currencies[0].code=PLN",
+                "payment.payout.currencies[0].min-amount=4.99"
+        ).run(context -> assertThat(context).hasFailed());
+        runner.withPropertyValues(
+                "payment.payout.currencies[0].code=PLN",
+                "payment.payout.currencies[0].min-amount=5"
+        ).run(context -> assertThat(context).hasNotFailed());
+    }
+
+    @Test
+    void aMinimumIsCheckedOnlyWhereStripeListsOneForTheAccountsCountry() {
+        // Guards refusing a configuration Stripe's table says nothing about: a currency it lists no minimum for, or a
+        // country whose own currency is another.
+        runner.withPropertyValues(
+                "payment.payout.currencies[0].code=JPY",
+                "payment.payout.currencies[0].min-amount=1"
+        ).run(context -> assertThat(context).hasNotFailed());
+        runner.withPropertyValues(
+                "payment.payout.account.country=CZ",
+                "payment.payout.currencies[0].code=PLN",
+                "payment.payout.currencies[0].min-amount=1.00"
+        ).run(context -> assertThat(context).hasNotFailed());
+    }
 }

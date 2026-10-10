@@ -453,7 +453,10 @@ public class StripeConnectPayouts implements PayoutProvider {
      */
     private static long cardFunds(Balance.Available entry) {
         Balance.Available.SourceTypes sourceTypes = entry.getSourceTypes();
-        return sourceTypes == null || sourceTypes.getCard() == null ? entry.getAmount() : sourceTypes.getCard();
+        if (sourceTypes == null) {
+            return entry.getAmount();
+        }
+        return sourceTypes.getCard() == null ? 0 : sourceTypes.getCard();
     }
 
     /**

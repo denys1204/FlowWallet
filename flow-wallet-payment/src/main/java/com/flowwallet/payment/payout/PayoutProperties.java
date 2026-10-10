@@ -1,6 +1,7 @@
 package com.flowwallet.payment.payout;
 
 import com.flowwallet.payment.provider.stripe.StripeCurrencyRules;
+import com.flowwallet.payment.provider.stripe.StripePayoutMinimums;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.DecimalMin;
@@ -40,6 +41,22 @@ public class PayoutProperties {
 
     @Valid
     private final Account account = new Account();
+
+    /**
+     * Checked here rather than on each currency, because Stripe's minimum depends on the connected account's country.
+     * A currency Stripe documents no minimum for in that country is not checked.
+     */
+    @AssertTrue(message = "payment.payout.currencies[n].min-amount must not be below Stripe's minimum payout")
+    public boolean isEveryMinimumAtLeastStripes() {
+        if (account.getCountry() == null) {
+            return true;
+        }
+        return currencies.stream()
+                .filter(entry -> entry.getCode() != null && entry.getMinAmount() != null)
+                .allMatch(entry -> StripePayoutMinimums.of(account.getCountry(), entry.getCode())
+                        .map(stripeMinimum -> entry.getMinAmount().compareTo(stripeMinimum) >= 0)
+                        .orElse(true));
+    }
 
     /**
      * The connected account every user's payouts go through, opened with one fake identity: Payment Service never
@@ -106,8 +123,8 @@ public class PayoutProperties {
         private String code;
 
         /**
-         * Stripe documents 5 PLN as the smallest PLN payout; a lower minimum would be refused at the payout step,
-         * after the transfer.
+         * At least Stripe's own minimum payout for the account's country, 5 PLN for PLN in Poland: a lower minimum
+         * would be refused at the payout step, after the transfer.
          */
         @NotNull(message = "payment.payout.currencies[n].min-amount is required")
         @DecimalMin(

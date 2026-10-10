@@ -17,7 +17,22 @@ import java.util.Optional;
 @Component
 @RequiredArgsConstructor
 public class PayoutTerms {
+    /**
+     * The wallet's bound, which {@code NUMERIC(19,4)} holds, so an amount the wallet could never debit is refused here
+     * as well.
+     */
+    private static final long MAX_INTEGER_DIGITS = 15;
+
     private final PayoutProperties properties;
+
+    /**
+     * Whether the amount has at most the integer digits a payout row holds. Subtracted in long: a scale near
+     * {@code Integer.MIN_VALUE} would wrap an int difference to a negative count and let a huge amount through.
+     */
+    static boolean fitsIntegerDigits(BigDecimal amount) {
+        BigDecimal stripped = amount.stripTrailingZeros();
+        return (long) stripped.precision() - stripped.scale() <= MAX_INTEGER_DIGITS;
+    }
 
     /**
      * @return why the amount cannot be paid out in the currency, for a log line or a problem detail; empty when it
