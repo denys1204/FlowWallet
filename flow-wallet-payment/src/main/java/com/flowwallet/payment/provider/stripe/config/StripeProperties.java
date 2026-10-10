@@ -1,5 +1,6 @@
 package com.flowwallet.payment.provider.stripe.config;
 
+import com.stripe.net.HttpClient;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotEmpty;
@@ -41,8 +42,8 @@ public class StripeProperties {
     /**
      * How the API calls reach Stripe. The timeouts and retries replace stripe-java's defaults (30 s to connect,
      * 80 s to read, two retries), which kept a Payment Service thread busy long after Wallet Service had given up
-     * on it. {@code (1 + maxNetworkRetries) * (connectTimeout + readTimeout)}, plus about half a second of backoff
-     * per retry, should stay below the wallet's {@code wallet.payment.read-timeout}.
+     * on it. One call's whole budget, {@link Api#callBudget()}, should stay below the wallet's
+     * {@code wallet.payment.read-timeout}, and three of them fit the payout executor's lease.
      * See docs/adr/0024-deposit-initiation-settles-its-own-races.md.
      */
     @Getter
@@ -80,6 +81,20 @@ public class StripeProperties {
         @AssertTrue(message = "stripe.api.key must be a test-mode key: FlowWallet runs in Stripe test mode only")
         public boolean isTestModeKey() {
             return key != null && (key.startsWith("sk_test_") || key.startsWith("rk_test_"));
+        }
+
+        /**
+         * The longest one Stripe call can take: every try's connect and read timeouts, plus stripe-java's wait before
+         * each retry, which starts at its minimum delay and doubles up to its maximum; its jitter only shortens it.
+         */
+        public Duration callBudget() {
+            Duration budget = connectTimeout.plus(readTimeout).multipliedBy(1L + maxNetworkRetries);
+            for (int retry = 1; retry <= maxNetworkRetries; retry++) {
+                Duration delay = HttpClient.minNetworkRetriesDelay.multipliedBy(1L << Math.min(retry - 1, 20));
+                Duration cap = HttpClient.maxNetworkRetriesDelay;
+                budget = budget.plus(delay.compareTo(cap) > 0 ? cap : delay);
+            }
+            return budget;
         }
     }
 

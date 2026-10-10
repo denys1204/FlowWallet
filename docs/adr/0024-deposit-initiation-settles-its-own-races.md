@@ -39,11 +39,11 @@ after the caller had been told to retry.
   then finds the row initiated. A row already initiated with the same provider id is returned as it stands; one with
   a different provider id throws `IllegalStateException`, since the idempotency key makes a second intent
   impossible.
-- `StripeProperties.Api` binds `stripe.api.connect-timeout`, `read-timeout` and `max-network-retries` (defaults
-  `2s`, `6s` and `0`). Startup fails on a timeout below 1 ms or above what fits an `int` of milliseconds, and on a
-  negative retry count. `StripeClient.requestOptions` sets all three on every call, so none of stripe-java's global
-  defaults applies. `(1 + retries) * (connect + read)`, plus about half a second of backoff per retry, stays below
-  `wallet.payment.read-timeout`: 8 seconds against 10 with the defaults.
+- `StripeProperties.Api` binds `stripe.api.connect-timeout`, `read-timeout` and `max-network-retries` (defaults `2s`,
+  `6s` and `0`). Startup fails on a timeout below 1 ms or above what fits an `int` of milliseconds, and on a negative
+  retry count. `StripeClient.requestOptions` sets all three on every call, so none of stripe-java's global defaults
+  applies. `(1 + retries) * (connect + read)`, plus stripe-java's backoff of half a second doubling per retry, stays
+  below `wallet.payment.read-timeout`: 8 seconds against 10 with the defaults.
 - The wallet answers Payment Service's 503 like any 5xx it answered itself: a 502 that tells the caller to retry with
   the same key ([0022](0022-stripe-charge-rules-checked-before-the-reservation.md)).
 

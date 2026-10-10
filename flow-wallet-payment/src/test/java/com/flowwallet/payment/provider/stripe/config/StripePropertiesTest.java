@@ -3,6 +3,7 @@ package com.flowwallet.payment.provider.stripe.config;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.context.ConfigurationPropertiesAutoConfiguration;
@@ -144,5 +145,20 @@ class StripePropertiesTest {
         // Guards refusing the restricted test keys a deployment may use instead of the full secret key.
         runner.withPropertyValues("stripe.api.key=" + key)
                 .run(context -> assertThat(context).hasNotFailed());
+    }
+
+    @ParameterizedTest(name = "{0} retries -> {1}")
+    @CsvSource({
+            "0, PT8S",
+            "2, PT25.5S",
+            "5, PT1M0.5S",
+    })
+    void theCallBudgetCountsEveryTryAndTheSdksRetryDelays(int retries, Duration budget) {
+        // Guards a payout lease sized for one try when stripe-java retries, which would let a claim lapse while a
+        // retried call still runs.
+        StripeProperties properties = new StripeProperties();
+        properties.getApi().setMaxNetworkRetries(retries);
+
+        assertThat(properties.getApi().callBudget()).isEqualTo(budget);
     }
 }

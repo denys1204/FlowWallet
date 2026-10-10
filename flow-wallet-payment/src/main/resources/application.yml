@@ -22,9 +22,9 @@ spring:
   task:
     scheduling:
       pool:
-        # One thread per scheduled job (outbox poller, reaper, cleanup, reconciler), so a slow provider call in the
-        # reconciler never holds back the outbox. Boot's default is a single thread for all of them.
-        size: 4
+        # One thread per scheduled job (outbox poller, reaper, cleanup, reconciler, payout executor), so a slow
+        # provider call in one never holds back another. Boot's default is a single thread for all of them.
+        size: 5
   servlet:
     multipart:
       # Nothing here takes uploads. With a multipart resolver, DispatcherServlet reads and spools a multipart
@@ -101,9 +101,9 @@ spring:
 stripe:
   api:
     key: ${STRIPE_API_KEY:sk_test_dummy}
-    # Payment Service's own wait for Stripe. (1 + retries) x (connect + read), plus about 0.5s of backoff per
-    # retry, stays below Wallet Service's WALLET_PAYMENT_READ_TIMEOUT (10s), so no Stripe call outlives the
-    # wallet's answer to its caller.
+    # Payment Service's own wait for Stripe. (1 + retries) x (connect + read), plus stripe-java's backoff of
+    # 0.5s doubling per retry, stays below Wallet Service's WALLET_PAYMENT_READ_TIMEOUT (10s), so no Stripe call
+    # outlives the wallet's answer to its caller; three such calls must fit PAYMENT_PAYOUT_EXECUTOR_LEASE.
     connect-timeout: ${STRIPE_API_CONNECT_TIMEOUT:2s}
     read-timeout: ${STRIPE_API_READ_TIMEOUT:6s}
     max-network-retries: ${STRIPE_API_MAX_NETWORK_RETRIES:0}
@@ -136,6 +136,22 @@ payment:
       product-description: Test-mode withdrawals from a FlowWallet wallet
       merchant-category-code: "5734"
       tos-ip: 127.0.0.1
+    # How PayoutExecutor works the Transfer, Payout and Reversal steps. The three limits count the same tries,
+    # so their defaults are equal. Startup fails unless the lease covers three Stripe calls under the stripe.api
+    # timeouts and retries plus two 10s margins. See docs/adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md.
+    executor:
+      enabled: ${PAYMENT_PAYOUT_EXECUTOR_ENABLED:true}
+      interval-ms: ${PAYMENT_PAYOUT_EXECUTOR_INTERVAL_MS:10000}
+      batch-size: ${PAYMENT_PAYOUT_EXECUTOR_BATCH_SIZE:20}
+      run-budget: ${PAYMENT_PAYOUT_EXECUTOR_RUN_BUDGET:60s}
+      lease: ${PAYMENT_PAYOUT_EXECUTOR_LEASE:2m}
+      unknown-backoff: ${PAYMENT_PAYOUT_EXECUTOR_UNKNOWN_BACKOFF:1m}
+      unknown-max-backoff: ${PAYMENT_PAYOUT_EXECUTOR_UNKNOWN_MAX_BACKOFF:1h}
+      unknown-attempts: ${PAYMENT_PAYOUT_EXECUTOR_UNKNOWN_ATTEMPTS:13}
+      payout-retry-interval: ${PAYMENT_PAYOUT_EXECUTOR_PAYOUT_RETRY_INTERVAL:2h}
+      payout-retry-attempts: ${PAYMENT_PAYOUT_EXECUTOR_PAYOUT_RETRY_ATTEMPTS:13}
+      reversal-retry-interval: ${PAYMENT_PAYOUT_EXECUTOR_REVERSAL_RETRY_INTERVAL:30m}
+      reversal-retry-attempts: ${PAYMENT_PAYOUT_EXECUTOR_REVERSAL_RETRY_ATTEMPTS:13}
   consumer:
     retry:
       max-attempts: ${PAYMENT_CONSUMER_RETRY_MAX_ATTEMPTS:3}
@@ -151,7 +167,8 @@ payment:
     max-amount: ${PAYMENT_MAX_DEPOSIT_AMOUNT:10000.00}
   webhook:
     max-payload-size: ${PAYMENT_WEBHOOK_MAX_PAYLOAD_SIZE:256KB}
-  # Off only for a test that drives the scheduled steps itself; it stops the outbox poller, reaper and cleanup too.
+  # Off only for a test that drives the scheduled steps itself; it stops the outbox poller, reaper and cleanup, the
+  # reconciler and the payout executor.
   scheduling:
     enabled: ${PAYMENT_SCHEDULING_ENABLED:true}
   # Re-checks deposits whose webhook may have been lost.

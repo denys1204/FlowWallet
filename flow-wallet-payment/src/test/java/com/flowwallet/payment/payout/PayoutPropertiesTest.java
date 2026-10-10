@@ -11,6 +11,10 @@ import org.springframework.core.env.PropertySource;
 import org.springframework.core.env.PropertySourcesPropertyResolver;
 import org.springframework.core.io.ClassPathResource;
 
+import java.io.IOException;
+import java.time.Duration;
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 class PayoutPropertiesTest {
@@ -145,5 +149,59 @@ class PayoutPropertiesTest {
                 "payment.payout.currencies[0].code=PLN",
                 "payment.payout.currencies[0].min-amount=1.00"
         ).run(context -> assertThat(context).hasNotFailed());
+    }
+
+    private static PropertySource<?> loadYaml() throws IOException {
+        return new YamlPropertySourceLoader()
+                .load("application", new ClassPathResource("application.yml"))
+                .getFirst();
+    }
+
+    @Test
+    void theShippedYamlKeepsTheExecutorDefaults() throws IOException {
+        // Guards the YAML and the class disagreeing, so a run without .env would use values nobody documented.
+        PropertySource<?> yaml = loadYaml();
+        ApplicationContextRunner shipped = runner.withInitializer(context -> context.getEnvironment()
+                .getPropertySources()
+                .addFirst(yaml));
+
+        shipped.run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context.getBean(PayoutProperties.class).getExecutor())
+                    .usingRecursiveComparison()
+                    .isEqualTo(new PayoutProperties.Executor());
+        });
+    }
+
+    @Test
+    void anExecutorSettingThatCannotWorkFailsStartup() {
+        // Guards a lease too short to hold a claim, a first retry inside a request Stripe still runs, a backoff whose
+        // cap is below its start, and a limit that hands every payout to an operator at once.
+        for (String setting : List.of(
+                "payment.payout.executor.lease=5s",
+                "payment.payout.executor.unknown-backoff=10s",
+                "payment.payout.executor.unknown-max-backoff=30s",
+                "payment.payout.executor.unknown-attempts=0",
+                "payment.payout.executor.payout-retry-attempts=0",
+                "payment.payout.executor.reversal-retry-attempts=0",
+                "payment.payout.executor.interval-ms=500",
+                "payment.payout.executor.batch-size=0",
+                "payment.payout.executor.run-budget=500ms",
+                "payment.payout.executor.payout-retry-interval=500ms",
+                "payment.payout.executor.reversal-retry-interval=500ms"
+        )) {
+            runner.withPropertyValues(setting).run(context -> assertThat(context).as(setting).hasFailed());
+        }
+    }
+
+    @Test
+    void theUnknownBackoffDoublesUpToItsCap() {
+        // Guards a backoff that never grows through a long outage, or one that grows past its cap.
+        PayoutProperties.Executor executor = new PayoutProperties.Executor();
+
+        assertThat(executor.unknownBackoffAfter(0)).isEqualTo(Duration.ofMinutes(1));
+        assertThat(executor.unknownBackoffAfter(3)).isEqualTo(Duration.ofMinutes(8));
+        assertThat(executor.unknownBackoffAfter(6)).isEqualTo(Duration.ofHours(1));
+        assertThat(executor.unknownBackoffAfter(40)).isEqualTo(Duration.ofHours(1));
     }
 }

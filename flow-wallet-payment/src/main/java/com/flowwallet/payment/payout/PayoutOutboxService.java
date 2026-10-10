@@ -1,6 +1,7 @@
 package com.flowwallet.payment.payout;
 
 import com.flowwallet.contract.constant.KafkaConstants;
+import com.flowwallet.contract.event.PayoutFailedEvent;
 import com.flowwallet.contract.event.PayoutReturnedEvent;
 import com.flowwallet.outbox.Outbox;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +25,31 @@ public class PayoutOutboxService {
     static final String AGGREGATE_TYPE_PAYOUT = "Payout";
 
     private final Outbox outbox;
+
+    /**
+     * The event that tells the wallet the money is coming back, written once a reversal is certain. It moves no
+     * money; the credit waits for {@link #publishReturned}. The payout id is null when no payout was made.
+     */
+    public void publishFailed(Payout payout, Instant failedAt) {
+        PayoutFailedEvent event = new PayoutFailedEvent(
+                UUID.randomUUID().toString(),
+                KafkaConstants.PAYOUT_EVENT_SCHEMA_VERSION,
+                payout.getTransactionReference(),
+                payout.getStripePayoutId(),
+                payout.getAmount(),
+                payout.getCurrency(),
+                payout.getUserId(),
+                payout.getReasonCode().name(),
+                payout.getFailureCode(),
+                failedAt
+        );
+        outbox.enqueue(
+                AGGREGATE_TYPE_PAYOUT,
+                payout.getTransactionReference(),
+                KafkaConstants.EVENT_TYPE_PAYOUT_FAILED,
+                event
+        );
+    }
 
     /**
      * The event that credits the withdrawal back. Its id is fixed here, when the row is written, so every send of the

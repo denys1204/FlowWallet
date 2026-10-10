@@ -14,6 +14,7 @@ import java.util.stream.Stream;
 
 import static com.flowwallet.payment.payout.PayoutStatus.*;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class PayoutTest {
     private static final Instant NOW = Instant.parse("2026-10-10T12:00:00Z");
@@ -222,5 +223,49 @@ class PayoutTest {
         // Guards a constant added later that the VARCHAR(20) status or VARCHAR(32) reason column would refuse.
         assertThat(Arrays.stream(PayoutStatus.values()).map(Enum::name)).allMatch(name -> name.length() <= 20);
         assertThat(Arrays.stream(PayoutReason.values()).map(Enum::name)).allMatch(name -> name.length() <= 32);
+    }
+
+    @Test
+    void attemptedBeforeComparesTheStepsFirstClaimWithThisOne() {
+        // Guards a step that skips its lookup after a crashed try, or looks up on every first try.
+        Payout payout = inStatus(ACCEPTED);
+
+        assertThat(payout.attemptedBefore(NOW)).isFalse();
+        payout = Payout.builder()
+                .transactionReference("ref-1")
+                .status(TRANSFERRED)
+                .payoutAttemptedAt(NOW)
+                .build();
+        assertThat(payout.attemptedBefore(NOW)).isFalse();
+        assertThat(payout.attemptedBefore(LATER)).isTrue();
+        Payout reversing = Payout.builder()
+                .transactionReference("ref-1")
+                .status(REVERSING)
+                .reversalAttemptedAt(NOW)
+                .build();
+        assertThat(reversing.attemptedBefore(LATER)).isTrue();
+    }
+
+    @Test
+    void onlyAnExecutorStepHasAnAttemptTime() {
+        // Guards a step judged by another step's attempt time.
+        Payout payout = inStatus(PAID);
+
+        assertThatThrownBy(() -> payout.attemptedBefore(NOW))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void releasingAClaimChangesNothingElse() {
+        // Guards a released claim counting as a try or moving the row's next attempt.
+        Payout payout = inStatus(ACCEPTED);
+        int attempts = payout.getAttempts();
+
+        payout.releaseClaim();
+
+        assertThat(payout.getClaimedUntil()).isNull();
+        assertThat(payout.getAttempts()).isEqualTo(attempts);
+        assertThat(payout.getNextAttemptAt()).isEqualTo(LATER);
+        assertThat(payout.getStatus()).isEqualTo(ACCEPTED);
     }
 }

@@ -37,8 +37,8 @@ arrived.
   intent's client secret back and could not pay it.
 - A run stops after three failed lookups in a row. Each completion is logged at WARN, since it means a webhook was
   lost, and every outcome is counted in `payment.reconciliation.outcomes`.
-- `SchedulingConfig` enables scheduling unless `payment.scheduling.enabled` is false, and the scheduler pool has
-  four threads, so a slow provider call does not hold back the outbox poller.
+- `SchedulingConfig` enables scheduling unless `payment.scheduling.enabled` is false, and the scheduler pool has one
+  thread per scheduled job, so a slow provider call does not hold back the outbox poller.
 
 ## Alternatives considered
 

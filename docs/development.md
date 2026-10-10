@@ -157,11 +157,13 @@ comments. The main ones:
 | `STRIPE_WEBHOOK_TOLERANCE_SECONDS` | `300` | Payment: how old a webhook's signed timestamp may be |
 | `STRIPE_PAYMENT_METHOD_TYPES` | `card` | Payment: the methods a deposit can be paid with. `card` is the only known one; any other name, or an empty value, fails startup |
 | `STRIPE_API_CONNECT_TIMEOUT` / `_READ_TIMEOUT` | `2s` / `6s` | Payment: how long a Stripe API call may take to connect and to answer |
-| `STRIPE_API_MAX_NETWORK_RETRIES` | `0` | Payment: how often stripe-java retries a failed call under the same idempotency key. Keep (1 + retries) × (connect + read), plus about 0.5s of backoff per retry, below `WALLET_PAYMENT_READ_TIMEOUT` |
+| `STRIPE_API_MAX_NETWORK_RETRIES` | `0` | Payment: how often stripe-java retries a failed call under the same idempotency key. Keep (1 + retries) × (connect + read), plus stripe-java's backoff of 0.5s doubling per retry, below `WALLET_PAYMENT_READ_TIMEOUT`; three such calls must fit `PAYMENT_PAYOUT_EXECUTOR_LEASE` |
 | `PAYMENT_WEBHOOK_MAX_PAYLOAD_SIZE` | `256KB` | Payment: a larger webhook body gets `413` |
 | `PAYMENT_RECONCILIATION_INTERVAL_MS` / `_MIN_AGE` / `_MAX_AGE` / `_BATCH_SIZE` | `300000` / `15m` / `24h` / `50` | Payment: how often the reconciler asks Stripe about deposits still pending or failed, from what age and until what age, and how many per run; `PAYMENT_RECONCILIATION_ENABLED` (`true`) turns it off ([ADR 0032](adr/0032-pending-payments-are-rechecked-with-the-provider.md)) |
-| `PAYMENT_SCHEDULING_ENABLED` | `true` | Payment: `false` stops every scheduled job, the outbox poller and the reconciler included; only for a test that drives those steps itself |
+| `PAYMENT_SCHEDULING_ENABLED` | `true` | Payment: `false` stops every scheduled job, the outbox poller, the reconciler and the payout executor included; only for a test that drives those steps itself |
 | `PAYMENT_PAYOUT_CURRENCY` / `PAYMENT_PAYOUT_MIN_AMOUNT` | `PLN` / `5.00` | Payment: the currency a withdrawal is paid out in and its minimum ([ADR 0035](adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md)) |
+| `PAYMENT_PAYOUT_EXECUTOR_ENABLED` / `_INTERVAL_MS` / `_BATCH_SIZE` / `_LEASE` | `true` / `10000` / `20` / `2m` | Payment: whether the payout executor runs, its pause between runs, rows per run, and how long a claim owns a row. The lease must cover three Stripe calls plus two 10s margins (44s with the defaults); instances' clocks must agree to within that margin. Outcomes are counted in `payment.payouts.executor.outcomes` (tags `step`, `outcome`) and hand-overs to an operator in `payment.payouts.needs.attention` (tags `from`, `cause`) |
+| `PAYMENT_PAYOUT_EXECUTOR_UNKNOWN_*` / `_PAYOUT_RETRY_*` / `_REVERSAL_RETRY_*` | see `.env.example` | Payment: how long an unknown outcome, a payout refused for funds or a limit, and a refused reversal are retried before the money comes back or an operator takes over (about 7 h, 24 h and 6 h by default) |
 | `WALLET_SCHEDULING_ENABLED` | `true` | Wallet: `false` stops the outbox poller, reaper and cleanup; only for a test that drives those steps itself |
 | `PAYMENT_MIN_DEPOSIT_AMOUNT` / `PAYMENT_MAX_DEPOSIT_AMOUNT` | `1.00` / `10000.00` | Payment |
 | `OUTBOX_POLL_INTERVAL_MS` / `OUTBOX_BATCH_SIZE` | `10000` / `50` | Payment, Wallet |
@@ -187,11 +189,13 @@ refuse, a payout currency list that is empty, names a code that is not an upper-
 that is missing, not positive, below Stripe's minimum payout where `StripePayoutMinimums` lists one for the account's
 country, or off the payout grid, and a connected account identity with a blank field, a date of birth that is not in the
 past, a country that is not two capital letters, a merchant category code that is not four digits or a terms IP that is
-not an IPv4 address. A missing webhook secret doesn't stop it starting; it only disables webhooks.
+not an IPv4 address, and a payout executor whose lease does not cover three Stripe calls under the Stripe timeouts and
+retries plus two 10s margins, or whose interval, lease, backoff or limits are out of range. A missing webhook secret
+doesn't stop it starting; it only disables webhooks.
 
 ## Testing
 
-There are 979 tests, all green: 534 in the payment service, 339 in the wallet service, 53 in the outbox module, 44 in
+There are 1085 tests, all green: 640 in the payment service, 339 in the wallet service, 53 in the outbox module, 44 in
 platform and 9 in the gateway. The gateway's tests bind its own `application.yml`, so a YAML regression that drops the
 response or connect timeout, or binds the gateway beyond loopback, fails there rather than in a live request; they also
 check that `BindAddressCheck` runs when the application is ready, warns for `0.0.0.0`, a LAN address and no address at
@@ -257,6 +261,22 @@ untransferred payouts owe, a balance Stripe cannot report answered `502`, a lowe
 before the service runs, `401` before the body, the field names, a configured minimum below Stripe's own for the
 account's country refused at startup and one Stripe lists none for accepted, and only the card part of the balance
 counted.
+
+For the payout executor they cover each step claimed through its own repository update, a first transfer or payout try
+that does not look up and a later one that looks for what Stripe holds before it creates (a transfer by its group, a
+payout among the account's payouts since an hour before the transfer), a reversal step that lists on every try, a found
+object adopted only when its terms and destination are the payout's, more than one found sent to an operator, a failed
+payout found recorded and reversed, a later transfer try creating under the same key even when the bank account is no
+longer ready, a move to `REVERSING` only after a listing found no payout that may reach the bank, a live payout stopping
+a reversal, definite refusals returning or reversing by their reason while funds, limit and reversal refusals wait under
+a fresh key, an unknown outcome or an unexpected exception backing off under the same key until its limit, an
+idempotency error sent to an operator, no Stripe call without room on the lease at any of the step's guards, an outcome
+recorded only under the claim's token (another claim or a transition first changes nothing and writes no event), each
+transition with its outbox event, a bank rejection resetting only the bank account the claim saw and none on a later
+try, whose refusal may be Stripe's stored answer, a run stopped by its budget, three failures in a row or an interrupt,
+an unsettled outcome seen while interrupted given up without counting a try but waiting the unknown backoff, the token
+at whole microseconds, the lease checked against three Stripe call budgets at startup, a claim that carries no user id,
+metrics, log lines naming the reference and Stripe's ids, and the executor's switch.
 
 For the wallet's bank account relay they cover the caller's token and acceptance reaching Payment Service, a refused
 token passed on as a `400` in Payment Service's words, any other refusal treated as the wallet's own fault and a `502`,

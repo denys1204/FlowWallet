@@ -287,6 +287,37 @@ public class Payout {
     }
 
     /**
+     * Whether a claim before this one marked the current step attempted. The claim's update keeps the first claim's
+     * time in the step's {@code *AttemptedAt}, so any other time there means an earlier try whose outcome may never
+     * have been recorded, and the step looks for what Stripe holds before it creates anything.
+     */
+    public boolean attemptedBefore(Instant claimedAt) {
+        Instant first = switch (status) {
+            case ACCEPTED -> transferAttemptedAt;
+            case TRANSFERRED -> payoutAttemptedAt;
+            case REVERSING -> reversalAttemptedAt;
+            default -> throw new IllegalStateException("Payout " + transactionReference + " is in no executor step");
+        };
+        return first != null && !first.equals(claimedAt);
+    }
+
+    /**
+     * Gives the claim up without counting an attempt, for a try whose calls can have created nothing at Stripe.
+     */
+    public void releaseClaim() {
+        this.claimedUntil = null;
+    }
+
+    /**
+     * Gives the claim up without counting an attempt and waits until {@code nextAttemptAt}, for a try cut short by a
+     * shutdown whose call may still be running at Stripe.
+     */
+    public void postpone(Instant nextAttemptAt) {
+        this.nextAttemptAt = Objects.requireNonNull(nextAttemptAt, "nextAttemptAt");
+        this.claimedUntil = null;
+    }
+
+    /**
      * Moves the step to a fresh idempotency key after a definite refusal it retries, because Stripe answers a retry
      * under the same key with the stored refusal.
      */

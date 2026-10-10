@@ -85,9 +85,10 @@ copes with either order, because a failure moves no money.
 The contract also defines the events of a withdrawal
 ([ADR 0033](adr/0033-withdrawals-are-debited-under-the-lock-and-settled-by-payout-events.md),
 [ADR 0034](adr/0034-shared-outbox-and-the-wallet-withdrawals-command.md)). Payment Service consumes the commands and
-Wallet Service the payout events. Until the payout executor ships, Payment Service sends only the `PayoutReturnedEvent`
-of a command whose terms it refuses, and no command is sent before withdrawals are switched on. They ship in this order:
-the contract, the consumers, then the producers, and withdrawals are switched on last.
+Wallet Service the payout events. Payment Service sends `PayoutReturnedEvent` for a command whose terms it refuses and
+when the payout executor returns a payout, and `PayoutFailedEvent` when the executor starts a reversal;
+`PayoutPaidEvent` comes with the Connect webhook. No command is sent before withdrawals are switched on. They ship in
+this order: the contract, the consumers, then the producers, and withdrawals are switched on last.
 
 - `WithdrawalRequestedEvent`, on `wallet.withdrawals` from Wallet Service to Payment Service, carries `eventId`, `schemaVersion`, `transactionReference`, `userId`, `amount`, `currency`.
 - `PayoutPaidEvent`, on `payment.events`, carries `eventId`, `schemaVersion`, `transactionReference`, `providerPayoutId`, `amount`, `currency`, `userId`, `paidAt`.

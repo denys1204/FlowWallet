@@ -106,11 +106,12 @@ out by the backoff. A step's configured wait and the limit for an unknown outcom
 move into a state starts them again.
 
 The executor claims a due row whose `claimed_until` is null or past with a conditional UPDATE that sets `claimed_until`
-to the end of a configured lease and the step's `*_attempted_at`, all before Stripe is called. `PayoutProperties` fails
-startup unless the lease is longer than a Stripe call's whole budget, (1 + retries) x (connect + read) plus the retry
-backoff ([0024](0024-deposit-initiation-settles-its-own-races.md)), so a claim lapses only after its call has ended.
-That `claimed_until`, written at microsecond precision, is the ownership token, as the claim's timestamp is in
-[0018](0018-outbox-sends-own-their-claim.md). The executor makes one Stripe call outside any transaction, and
+to the end of a configured lease and the step's `*_attempted_at`, all before Stripe is called. `PayoutExecutor` fails
+startup unless the lease covers the whole budget of a step's three Stripe calls and two margins, each (1 + retries) x
+(connect + read) plus the retry backoff (`StripeProperties.Api.callBudget`,
+[0024](0024-deposit-initiation-settles-its-own-races.md)), so a claim lapses only after its calls have ended. That
+`claimed_until`, written at microsecond precision, is the ownership token, as the claim's timestamp is in
+[0018](0018-outbox-sends-own-their-claim.md). The executor makes its Stripe calls outside any transaction, and
 `PayoutStore` records the outcome in a short transaction that locks the row, checks that `claimed_until` still holds the
 token, applies the transition with its outbox row and clears the claim
 ([0006](0006-short-transactions-across-bean-boundaries.md)). A record whose token no longer matches changes nothing.
@@ -170,9 +171,9 @@ wallet is credited, and a transfer left in the connected account is the platform
 default `ACTUATOR_EXPOSED_ENDPOINTS`, because it is an unauthenticated write that credits a wallet.
 
 `reasonCode` is an open set of strings: `PLATFORM_FUNDS_SHORT`, `TRANSFER_REFUSED`, `BANK_ACCOUNT_NOT_SET`,
-`BANK_ACCOUNT_REJECTED`, `PAYOUT_FAILED` (Stripe failed or canceled the payout, or its funds never became available),
-`TERMS_REFUSED` ([0034](0034-shared-outbox-and-the-wallet-withdrawals-command.md)) and `OPERATOR_RETURNED`. Stripe
-objects carry the reference or the `account_key` in their metadata and never a user id, and log lines name the
+`BANK_ACCOUNT_REJECTED`, `PAYOUT_FAILED` (Stripe failed, canceled or refused the payout, or its funds never became
+available), `TERMS_REFUSED` ([0034](0034-shared-outbox-and-the-wallet-withdrawals-command.md)) and `OPERATOR_RETURNED`.
+Stripe objects carry the reference or the `account_key` in their metadata and never a user id, and log lines name the
 reference ([0027](0027-user-ids-stay-out-of-logs-and-provider-metadata.md)).
 
 The network protects the payout paths. The internal routes (`/api/payments/payouts/preflight`,

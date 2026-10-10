@@ -5,6 +5,7 @@ import com.flowwallet.payment.provider.stripe.StripePayoutMinimums;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
@@ -12,11 +13,13 @@ import jakarta.validation.constraints.Past;
 import jakarta.validation.constraints.Pattern;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.validator.constraints.time.DurationMin;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.validation.annotation.Validated;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Currency;
@@ -41,6 +44,9 @@ public class PayoutProperties {
 
     @Valid
     private final Account account = new Account();
+
+    @Valid
+    private final Executor executor = new Executor();
 
     /**
      * Checked here rather than on each currency, because Stripe's minimum depends on the connected account's country.
@@ -113,6 +119,104 @@ public class PayoutProperties {
         @NotNull(message = "payment.payout.account.tos-ip is required")
         @Pattern(regexp = IPV4, message = "payment.payout.account.tos-ip must be an IPv4 address")
         private String tosIp = "127.0.0.1";
+    }
+
+    /**
+     * How {@code PayoutExecutor} works the Transfer, Payout and Reversal steps. Every limit counts the step's tries in
+     * {@code attempts}, the last one included, and every move into a step starts the count again; the three limits
+     * share that count, so their defaults are equal and one cause never cuts another's wait short. The lease must
+     * cover a step's three Stripe calls, which {@code PayoutExecutor} checks at startup against the Stripe timeouts.
+     * See docs/adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md.
+     */
+    @Getter
+    @Setter
+    public static class Executor {
+        /**
+         * Whether the executor runs at all. Read by {@code @ConditionalOnProperty}, whose {@code matchIfMissing}
+         * holds the same default.
+         */
+        private boolean enabled = true;
+
+        /**
+         * Pause between two runs, in ms. {@code @Scheduled} reads it through a placeholder with the same default.
+         */
+        @Min(value = 1000, message = "payment.payout.executor.interval-ms must be at least 1000")
+        private long intervalMs = 10_000;
+
+        @Min(value = 1, message = "payment.payout.executor.batch-size must be at least 1")
+        private int batchSize = 20;
+
+        /**
+         * How long a run may go on claiming rows; the step in progress finishes.
+         */
+        @NotNull(message = "payment.payout.executor.run-budget is required")
+        @DurationMin(seconds = 1, message = "payment.payout.executor.run-budget must be at least 1s")
+        private Duration runBudget = Duration.ofSeconds(60);
+
+        /**
+         * How long a claim owns a row. A lapsed lease lets another executor claim it.
+         */
+        @NotNull(message = "payment.payout.executor.lease is required")
+        @DurationMin(seconds = 10, message = "payment.payout.executor.lease must be at least 10s")
+        private Duration lease = Duration.ofMinutes(2);
+
+        /**
+         * The wait after the first unknown outcome, doubled after each further one. The first retry comes after any
+         * request Stripe was still running, which the lookup before it depends on.
+         */
+        @NotNull(message = "payment.payout.executor.unknown-backoff is required")
+        @DurationMin(seconds = 30, message = "payment.payout.executor.unknown-backoff must be at least 30s")
+        private Duration unknownBackoff = Duration.ofMinutes(1);
+
+        @NotNull(message = "payment.payout.executor.unknown-max-backoff is required")
+        private Duration unknownMaxBackoff = Duration.ofHours(1);
+
+        /**
+         * Tries with an unknown outcome before the payout needs attention, about 7 hours with the default waits.
+         */
+        @Min(value = 1, message = "payment.payout.executor.unknown-attempts must be at least 1")
+        private int unknownAttempts = 13;
+
+        /**
+         * The wait after Stripe refuses a payout for the connected account's funds or a payout limit.
+         */
+        @NotNull(message = "payment.payout.executor.payout-retry-interval is required")
+        @DurationMin(seconds = 1, message = "payment.payout.executor.payout-retry-interval must be at least 1s")
+        private Duration payoutRetryInterval = Duration.ofHours(2);
+
+        /**
+         * Tries of such a payout before the transfer is reversed, 24 hours with the default wait: past a daily payout
+         * limit's reset.
+         */
+        @Min(value = 1, message = "payment.payout.executor.payout-retry-attempts must be at least 1")
+        private int payoutRetryAttempts = 13;
+
+        /**
+         * The wait after Stripe refuses a reversal.
+         */
+        @NotNull(message = "payment.payout.executor.reversal-retry-interval is required")
+        @DurationMin(seconds = 1, message = "payment.payout.executor.reversal-retry-interval must be at least 1s")
+        private Duration reversalRetryInterval = Duration.ofMinutes(30);
+
+        /**
+         * Tries of a refused reversal before the payout needs attention, 6 hours with the default wait.
+         */
+        @Min(value = 1, message = "payment.payout.executor.reversal-retry-attempts must be at least 1")
+        private int reversalRetryAttempts = 13;
+
+        @AssertTrue(message = "payment.payout.executor.unknown-max-backoff must not be shorter than unknown-backoff")
+        public boolean isUnknownBackoffOrdered() {
+            return unknownBackoff == null || unknownMaxBackoff == null
+                    || unknownMaxBackoff.compareTo(unknownBackoff) >= 0;
+        }
+
+        /**
+         * The wait after an unknown outcome, given the step's tries so far: doubled per try, up to the maximum.
+         */
+        public Duration unknownBackoffAfter(int attempts) {
+            Duration doubled = unknownBackoff.multipliedBy(1L << Math.min(Math.max(attempts, 0), 20));
+            return doubled.compareTo(unknownMaxBackoff) > 0 ? unknownMaxBackoff : doubled;
+        }
     }
 
     @Getter

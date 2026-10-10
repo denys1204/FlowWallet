@@ -1,6 +1,7 @@
 package com.flowwallet.payment.payout;
 
 import com.flowwallet.contract.constant.KafkaConstants;
+import com.flowwallet.contract.event.PayoutFailedEvent;
 import com.flowwallet.contract.event.PayoutReturnedEvent;
 import com.flowwallet.outbox.Outbox;
 import org.junit.jupiter.api.Test;
@@ -46,6 +47,32 @@ class PayoutOutboxServiceTest {
             assertThat(returned.userId()).isEqualTo("alice");
             assertThat(returned.reasonCode()).isEqualTo("TERMS_REFUSED");
             assertThat(returned.returnedAt()).isEqualTo(NOW);
+        });
+    }
+
+    @Test
+    void theFailedEventCarriesTheReasonTheFailureCodeAndANullPayoutIdWithoutAPayout() {
+        // Guards the wallet showing RETURN_PENDING with no reason, or with a payout id for a payout never made.
+        Payout payout = Payout.accepted("ref-1", "alice", new BigDecimal("75.0000"), "PLN", NOW);
+        payout.recordTransfer("acct_1", "tr_1", NOW);
+        payout.startReversal(PayoutReason.BANK_ACCOUNT_NOT_SET, null, NOW);
+
+        service.publishFailed(payout, NOW);
+
+        ArgumentCaptor<Object> event = ArgumentCaptor.forClass(Object.class);
+        verify(outbox).enqueue(
+                eq(PayoutOutboxService.AGGREGATE_TYPE_PAYOUT),
+                eq("ref-1"),
+                eq(KafkaConstants.EVENT_TYPE_PAYOUT_FAILED),
+                event.capture()
+        );
+        assertThat(event.getValue()).isInstanceOfSatisfying(PayoutFailedEvent.class, failed -> {
+            assertThat(failed.eventId()).isNotBlank();
+            assertThat(failed.providerPayoutId()).isNull();
+            assertThat(failed.reasonCode()).isEqualTo("BANK_ACCOUNT_NOT_SET");
+            assertThat(failed.providerFailureCode()).isNull();
+            assertThat(failed.amount()).isEqualByComparingTo("75.00");
+            assertThat(failed.failedAt()).isEqualTo(NOW);
         });
     }
 }

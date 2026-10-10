@@ -6,6 +6,7 @@ paths:
   - "**/.env.example"
   - "**/OutboxPoller.java"
   - "**/PendingPaymentReconciler.java"
+  - "**/PayoutExecutor.java"
   - "**/PaymentTransactionHandler.java"
   - "**/KafkaConfig.java"
   - "**/KafkaConsumerConfig.java"
@@ -29,6 +30,7 @@ paths:
   `@Scheduled`/`@Retryable`/`@Value` placeholders. A switch that turns a bean on or off is read by
   `@ConditionalOnProperty`, which runs before binding, so `payment.scheduling.enabled` and `wallet.scheduling.enabled`
   (`SchedulingConfig` in each service) have no properties class, and such a switch's default also sits in
-  `matchIfMissing`. The reconciler's interval is checked in `PaymentReconciliationProperties`, but `@Scheduled` reads it
-  through a placeholder, so its default sits in the YAML, the properties class and the annotation. New variables go in
-  `.env.example` too. Topic names are compile-time constants, not config.
+  `matchIfMissing`. The reconciler's interval is checked in `PaymentReconciliationProperties` and the payout executor's
+  in `PayoutProperties.Executor`, but `@Scheduled` reads each through a placeholder, so its default sits in the YAML,
+  the properties class and the annotation. New variables go in `.env.example` too. Topic names are compile-time
+  constants, not config.
