@@ -25,9 +25,11 @@ class PayoutTermsTest {
     }
 
     @Test
-    void anAmountBelowTheMinimumIsRefused() {
-        // Guards a payout Stripe refuses as too small after the transfer has already left the platform.
-        assertThat(terms.refusal("PLN", new BigDecimal("4.99"))).isPresent();
+    void anAmountBelowTheMinimumIsRefusedWithTheMinimumAndNotTheAmount() {
+        // Guards a payout Stripe refuses as too small after the transfer has already left the platform, a refusal that
+        // leaves the user guessing the minimum, and one that repeats the amount into a log line or a problem detail.
+        assertThat(terms.refusal("pln", new BigDecimal("4.99")))
+                .hasValue("The smallest withdrawal in PLN is 5.00");
     }
 
     @Test

@@ -5,7 +5,8 @@ import org.springframework.http.HttpStatus;
 
 /**
  * Thrown when a withdrawal misses the terms Payment Service sets: a currency it does not pay out in, an amount below
- * the minimum, too large or off the payout grid. The detail names the rule and never the amount.
+ * the minimum, too large or off the payout grid. The detail names the rule, and the configured minimum for an amount
+ * below it, never the amount.
  * See docs/adr/0026-problem-details-never-quote-rejected-input.md.
  */
 public class PayoutTermsRefusedException extends ApiException {

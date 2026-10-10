@@ -44,7 +44,7 @@ class PayoutPreflightTest {
     @CsvSource({
             "EUR, 10.00",
             "PLN, 4.99",
-            "PLN, 0",
+            "PLN, 0.00",
             "PLN, -10.00",
             "PLN, 10.001",
             "PLN, 1E+16",

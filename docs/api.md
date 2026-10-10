@@ -317,10 +317,11 @@ currency and `NOT_SET` otherwise, and `reserveSufficient` says whether the platf
 what payouts not yet transferred still owe, covers the amount. It is `null` while no bank account is ready, because the
 balance is not read then ([ADR 0035](adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md)).
 
-- `400` when the withdrawal misses Payment Service's terms: a currency it does not pay out in (PLN only by default),
-  an amount below the minimum (`PAYMENT_PAYOUT_MIN_AMOUNT`, 5.00 by default and never below Stripe's own minimum
-  payout where `StripePayoutMinimums` lists one), more decimals than a payout in the currency allows, or more than 15
-  integer digits. The detail names the rule and never the amount.
+- `400` when the withdrawal misses Payment Service's terms: a currency it does not pay out in (PLN only by default), an
+  amount below the minimum (`PAYMENT_PAYOUT_MIN_AMOUNT`, 5.00 by default and never below Stripe's own minimum payout
+  where `StripePayoutMinimums` lists one), more decimals than a payout in the currency allows, or more than 15 integer
+  digits. The detail names the rule, and the minimum for an amount below it, such as "The smallest withdrawal in PLN is
+  5.00.", and never the amount.
 - `400` also when `currency` is not three capital letters or `currency` or `amount` is missing.
 - `502` when Stripe cannot report the platform's balance. Nothing is written; retry.
 - The check is not atomic: two withdrawals can pass it together, as can one whose command is still on its way, and

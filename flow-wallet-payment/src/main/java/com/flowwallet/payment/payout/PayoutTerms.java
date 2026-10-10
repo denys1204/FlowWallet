@@ -36,7 +36,7 @@ public class PayoutTerms {
 
     /**
      * @return why the amount cannot be paid out in the currency, for a log line or a problem detail; empty when it
-     *         can. The text names the rule and never repeats the amount.
+     *         can. The text names the rule, and the configured minimum where that is the rule, never the amount.
      */
     public Optional<String> refusal(String currency, BigDecimal amount) {
         String code = currency.toUpperCase(Locale.ROOT);
@@ -47,7 +47,8 @@ public class PayoutTerms {
             return Optional.of("Withdrawals are not offered in this currency");
         }
         if (amount.compareTo(listed.get().getMinAmount()) < 0) {
-            return Optional.of("The amount is below the smallest withdrawal in this currency");
+            String minimum = listed.get().getMinAmount().toPlainString();
+            return Optional.of("The smallest withdrawal in " + code + " is " + minimum);
         }
         if (amount.stripTrailingZeros().scale() > StripeCurrencyRules.payoutScale(code)) {
             return Optional.of("The amount has more decimals than a payout in this currency allows");
