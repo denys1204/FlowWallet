@@ -24,10 +24,11 @@ The reactor has five modules: `flow-wallet-contract`, `flow-wallet-platform`, `f
 - The two services depend on platform and contract only, never on each other, and talk over HTTP and Kafka. Payment
   Service knows nothing about wallets: it takes an instruction and answers. The gateway depends on neither library. It
   routes by path ([0013](0013-deposit-initiation.md)) and deserializes no body.
-- Contract holds only what crosses the wire: `PaymentCompletedEvent`, `PaymentFailedEvent`, the `payment.events` topic
-  name, the `eventType` header name and its values, and `PAYMENT_EVENT_SCHEMA_VERSION`. It declares no dependencies and
-  its code uses nothing outside the JDK. The events are plain records, and a consumer brings its own serializer. The
-  evolution rules are in [0009](0009-payment-event-contract.md).
+- Contract holds only what crosses the wire: `PaymentCompletedEvent`, `PaymentFailedEvent`, the payout events and
+  `WithdrawalRequestedEvent`, the `payment.events` and `wallet.withdrawals` topic names, the `eventType` header name and
+  its values, and the schema-version constants. It declares no dependencies and its code uses nothing outside the JDK.
+  The events are plain records, and a consumer brings its own serializer. The evolution rules are in
+  [0009](0009-payment-event-contract.md).
 - Platform holds shared servlet-side infrastructure and nothing domain-shaped: `GlobalExceptionHandler`, `ApiException`,
   the `@CurrentUserId` resolver, the `X-User-Id` constant in `HttpHeaders`, and `@Iso4217Currency`.
 - Platform features register through `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`.

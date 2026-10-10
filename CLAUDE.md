@@ -20,10 +20,10 @@ Six Maven modules. Services depend only on platform, contract and outbox, never 
 nothing about wallets ([ADR 0002](docs/adr/0002-module-boundaries.md),
 [ADR 0034](docs/adr/0034-shared-outbox-and-the-wallet-withdrawals-command.md)).
 
-- `flow-wallet-contract`: only what crosses the wire: the Kafka events (`PaymentCompletedEvent`,
-  `PaymentFailedEvent`), the topic name, the `eventType` header and its values, and the schema version. No
-  dependencies of its own. Its `package-info` holds the evolution rules: add optional fields only; never rename,
-  remove or retype a field in place (add the replacement, then drop the old one once every consumer has moved);
+- `flow-wallet-contract`: only what crosses the wire: the Kafka events (`PaymentCompletedEvent`, `PaymentFailedEvent`,
+  the payout events, `WithdrawalRequestedEvent`), the topic names, the `eventType` header and its values, and the schema
+  versions. No dependencies of its own. Its `package-info` holds the evolution rules: add optional fields only; never
+  rename, remove or retype a field in place (add the replacement, then drop the old one once every consumer has moved);
   keep enums off the wire ([ADR 0009](docs/adr/0009-payment-event-contract.md)).
 - `flow-wallet-platform`: shared servlet-side infrastructure, auto-configured: the RFC 9457
   `GlobalExceptionHandler`, `ApiException` (each subclass carries its HTTP status), the `@CurrentUserId`

@@ -1,5 +1,5 @@
 /**
- * The published contract between services: Kafka event payloads, the topic that carries them and its header
+ * The published contract between services: Kafka event payloads, the topics that carry them and their header
  * names. The module has no dependencies and holds only what crosses the wire.
  * See docs/adr/0002-module-boundaries.md.
  * <p>

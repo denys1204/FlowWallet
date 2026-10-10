@@ -41,10 +41,10 @@ Payment Service has no dead-letter topic of its own. The `FAILED` rows in `outbo
 because a send fails almost only when the broker is unreachable, and a publish to another topic on the same
 broker would fail then too. The wallet's dead-letter topic carries failed consumer records, not outbox rows.
 
-Events are published as JSON strings keyed by `transactionReference`. Each record carries an `eventType`
-header set to `PaymentCompletedEvent` or `PaymentFailedEvent`. Consumers dispatch on that header and treat a
-record without it as unreadable. `schemaVersion` is currently `1`, and it only changes for a change that
-can't be made additively. The contract's rules are in [ADR 0009](adr/0009-payment-event-contract.md).
+Events are published as JSON strings keyed by `transactionReference`. Each record carries an `eventType` header set to
+the name of its event, such as `PaymentCompletedEvent` or `PaymentFailedEvent`. Consumers dispatch on that header and
+treat a record without it as unreadable. `schemaVersion` is currently `1`, and it only changes for a change that can't
+be made additively. The contract's rules are in [ADR 0009](adr/0009-payment-event-contract.md).
 
 - `PaymentCompletedEvent` carries `eventId`, `schemaVersion`, `transactionReference`, `providerTransactionId`, `amount`, `currency`, `userId`, `completedAt`.
 - `PaymentFailedEvent` carries `eventId`, `schemaVersion`, `transactionReference`, `providerTransactionId`, `amount`, `currency`, `userId`, `reason`, `failedAt`.
@@ -65,3 +65,22 @@ succeeds. Payment Service never creates a failure after a success and emits at m
 `PaymentCompletedEvent` per reference, but since the outbox doesn't guarantee per-key send order, a consumer
 can still receive a `PaymentFailedEvent` after the `PaymentCompletedEvent` for the same reference. The wallet
 copes with either order, because a failure moves no money.
+
+## Withdrawal events
+
+The contract also defines the events of a withdrawal
+([ADR 0033](adr/0033-withdrawals-are-debited-under-the-lock-and-settled-by-payout-events.md),
+[ADR 0034](adr/0034-shared-outbox-and-the-wallet-withdrawals-command.md)). Nothing publishes or consumes them yet. They
+ship in this order: the contract, the consumers, then the producers, and withdrawals are switched on last.
+
+- `WithdrawalRequestedEvent`, on `wallet.withdrawals` from Wallet Service to Payment Service, carries `eventId`, `schemaVersion`, `transactionReference`, `userId`, `amount`, `currency`.
+- `PayoutPaidEvent`, on `payment.events`, carries `eventId`, `schemaVersion`, `transactionReference`, `providerPayoutId`, `amount`, `currency`, `userId`, `paidAt`.
+- `PayoutFailedEvent`, on `payment.events`, carries `eventId`, `schemaVersion`, `transactionReference`, `providerPayoutId`, `amount`, `currency`, `userId`, `reasonCode`, `providerFailureCode`, `failedAt`.
+- `PayoutReturnedEvent`, on `payment.events`, carries `eventId`, `schemaVersion`, `transactionReference`, `providerPayoutId`, `amount`, `currency`, `userId`, `reasonCode`, `returnedAt`.
+
+Each record is keyed by `transactionReference` and carries the `eventType` header with the event's name, like the
+payment events. `providerPayoutId` is required on `PayoutPaidEvent` and null on a failure or a return when no payout was
+created. `providerFailureCode` is null when Stripe gave none. `reasonCode` is a string from the open set in
+[ADR 0035](adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md), never an enum, so a consumer stores it and does
+not branch on it. Only `PayoutReturnedEvent` moves money, which is why a consumer does not depend on the order of payout
+events.

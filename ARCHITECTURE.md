@@ -62,10 +62,10 @@ flowchart LR
 - Platform holds shared servlet-side infrastructure built on Spring Web MVC: RFC 9457 error handling and the
   `@CurrentUserId` resolver (both auto-configured, servlet apps only), plus an `@Iso4217Currency`
   validation constraint.
-- Contract holds the Kafka event payloads, the `payment.events` topic name, the `eventType` header name and
-  its values, and the payload schema version. It declares no dependencies of its own and its code uses
-  nothing outside the JDK, so it adds nothing to a consumer's classpath. The events are plain records, and a
-  consumer brings its own serializer.
+- Contract holds the Kafka event payloads, the `payment.events` and `wallet.withdrawals` topic names, the `eventType`
+  header name and its values, and the payload schema versions. It declares no dependencies of its own and its code uses
+  nothing outside the JDK, so it adds nothing to a consumer's classpath. The events are plain records, and a consumer
+  brings its own serializer.
 - Outbox holds the transactional outbox: the `outbox_events` entity and its claim queries, the send after the
   commit, the poller and the `outbox` actuator endpoint, auto-configured in a service that depends on it. Payment
   Service sends its events through it.
@@ -77,7 +77,7 @@ flowchart LR
 ```
 flow-wallet (parent POM)
 ├── flow-wallet-platform   error handling, @CurrentUserId, ISO 4217 validation, transport constants
-├── flow-wallet-contract   Kafka events, topic, eventType header — nothing beyond the JDK
+├── flow-wallet-contract   Kafka events, topics, eventType header — nothing beyond the JDK
 ├── flow-wallet-outbox     transactional outbox: outbox_events, sender, poller, outbox endpoint
 ├── flow-wallet-gateway    API Gateway (reactive) — routing + CORS
 ├── flow-wallet-service    Wallet Service — wallets, deposits, transfers, balance history, payment-event consumer
@@ -100,7 +100,7 @@ explained in [ADR 0002](docs/adr/0002-module-boundaries.md) and the contract rul
 | `flow-wallet-payment` | 8082 | Payment intents (internal), Stripe webhooks, transactional outbox → Kafka. |
 | `flow-wallet-platform` | (library) | RFC 9457 error handling, `@CurrentUserId` auto-configuration, `@Iso4217Currency`, the `X-User-Id` header constant. |
 | `flow-wallet-outbox` | (library) | Transactional outbox: the `outbox_events` entity and its claim queries, the send after the commit, the poller with its reaper and cleanup, the `outbox` endpoint and the `outbox.events.failed` gauge. |
-| `flow-wallet-contract` | (library) | `PaymentCompletedEvent`, `PaymentFailedEvent`, the `payment.events` topic, the `eventType` header and its values. |
+| `flow-wallet-contract` | (library) | `PaymentCompletedEvent`, `PaymentFailedEvent`, the payout events and `WithdrawalRequestedEvent`, the `payment.events` and `wallet.withdrawals` topics, the `eventType` header and its values. |
 
 ## Architecture decisions
 
