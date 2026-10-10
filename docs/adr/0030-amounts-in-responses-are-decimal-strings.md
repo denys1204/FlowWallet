@@ -21,8 +21,9 @@ breaks every client.
 
 - Every amount in a wallet response is a JSON string holding the plain decimal value at its currency's scale:
   `"75.00"` for USD, `"1000"` for JPY. `AmountPrecision.render` writes it, at the scale `AmountPrecision.decimals`
-  returns: 0 for the zero-decimal currencies and ISK, 2 for every other, including KWD and BHD, which the grid caps
-  at two ([0015](0015-currency-precision-and-no-rounding.md), [0023](0023-isk-charged-in-whole-units.md)). A stored
+  returns: 0 for the zero-decimal currencies, ISK and UGX, 2 for every other, including KWD and BHD, which the grid
+  caps at two ([0015](0015-currency-precision-and-no-rounding.md), [0023](0023-isk-charged-in-whole-units.md),
+  [0038](0038-ugx-charged-in-whole-units.md)). A stored
   value finer than the grid, which only a row written before its currency's grid can hold, keeps its digits rather
   than being rounded.
 - `WalletResponse` carries `decimals`, so a client can format and check an amount without a currency table of its

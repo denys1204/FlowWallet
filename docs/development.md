@@ -263,7 +263,7 @@ endpoint's webhooks.
 
 ## Testing
 
-There are 2035 tests, all green: 1378 in the payment service, 551 in the wallet service, 53 in the outbox module, 44 in
+There are 2042 tests, all green: 1383 in the payment service, 553 in the wallet service, 53 in the outbox module, 44 in
 platform and 9 in the gateway. The gateway's tests bind its own `application.yml`, so a YAML regression that drops the
 response or connect timeout, or binds the gateway beyond loopback, fails there rather than in a live request; they also
 check that `BindAddressCheck` runs when the application is ready, warns for `0.0.0.0`, a LAN address and no address at

@@ -22,7 +22,7 @@ paths:
 - Jackson 3 is `tools.jackson.*`. Messages on the topic are JSON strings, so consumers use
   `StringDeserializer` and parse themselves.
 - Stripe minor units come from the explicit table in `StripeCurrencyRules`; never derive them from
-  `java.util.Currency` (ISO is wrong for Stripe on MGA and ISK).
+  `java.util.Currency` (ISO is wrong for Stripe on MGA, ISK and UGX).
 - A deposit intent lists its payment methods (`stripe.payment-method-types`, cards only) instead of enabling
   automatic ones, so a server-side confirm needs no `return_url`
   ([ADR 0028](../../docs/adr/0028-deposits-accept-cards-only.md)).

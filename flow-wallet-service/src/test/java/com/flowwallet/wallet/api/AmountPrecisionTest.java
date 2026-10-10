@@ -17,14 +17,15 @@ class AmountPrecisionTest {
             "0.00001, USD, USD amounts carry at most 2 decimal places",
             "1.5,     JPY, JPY amounts must be whole units",
             "0.5,     MGA, MGA amounts must be whole units",
-            "10.50,   ISK, ISK amounts must be whole units"
+            "10.50,   ISK, ISK amounts must be whole units",
+            "10.50,   UGX, UGX amounts must be whole units"
     })
     void anAmountFinerThanTheCurrencyAllowsIsRefusedRatherThanRounded(String amount, String currency, String detail) {
         // Guards dust and movements of nothing. Rounding 10.001 would move a sum nobody asked for, and Postgres
         // would store 0.00001 as 0.0000. Fractional yen or ariary could never be paid out, because deposits
         // move whole units in those currencies. MGA is here because ISO gives it two decimals and the wallet
-        // must not follow ISO. ISK is here because Stripe takes it in hundredths yet charges only whole krónur, so
-        // a fractional ISK could never arrive by deposit.
+        // must not follow ISO. ISK and UGX are here because Stripe takes them in hundredths yet charges only whole
+        // units, so a fractional amount in either could never arrive by deposit.
         assertThatThrownBy(() -> AmountPrecision.canonical(new BigDecimal(amount), currency))
                 .isInstanceOf(InvalidAmountException.class)
                 .hasMessage(detail);
@@ -131,7 +132,7 @@ class AmountPrecisionTest {
     }
 
     @ParameterizedTest(name = "{0} carries {1} decimals")
-    @CsvSource({"USD, 2", "usd, 2", "JPY, 0", "ISK, 0", "MGA, 0", "KWD, 2"})
+    @CsvSource({"USD, 2", "usd, 2", "JPY, 0", "ISK, 0", "UGX, 0", "MGA, 0", "KWD, 2"})
     void decimalsFollowTheGridRatherThanIso(String currency, int decimals) {
         // Guards decimals read from java.util.Currency, which a client would then use to format and check
         // amounts the wallet refuses or prints differently.

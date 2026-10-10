@@ -41,11 +41,13 @@ class StripeRequestMapperTest {
             // three-decimal: thousandths, not hundredths. Sending 5000 here would charge 5 KWD for 50.
             "50.00,  KWD,  50000",
             "10.00,  BHD,  10000",
-            // MGA and ISK are the two currencies where the ISO exponent and Stripe's disagree, in opposite
-            // directions. They are here to fail loudly if anyone rewrites this to read the exponent from
-            // java.util.Currency: that would charge MGA a hundred times over and ISK a hundredth.
+            // MGA, ISK and UGX are the currencies where the ISO exponent and Stripe's disagree: MGA one way, ISK
+            // and UGX the other. They are here to fail loudly if anyone rewrites this to read the exponent from
+            // java.util.Currency: that would charge MGA a hundred times over and ISK or UGX a hundredth. UGX is
+            // also listed as zero-decimal on Stripe's page, yet Stripe takes it in hundredths like ISK.
             "5000,   MGA,   5000",
             "5000,   ISK, 500000",
+            "5000,   UGX, 500000",
     })
     void convertsToTheUnitStripeCharges(String amount, String currency, long expected) {
         assertThat(amountSentToStripe(amount, currency)).isEqualTo(expected);
@@ -60,8 +62,10 @@ class StripeRequestMapperTest {
             // three-decimal currencies are capped at two places, so every amount we accept converts to a
             // minor value ending in zero, which is what Stripe requires of them
             "50.001, KWD",
-            // Stripe takes ISK in hundredths but charges whole krónur: 1050 would ask for 10.50, which it refuses
+            // Stripe takes ISK and UGX in hundredths but charges whole units: 1050 would ask for 10.50, which it
+            // refuses
             "10.50,  ISK",
+            "10.50,  UGX",
     })
     void refusesAmountsFinerThanTheCurrencyAccepts(String amount, String currency) {
         assertThatThrownBy(() -> amountSentToStripe(amount, currency))
@@ -70,7 +74,7 @@ class StripeRequestMapperTest {
     }
 
     @ParameterizedTest(name = "{1} {0} survives the round trip")
-    @CsvSource({"50.00, USD", "10.01, EUR", "5000, JPY", "50.00, KWD", "5000, ISK", "5000, MGA"})
+    @CsvSource({"50.00, USD", "10.01, EUR", "5000, JPY", "50.00, KWD", "5000, ISK", "5000, UGX", "5000, MGA"})
     void conversionLosesNothing(String amount, String currency) {
         long minor = amountSentToStripe(amount, currency);
         int exponent = StripeCurrencyRules.of(currency).transmitExponent();

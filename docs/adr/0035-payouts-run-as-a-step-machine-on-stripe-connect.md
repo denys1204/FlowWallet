@@ -73,8 +73,8 @@ list, an amount below its minimum, an amount off the payout grid. The list is in
 variables, and startup fails on an unknown code or a minimum that is not positive, below Stripe's minimum payout for the
 account's country (`StripePayoutMinimums`) or off the grid. 1.0 lists PLN only, with a minimum no lower than the 5 PLN
 Stripe documents. `StripeCurrencyRules.payoutScale` is the grid: HUF and TWD in whole units sent as multiples of 100,
-the zero-decimal currencies and ISK in whole units, every other currency in hundredths. Its HUF and TWD entries are the
-payout rule that [0023](0023-isk-charged-in-whole-units.md) set aside, and it extends the grid of
+the zero-decimal currencies, ISK and UGX in whole units, every other currency in hundredths. Its HUF and TWD entries are
+the payout rule that [0023](0023-isk-charged-in-whole-units.md) set aside, and it extends the grid of
 [0015](0015-currency-precision-and-no-rounding.md) with a rule `AmountPrecision` does not copy, since only a payout
 applies it. Otherwise the preflight answers 200 with the bank account's state and `reserveSufficient`: whether the
 platform's `available` balance in the currency (`Balance.retrieve`), less the amounts of payouts not yet transferred

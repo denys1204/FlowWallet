@@ -1,7 +1,8 @@
 # 0023. ISK is charged in whole units written in hundredths
 
 - Status: Accepted, supersedes the ISK precision of [0015](0015-currency-precision-and-no-rounding.md), extended by
-  [0035](0035-payouts-run-as-a-step-machine-on-stripe-connect.md)
+  [0035](0035-payouts-run-as-a-step-machine-on-stripe-connect.md), UGX exponent superseded by
+  [0038](0038-ugx-charged-in-whole-units.md)
 - Date: 2026-09-27
 
 ## Context

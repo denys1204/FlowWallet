@@ -6,8 +6,8 @@ import java.util.Set;
 /**
  * How much precision Stripe accepts for a currency, and what power of ten converts a major-unit amount
  * into the minor unit Stripe charges in. Both come from this table and never from {@code java.util.Currency},
- * whose ISO exponents differ from Stripe's (MGA, ISK). See docs/adr/0015-currency-precision-and-no-rounding.md and
- * docs/adr/0023-isk-charged-in-whole-units.md.
+ * whose ISO exponents differ from Stripe's (MGA, ISK, UGX). See docs/adr/0015-currency-precision-and-no-rounding.md,
+ * docs/adr/0023-isk-charged-in-whole-units.md and docs/adr/0038-ugx-charged-in-whole-units.md.
  *
  * @see <a href="https://docs.stripe.com/currencies#zero-decimal">Stripe: zero-decimal currencies</a>
  */
@@ -22,15 +22,17 @@ public final class StripeCurrencyRules {
      */
     private static final Set<String> ZERO_DECIMAL = Set.of(
             "BIF", "CLP", "DJF", "GNF", "JPY", "KMF", "KRW", "MGA",
-            "PYG", "RWF", "UGX", "VND", "VUV", "XAF", "XOF", "XPF"
+            "PYG", "RWF", "VND", "VUV", "XAF", "XOF", "XPF"
     );
 
     /**
      * Charged as whole units written in hundredths: Stripe takes the amount in two-decimal form, and the decimals
      * must be 00 (https://docs.stripe.com/currencies, retrieved on 2026-09-27). So the accepted scale is 0 and the
-     * transmit exponent 2. {@code com.flowwallet.wallet.api.AmountPrecision} keeps a copy of this list too.
+     * transmit exponent 2. Stripe's page also lists UGX as zero-decimal, but its API refuses a UGX amount that is not
+     * a multiple of 100 and charges 1000000 as 10,000 UGX (checked on 2026-10-10).
+     * {@code com.flowwallet.wallet.api.AmountPrecision} keeps a copy of this list too.
      */
-    private static final Set<String> WHOLE_UNITS_IN_HUNDREDTHS = Set.of("ISK");
+    private static final Set<String> WHOLE_UNITS_IN_HUNDREDTHS = Set.of("ISK", "UGX");
 
     /**
      * Charged in thousandths: only the five that Stripe documents. IQD and LYD carry three decimals in ISO, not
@@ -65,7 +67,7 @@ public final class StripeCurrencyRules {
 
     /**
      * Most decimal places a payout amount in this currency may carry: whole units for HUF and TWD, the zero-decimal
-     * currencies and ISK, hundredths for every other one. Only a payout applies it, so the wallet's grid does not
+     * currencies, ISK and UGX, hundredths for every other one. Only a payout applies it, so the wallet's grid does not
      * copy it. See docs/adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md.
      */
     public static int payoutScale(String currency) {

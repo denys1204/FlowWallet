@@ -12,7 +12,7 @@ class StripeCurrencyRulesTest {
             "USD, 2, 2",
             "JPY, 0, 0",
             "MGA, 0, 0",
-            "UGX, 0, 0",
+            "UGX, 0, 2",
             "ISK, 0, 2",
             "KWD, 2, 3",
             "isk, 0, 2",
@@ -20,8 +20,10 @@ class StripeCurrencyRulesTest {
     void eachCurrencyHasTheScaleAndExponentStripeDocuments(String currency, int acceptedScale, int exponent) {
         // Guards the two numbers drifting apart for the currencies where they differ. ISK is the case where
         // Stripe takes hundredths but charges whole krónur: an accepted scale of 2 would send 1050 for 10.50,
-        // which Stripe refuses after the row is reserved. MGA is zero-decimal at Stripe although ISO gives it two
-        // decimals, and UGX stays zero-decimal although Stripe's page also describes it in hundredths.
+        // which Stripe refuses after the row is reserved. UGX follows the same rule: Stripe's page lists it as
+        // zero-decimal, but its API refuses a UGX amount that is not a multiple of 100, so at exponent 0 a charge
+        // would be a hundredth of the amount credited. MGA is zero-decimal at Stripe although ISO gives it two
+        // decimals.
         assertThat(StripeCurrencyRules.of(currency)).isEqualTo(new CurrencyRule(acceptedScale, exponent));
     }
 
@@ -33,6 +35,7 @@ class StripeCurrencyRulesTest {
             "huf, 0",
             "JPY, 0",
             "ISK, 0",
+            "UGX, 0",
             "KWD, 2",
     })
     void aPayoutUsesItsOwnGridWhereStripeDiffersFromItsCharges(String currency, int payoutScale) {

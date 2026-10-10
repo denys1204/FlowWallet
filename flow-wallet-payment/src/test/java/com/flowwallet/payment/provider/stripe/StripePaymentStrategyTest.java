@@ -232,10 +232,12 @@ class StripePaymentStrategyTest {
             "50.00, 5000, usd",
             "500, 500, jpy",
             "12.34, 12340, kwd",
+            "10000, 1000000, ugx",
     })
     void convertsStripesMinorUnitsWithTheSameExponentAsTheRequest(String expected, long minor, String currency) {
         // The amount is compared with the stored transaction before a success is applied. Converting with a
-        // different exponent than the request used would refuse every genuine JPY or KWD payment.
+        // different exponent than the request used would refuse every genuine JPY or KWD payment. UGX comes in
+        // hundredths although Stripe lists it as zero-decimal: 1000000 is 10,000 UGX.
         PaymentIntent intent = paymentIntent("succeeded", minor, currency);
         when(webhookParser.parse("payload", Map.of(), SECRET)).thenReturn(
                 new ParsedStripeEvent("evt_1", "payment_intent.succeeded", CREATED, null, intent)

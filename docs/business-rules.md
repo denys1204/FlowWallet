@@ -37,15 +37,15 @@ Details: [API reference](api.md#wallet-service). Reasoning:
 ## Amounts
 
 - Every amount that moves money is positive.
-- An amount sits on its currency's grid: whole units for the 16 zero-decimal currencies (JPY and KRW among
-  them) and for the Icelandic króna (ISK), and at most two decimals for every other currency. An amount off the
-  grid is refused rather than rounded.
+- An amount sits on its currency's grid: whole units for the 15 zero-decimal currencies (JPY and KRW among
+  them), the Icelandic króna (ISK) and the Ugandan shilling (UGX), and at most two decimals for every other
+  currency. An amount off the grid is refused rather than rounded.
 - The wallet shows every amount at its currency's scale, as a decimal string: 75.00 USD reads `"75.00"`, and
   1000 JPY reads `"1000"`.
 
 Details: [API reference](api.md#wallet-service). Reasoning:
 [ADR 0015](adr/0015-currency-precision-and-no-rounding.md), [ADR 0023](adr/0023-isk-charged-in-whole-units.md),
-[ADR 0030](adr/0030-amounts-in-responses-are-decimal-strings.md).
+[ADR 0030](adr/0030-amounts-in-responses-are-decimal-strings.md), [ADR 0038](adr/0038-ugx-charged-in-whole-units.md).
 
 ## Deposits
 

@@ -31,7 +31,7 @@ on. Clients write currency codes in either case, and `Currency.getInstance` acce
   `@NotBlank`, and is case-sensitive. Payment Service uses it on `CreatePaymentIntentRequest.currency`, which the
   wallet always fills in upper case. `CreateWalletRequest` does not use it.
 - `StripeCurrencyRules` is the authority for both numbers, and `java.util.Currency` is never consulted for them.
-  `StripeCurrencyRules.of` returns a `CurrencyRule(acceptedScale, transmitExponent)`. The 16 codes in `ZERO_DECIMAL`
+  `StripeCurrencyRules.of` returns a `CurrencyRule(acceptedScale, transmitExponent)`. The 15 codes in `ZERO_DECIMAL`
   have exponent 0, the five in `THREE_DECIMAL` (BHD, JOD, KWD, OMR, TND, the ones Stripe documents) have exponent 3,
   and every other code has exponent 2. The accepted scale is the exponent capped at `MAX_ACCEPTED_SCALE` (2), so a
   three-decimal amount always converts to a minor amount ending in zero.

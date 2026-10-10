@@ -114,11 +114,12 @@ Each invariant here is stated once and links the ADR that holds its reasoning.
   wallet id, a payment-scoped line the `transactionReference`, and the JDBC URLs turn off Postgres error detail,
   which would quote key values ([ADR 0027](docs/adr/0027-user-ids-stay-out-of-logs-and-provider-metadata.md)).
 - Amounts moved inside the wallet sit on `AmountPrecision`'s grid, a copy of `StripeCurrencyRules`'
-  zero-decimal list, its whole-unit ISK entry and its two-decimal cap, and at most 15 integer digits. They are
-  refused, never rounded. The lists point at each other; change both sides together
+  zero-decimal list, its whole-unit ISK and UGX entries and its two-decimal cap, and at most 15 integer digits. They
+  are refused, never rounded. The lists point at each other; change both sides together
   ([ADR 0015](docs/adr/0015-currency-precision-and-no-rounding.md),
-  [ADR 0023](docs/adr/0023-isk-charged-in-whole-units.md)). A payment event's amount is held to the
-  same grid and refused as `INVALID_AMOUNT` ([ADR 0019](docs/adr/0019-payment-event-amounts-on-the-grid.md)).
+  [ADR 0023](docs/adr/0023-isk-charged-in-whole-units.md), [ADR 0038](docs/adr/0038-ugx-charged-in-whole-units.md)).
+  A payment event's amount is held to the same grid and refused as `INVALID_AMOUNT`
+  ([ADR 0019](docs/adr/0019-payment-event-amounts-on-the-grid.md)).
   Responses print money as a string from `AmountPrecision.render`, at the currency's scale, never as a number
   ([ADR 0030](docs/adr/0030-amounts-in-responses-are-decimal-strings.md)).
 - Problem responses carry no `type`, so on the transfer path each status points to a different kind of fix:

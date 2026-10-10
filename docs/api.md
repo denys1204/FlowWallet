@@ -28,8 +28,8 @@ currency, and `X-User-Id` already names the owner, so the pair identifies the wa
 path and in the body.
 
 Money is a decimal string at the currency's scale in every response: `"75.00"` for USD, `"1000"` for JPY. The
-wallet's `decimals` says how many places its currency carries: 0 for the zero-decimal currencies and ISK, 2 for
-every other, KWD and BHD included. Parse money as a decimal, never as a float. A request takes an amount as a string
+wallet's `decimals` says how many places its currency carries: 0 for the zero-decimal currencies, ISK and UGX, 2
+for every other, KWD and BHD included. Parse money as a decimal, never as a float. A request takes an amount as a string
 or as a JSON number; the string is the documented form
 ([ADR 0030](adr/0030-amounts-in-responses-are-decimal-strings.md)). A string amount is a plain decimal, surrounding
 whitespace is ignored, and an empty string counts as a missing amount.
@@ -130,11 +130,11 @@ a transfer, and a replay has to match the first answer in status as well as body
 - `to` is the recipient's user id, held to the same rule as `X-User-Id`: a UUID of version 4 or 7, in either
   case. Unlike the header, surrounding whitespace is refused rather than stripped. A `to` equal to the
   caller's own id, compared after case folding, gets `400` "A transfer must go to another user".
-- `amount` must be positive and sit on the grid deposits use for its currency: whole units for the 16
-  zero-decimal currencies in Payment Service's `StripeCurrencyRules` (JPY and KRW among them) and for ISK, two
-  decimals for every other. The wallet keeps its own copy of those lists in `AmountPrecision`, because a
+- `amount` must be positive and sit on the grid deposits use for its currency: whole units for the 15
+  zero-decimal currencies in Payment Service's `StripeCurrencyRules` (JPY and KRW among them) and for ISK and UGX,
+  two decimals for every other. The wallet keeps its own copy of those lists in `AmountPrecision`, because a
   transfer never passes through Payment Service ([ADR 0015](adr/0015-currency-precision-and-no-rounding.md),
-  [ADR 0023](adr/0023-isk-charged-in-whole-units.md)).
+  [ADR 0023](adr/0023-isk-charged-in-whole-units.md), [ADR 0038](adr/0038-ugx-charged-in-whole-units.md)).
   Trailing zeros don't count, so `10.5000` USD and `100.00` JPY are fine. An amount off the grid, such as
   `10.001` USD or `1.5` JPY, gets a `400` and is never rounded. So does an amount with more than 15 integer
   digits, the room a `NUMERIC(19,4)` balance has. Nothing else limits the amount: the deposit range belongs
@@ -432,7 +432,7 @@ Stripe. The intent offers only the payment methods in `STRIPE_PAYMENT_METHOD_TYP
   lower-cases the caller's key), and `providerName` at most 32 characters (case-insensitive).
 - `amount` must be between `1.00` and `10000.00` inclusive by default (`PAYMENT_MIN_DEPOSIT_AMOUNT` /
   `PAYMENT_MAX_DEPOSIT_AMOUNT`). For Stripe it can have at most two decimal places, and none for
-  zero-decimal currencies such as JPY or for ISK, which Stripe takes in hundredths but charges in whole units;
+  zero-decimal currencies such as JPY or for ISK and UGX, which Stripe takes in hundredths but charges in whole units;
   trailing zeros don't count. Three-decimal currencies such as KWD are
   limited to two as well. The currency must be one Stripe charges, and the amount must reach Stripe's minimum
   charge for the currencies Stripe lists one for (50 JPY, 175.00 HUF, 0.50 USD), both taken from a dated copy
