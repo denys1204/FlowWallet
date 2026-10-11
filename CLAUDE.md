@@ -113,7 +113,10 @@ Each invariant here is stated once and links the ADR that holds its reasoning.
   [ADR 0031](docs/adr/0031-callers-are-authenticated-in-front-of-the-gateway.md)).
 - A user id never appears in a log line, an exception message or Stripe metadata: a wallet-scoped line names the
   wallet id, a payment-scoped line the `transactionReference`, and the JDBC URLs turn off Postgres error detail,
-  which would quote key values ([ADR 0027](docs/adr/0027-user-ids-stay-out-of-logs-and-provider-metadata.md)).
+  which would quote key values ([ADR 0027](docs/adr/0027-user-ids-stay-out-of-logs-and-provider-metadata.md)). A
+  Kafka consumer reports a record it cannot parse by the parser's error type and position, never quoting the raw value,
+  an unrecognised header or Jackson's message, and a failed send is logged without the record's value at INFO and above
+  ([ADR 0044](docs/adr/0044-unreadable-kafka-records-are-reported-without-their-content.md)).
 - Amounts moved inside the wallet sit on `AmountPrecision`'s grid, a copy of `StripeCurrencyRules`'
   zero-decimal list, its whole-unit ISK and UGX entries and its two-decimal cap, and at most 15 integer digits. They
   are refused, never rounded. The lists point at each other; change both sides together

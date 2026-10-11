@@ -65,9 +65,11 @@ docker exec flow-kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-serv
   --formatter-property print.offset=true --formatter-property print.headers=true --formatter-property print.key=true
 ```
 
-A dead-lettered record keeps its key and headers, and the dead-letter publisher adds `kafka_dlt-*` headers: the
-original topic, partition and offset, and the exception's class, message and stack trace. Kafka UI shows the same
-records in a form that is easier to read.
+A dead-lettered record keeps its key and headers, and the dead-letter publisher adds `kafka_dlt-*` headers: the original
+topic, partition and offset, and the exception's class, message and stack trace. For a record the consumer could not
+parse, the message names the parser's error type and the line and column where it stopped, not the value
+([ADR 0044](adr/0044-unreadable-kafka-records-are-reported-without-their-content.md)); the record's value shows the
+input itself. Kafka UI shows the same records in a form that is easier to read.
 
 Check that a consumer group keeps up with its topic. `flow-wallet-payment` reads `wallet.withdrawals`, and
 `flow-wallet-service` reads `payment.events`:

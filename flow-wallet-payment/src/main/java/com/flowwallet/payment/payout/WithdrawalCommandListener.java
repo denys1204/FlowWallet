@@ -80,7 +80,7 @@ public class WithdrawalCommandListener {
         try {
             command = objectMapper.readValue(record.value(), WithdrawalRequestedEvent.class);
         } catch (JacksonException e) {
-            throw new UnreadableWithdrawalCommandException("Withdrawal command is not readable JSON", e);
+            throw UnreadableWithdrawalCommandException.unparseable(e);
         }
         if (command == null) {
             throw new UnreadableWithdrawalCommandException("Withdrawal command is the JSON literal null");

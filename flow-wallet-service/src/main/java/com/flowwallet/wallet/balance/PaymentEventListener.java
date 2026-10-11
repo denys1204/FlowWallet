@@ -55,7 +55,7 @@ public class PaymentEventListener {
             case KafkaConstants.EVENT_TYPE_PAYOUT_PAID -> onPayoutPaid(record);
             case KafkaConstants.EVENT_TYPE_PAYOUT_FAILED -> onPayoutFailed(record);
             case KafkaConstants.EVENT_TYPE_PAYOUT_RETURNED -> onPayoutReturned(record);
-            default -> throw UnreadablePaymentEventException.unknownEventType(eventType);
+            default -> throw UnreadablePaymentEventException.unknownEventType();
         }
     }
 

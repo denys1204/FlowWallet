@@ -2,7 +2,8 @@
 
 - Status: Accepted, supersedes the logging detail of [0014](0014-transfers-in-one-local-transaction.md), extends
   [0003](0003-caller-identity-and-trust-boundary.md), extended by
-  [0035](0035-payouts-run-as-a-step-machine-on-stripe-connect.md)
+  [0035](0035-payouts-run-as-a-step-machine-on-stripe-connect.md) and
+  [0044](0044-unreadable-kafka-records-are-reported-without-their-content.md)
 - Date: 2026-09-27
 
 ## Context
