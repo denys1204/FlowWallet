@@ -77,6 +77,22 @@ public final class KafkaProbe {
     }
 
     /**
+     * Returns once the group has committed past every record the topic holds now, so no listener is still working on
+     * one, retries included: the error handler publishes a dead letter before it commits the record's offset.
+     */
+    public void awaitConsumedToEnd(String groupId, String topic) {
+        Map<TopicPartition, Long> end = endOffsets(topic);
+        await().until(() -> {
+            for (Map.Entry<TopicPartition, Long> partition : end.entrySet()) {
+                if (partition.getValue() > 0 && committedOffset(groupId, partition.getKey()) < partition.getValue()) {
+                    return false;
+                }
+            }
+            return true;
+        });
+    }
+
+    /**
      * How many records the topic holds across its partitions, for a test that asserts a dead-letter topic gained
      * nothing. Compare it after {@link #awaitConsumed}: the error handler publishes a dead letter before the offset of
      * the record it gives up on is committed.

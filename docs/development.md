@@ -264,8 +264,8 @@ endpoint's webhooks.
 
 ## Testing
 
-There are 2089 tests, all green: 2044 unit tests (1384 in the payment service, 554 in the wallet service, 53 in the
-outbox module, 44 in platform and 9 in the gateway) and 45 integration tests (41 in the wallet service, 4 in the
+There are 2098 tests, all green: 2044 unit tests (1384 in the payment service, 554 in the wallet service, 53 in the
+outbox module, 44 in platform and 9 in the gateway) and 54 integration tests (41 in the wallet service, 13 in the
 payment service).
 
 `./mvnw test` runs the unit tests only. `./mvnw verify` and `./mvnw clean install` also run the integration tests
@@ -312,8 +312,17 @@ In the payment service they run a deposit from the wallet's intent call to the r
 has the shape of the golden sample the wallet's tests publish, and a redelivered webhook adds no second event. A webhook
 signed with another secret is refused and changes nothing. When the outbox row cannot be written, the payment stays
 `PENDING` and Stripe's redelivery settles it once. A paid deposit whose webhook never came is settled by
-`PendingPaymentReconciler` through the same handler, and the late webhook then adds nothing. `StripeClient` is a spy
-that each test stubs; the signature check is real, and an unstubbed call fails against a closed local port.
+`PendingPaymentReconciler` through the same handler, and the late webhook then adds nothing. For payouts they publish
+the wallet's golden command to `wallet.withdrawals` and drive `PayoutExecutor` directly: a command is accepted as one
+payout and its redeliveries add none, the same reference with other terms goes to `wallet.withdrawals.payment.DLT`, and
+a currency the payout terms refuse is stored `RETURNED` with its event. The executor transfers to the connected account
+and then pays out, under the documented idempotency keys; a signed Connect `payout.paid` settles the payout as `PAID`
+from Stripe's own payout, and a `payout.failed` sets the bank account back to `NOT_SET`, reverses the transfer and ends
+`RETURNED`, each event in the shape of its golden sample. A transfer Stripe refuses for platform funds ends `RETURNED`
+as `PLATFORM_FUNDS_SHORT`, an outcome that stays unknown up to the limit hands the payout to an operator with no event,
+and a transfer made at Stripe whose write then fails is adopted by the next try instead of made again. The payout tests
+empty `payouts` before each test, the one table the executor takes its due rows from. `StripeClient` is a spy that each
+test stubs; the signature check is real, and an unstubbed call fails against a closed local port.
 
 Among the unit tests, the gateway's bind its own `application.yml`, so a YAML regression that drops the response or
 connect timeout, or binds the gateway beyond loopback, fails there rather than in a live request; they also check that

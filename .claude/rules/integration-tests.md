@@ -9,6 +9,7 @@ paths:
   - "**/support/ContainerImages*.java"
   - "**/support/Concurrently.java"
   - "**/support/PaymentStub.java"
+  - "**/support/PayoutRows.java"
   - "**/support/DatabaseFaults.java"
   - "**/support/StripeFixtures.java"
   - "**/support/StripeSignatures.java"
@@ -25,7 +26,9 @@ paths:
   `@MockitoBean`, `@DynamicPropertySource` or `@DirtiesContext` starts a second Spring context, and a second context
   is a second listener in the service's consumer group, which steals records from the first.
 - No test truncates a table: an earlier test's retry or after-commit send may still be writing. Use fresh UUIDs for
-  users, keys and event ids, and assert only on rows that carry them.
+  users, keys and event ids, and assert only on rows that carry them. The one exception is Payment Service's payout
+  tests: `PayoutExecutor.run()` takes every due payout, so they empty `payouts` through `PayoutRows.clearOnceQuiet`,
+  which first waits for the consumer group to finish every withdrawal command published so far.
 - No `Thread.sleep`. Wait for an effect with Awaitility, and before asserting that a record changed nothing, wait
   for the consumer group to commit past it with `KafkaProbe.awaitConsumed`.
 - Scheduled jobs are off in the tests. A test that needs the outbox poller or a reconciler calls its method.

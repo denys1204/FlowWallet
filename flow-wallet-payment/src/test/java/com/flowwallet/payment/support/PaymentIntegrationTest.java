@@ -32,7 +32,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Base of every Payment Service integration test. The containers start once per test JVM and every test class
  * shares one Spring context: all its settings live here, because a second context would add a second listener to
- * the consumer group. Tests isolate themselves with fresh keys and ids rather than by cleaning tables.
+ * the consumer group. Tests isolate themselves with fresh keys and ids rather than by cleaning tables, except the
+ * payout tests, which empty {@code payouts} through {@link PayoutRows#clearOnceQuiet}.
  * <p>
  * Stripe never answers: {@link StripeClient} is a spy whose network methods each test stubs, while the webhook
  * signature check stays real, and any call left unstubbed goes to a closed local port and fails at once instead of
@@ -46,6 +47,11 @@ public abstract class PaymentIntegrationTest {
      * The webhook secret in integration-test.properties: a test signs its webhooks with it.
      */
     protected static final String WEBHOOK_SECRET = "whsec_integration-test-signing-secret";
+
+    /**
+     * The Connect webhook secret in integration-test.properties: a test signs its Connect webhooks with it.
+     */
+    protected static final String CONNECT_WEBHOOK_SECRET = "whsec_integration-test-connect-secret";
 
     /**
      * The URL parameter keeps the shipped datasource's {@code logServerErrorDetail=false}, which

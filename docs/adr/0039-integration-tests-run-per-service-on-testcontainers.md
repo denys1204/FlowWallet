@@ -44,10 +44,13 @@ there are no images yet.
   stripe-java's API base at a closed port on loopback, so a call no test stubbed fails at once and never leaves the
   machine. A fault inside the service's own transaction comes from a trigger that fails one key's writes
   (`DatabaseFaults`), not from a spy on a transactional bean.
-- Tests isolate themselves with fresh user ids, keys and event ids, and assert only on their own rows; no test
-  truncates a table. A test waits with Awaitility or for its consumer group to commit past a record
-  (`KafkaProbe.awaitConsumed`), never with a sleep. In Wallet Service every test ends with `LedgerAudit`, which fails if
-  any wallet's balance, entry numbers or balance steps disagree with its ledger.
+- Tests isolate themselves with fresh user ids, keys and event ids, and assert only on their own rows; no test truncates
+  a table, except that Payment Service's payout tests empty `payouts` before each test, once the consumer group has
+  finished every withdrawal command: `PayoutExecutor.run()` takes every due payout, and another test's row would reach
+  the Stripe tripwire and count toward the executor's stop after three failures in a row. A test waits with Awaitility
+  or for its consumer group to commit past a record (`KafkaProbe.awaitConsumed`), never with a sleep. In Wallet Service
+  every test ends with `LedgerAudit`, which fails if any wallet's balance, entry numbers or balance steps disagree with
+  its ledger.
 - The cross-service test is two halves that meet on the contract's golden wire samples, JSON files under
   `flow-wallet-contract/src/test/resources/wire` published as the contract's test-jar. A producer's test checks the
   record it sends against the sample, and a consumer's test publishes the sample with its own ids.

@@ -25,7 +25,7 @@ isolation; and clean module boundaries.
 > Service, and withdraw to a bank account through Stripe Connect: the wallet debits the balance, Payment Service pays
 > out, and a payout that fails comes back as a credit. Integration tests run against real Postgres and Kafka in
 > containers. They cover the wallet's payment event consumer, both halves of a deposit, transfers and the wallet's side
-> of withdrawals so far; Payment Service's payout steps are in progress. See
+> of withdrawals, and Payment Service's payout steps. See
 > [Project status & roadmap](#project-status--roadmap).
 >
 > The project runs against Stripe test mode only and is not meant for production use.
@@ -186,8 +186,8 @@ tests on real infrastructure.
    commits with the debit, and that a returned payout credits once.
 4. ~~Transfers between wallets~~: done, with their integration tests. Same currency only, the recipient named by user
    id, and one local transaction that locks both wallets in ascending user id.
-5. ~~Withdrawals out to the payment provider~~: done; the wallet's side has its integration tests, and Payment
-   Service's payout steps get theirs in stage 3. Through Stripe Connect in test mode: the wallet debits under its lock
+5. ~~Withdrawals out to the payment provider~~: done, with integration tests on both the wallet's side and Payment
+   Service's payout steps. Through Stripe Connect in test mode: the wallet debits under its lock
    and records a refusal under the key, Payment Service pays out, and a payout that fails comes back as a credit.
 
 Stages, definitions of done and open decisions live in `implementation_plan.md`. It is a local working file
