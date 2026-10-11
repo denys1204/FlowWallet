@@ -29,7 +29,7 @@ only as a dependent under its `groupId:artifactId` rather than its component, so
   follows a release. All pending releases share one release PR, and each service keeps its `CHANGELOG.md` in its own
   folder.
 - Each service pom declares its own `<version>`, which only release-please changes. The reactor in the root `pom.xml`
-  and the libraries stay at `0.0.1-SNAPSHOT` and are never released. The root manages the libraries, the contract's
+  and the libraries stay at `1.0.0-SNAPSHOT` and are never released. The root manages the libraries, the contract's
   test-jar included, through the `flow-wallet-libraries.version` property, which must equal the reactor's version.
 - A commit belongs to a service when it changes a file under the service's folder; the scope in the message only
   labels the changelog line. `feat` releases a minor version, `fix`, `perf`, `revert` and `deps` a patch, and a `!` or
@@ -47,8 +47,8 @@ only as a dependent under its `groupId:artifactId` rather than its component, so
 - Six packages, the libraries included, through `maven-workspace`: a service bumped only because a library changed
   would get no tag, and a grouped release PR with snapshot releases makes every later run open a snapshot PR instead
   of a release PR.
-- The version in a separate file per service (the `simple` release type), with the poms untouched: no Maven change,
-  but every jar would keep `0.0.1-SNAPSHOT` in its name and metadata, and the release version would exist only for CI.
+- The version in a separate file per service (the `simple` release type), with the poms untouched: no Maven change, but
+  every jar would keep the snapshot version in its name and metadata, and the release version would exist only for CI.
 - A manual tag per release, with no tool: nothing would write the changelog or decide the version from the commits.
 
 ## Consequences

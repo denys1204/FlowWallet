@@ -60,7 +60,7 @@ from the same file. If you change `KAFKA_EXTERNAL_PORT`, set `KAFKA_BOOTSTRAP_SE
 ```
 
 Each service carries the version of its last release in its own pom, set by release-please; the reactor and the
-shared libraries stay at `0.0.1-SNAPSHOT` ([ADR 0040](adr/0040-services-are-released-on-their-own.md)). How a
+shared libraries stay at `1.0.0-SNAPSHOT` ([ADR 0040](adr/0040-services-are-released-on-their-own.md)). How a
 release is made is in [CONTRIBUTING](../CONTRIBUTING.md#releases).
 
 ### 4. Run the services

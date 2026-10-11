@@ -24,7 +24,7 @@
       three services in their own poms, and the libraries reach them through the services' images. Change it together
       with flow-wallet-libraries.version below. See docs/adr/0040-services-are-released-on-their-own.md.
     -->
-    <version>0.0.1-SNAPSHOT</version>
+    <version>1.0.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <name>FlowWallet</name>
@@ -64,7 +64,7 @@
           above. It is a property rather than ${project.version} because a service resolves ${project.version} to its
           own released version, under which no library exists.
         -->
-        <flow-wallet-libraries.version>0.0.1-SNAPSHOT</flow-wallet-libraries.version>
+        <flow-wallet-libraries.version>1.0.0-SNAPSHOT</flow-wallet-libraries.version>
     </properties>
 
     <!-- ============================================================= -->

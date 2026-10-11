@@ -173,7 +173,7 @@ sections are in `release-please-config.json`; `.github/workflows/release-please.
 - Never edit a service's `<version>`, a `CHANGELOG.md` or the manifest by hand. To force a version, put a
   `Release-As: X.Y.Z` footer in a `feat`, `fix`, `perf`, `revert` or `deps` commit that changes that service; a
   commit of a type that releases nothing opens no release PR on its own.
-- The reactor and the libraries (`contract`, `platform`, `outbox`) stay at `0.0.1-SNAPSHOT` and are never released. A
+- The reactor and the libraries (`contract`, `platform`, `outbox`) stay at `1.0.0-SNAPSHOT` and are never released. A
   commit that changes only a library, the root `pom.xml`, `docs/` or `docker-compose.yml` releases nothing. When a
   library change has to ship as a release, push an empty commit such as `fix(deps): take the outbox fix` to `main`;
   it releases a patch of every service.

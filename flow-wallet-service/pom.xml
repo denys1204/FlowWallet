@@ -7,12 +7,12 @@
     <parent>
         <groupId>com.flowwallet</groupId>
         <artifactId>flow-wallet</artifactId>
-        <version>0.0.1-SNAPSHOT</version>
+        <version>1.0.0-SNAPSHOT</version>
     </parent>
 
     <artifactId>flow-wallet-service</artifactId>
     <!-- The service's released version: release-please sets it from the commits under this folder. -->
-    <version>0.0.1-SNAPSHOT</version>
+    <version>1.0.0-SNAPSHOT</version>
     <packaging>jar</packaging>
 
     <name>FlowWallet :: Wallet Service</name>
