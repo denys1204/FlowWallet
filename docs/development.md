@@ -264,8 +264,8 @@ endpoint's webhooks.
 
 ## Testing
 
-There are 2074 tests, all green: 2044 unit tests (1384 in the payment service, 554 in the wallet service, 53 in the
-outbox module, 44 in platform and 9 in the gateway) and 30 integration tests (26 in the wallet service, 4 in the
+There are 2089 tests, all green: 2044 unit tests (1384 in the payment service, 554 in the wallet service, 53 in the
+outbox module, 44 in platform and 9 in the gateway) and 45 integration tests (41 in the wallet service, 4 in the
 payment service).
 
 `./mvnw test` runs the unit tests only. `./mvnw verify` and `./mvnw clean install` also run the integration tests
@@ -295,8 +295,17 @@ for byte; one key raced from two senders, with and without a wallet in common, g
 `409`; two `25.00` transfers from a `30.00` wallet let one through and refuse the other with `422`, and the winner's
 replay is its first answer. The schema refuses direct SQL writes of a negative balance, a zero amount, a transfer leg
 without a counterparty, a duplicate entry number, a second ledger row of one type under one reference and a lower-case
-currency, each under its own constraint name. The tests publish the contract's golden wire samples, and after every test
-`LedgerAudit` checks that each wallet's balance and entry numbers match its ledger.
+currency, each under its own constraint name. A withdrawal debits the wallet, writes its `PENDING` row and sends its
+command from one commit, and the command on `wallet.withdrawals` has the shape of its golden sample; when the outbox row
+cannot be written nothing is debited and the retry under the same key goes through once, and when the withdrawal's own
+row fails after the command was queued no command is left behind; a missing bank account is refused with `422` under the
+key and the retry repeats it, and a short platform reserve answers `503` with nothing written. Twenty withdrawals with
+one key debit once and send one command, one key raced from two wallets goes to one of them, two withdrawals that
+together overdraw a wallet let one through and record the other as refused, and withdrawals racing transfers for one
+balance never overdraw it. Two returns for one withdrawal handled at once credit it back once, and a payout that is
+paid, fails and comes back rises to `RETURNED` and is credited once. The schema's CHECKs on `withdrawals` refuse direct
+SQL writes too. The tests publish the contract's golden wire samples, and after every test `LedgerAudit` checks that
+each wallet's balance and entry numbers match its ledger.
 
 In the payment service they run a deposit from the wallet's intent call to the record on `payment.events`: a signed
 `payment_intent.succeeded` webhook settles the payment and its outbox row commits with it, the record the outbox sends
@@ -477,8 +486,8 @@ and reference rules (a fifth dash and non-ASCII digits included, never quoted), 
 whose detail says the key is spent, and the status read: the reason that applies and `null` otherwise, only the caller's
 wallet answered, and a missing withdrawal told apart from a missing wallet.
 
-The lock, the unique indexes and the commit of the outbox row with the debit are pinned by mocks only. No automated test
-runs them against real Postgres yet.
+The integration tests above run the lock, the unique indexes and the commit of the outbox row with the debit against
+real Postgres.
 
 For the ledger they cover entry numbers rising by one per wallet across credits and both transfer legs, a
 refused debit taking no number, history paged by entry number without skipping or repeating a movement while
@@ -492,9 +501,9 @@ every response record fails on a numeric money field; a request amount is accept
 
 The unit tests mock their collaborators, so they can't prove the real database barrier. The integration tests run it:
 the unique `processed_events.event_id` and `balance_history (transaction_reference, type)`, the classification by
-read-back (with `DEPOSIT` as the expected ledger type; that it looks at that one type only, and the
-`WITHDRAWAL_RETURNED` case, are pinned by mocks), and concurrent credits to one wallet under its row lock. The unique
-`balance_history (wallet_id, entry_no)` and the numbering of both transfer legs run in the integration tests too
+read-back for a deposit and for a returned withdrawal (`DEPOSIT` and `WITHDRAWAL_RETURNED` as the expected ledger type;
+that it looks at that one type only is pinned by mocks), and concurrent credits to one wallet under its row lock. The
+unique `balance_history (wallet_id, entry_no)` and the numbering of both transfer legs run in the integration tests too
 (`SchemaChecksIT`, and `LedgerAudit` after every test). The entry-number history queries and the migration that numbers
 existing ledger rows were checked by hand on a scratch database seeded with interleaved ids: numbering follows id order
 within each wallet, `last_entry_no` equals each wallet's row count, and history pages by entry number. Payment changeset

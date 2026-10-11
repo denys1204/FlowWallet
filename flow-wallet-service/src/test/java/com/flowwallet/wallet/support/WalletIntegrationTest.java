@@ -17,6 +17,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.web.servlet.client.EntityExchangeResult;
 import org.springframework.test.web.servlet.client.RestTestClient;
 import org.testcontainers.DockerClientFactory;
 import org.testcontainers.kafka.KafkaContainer;
@@ -59,6 +60,11 @@ public abstract class WalletIntegrationTest {
     static final KafkaContainer KAFKA = new KafkaContainer(ContainerImages.KAFKA)
             .withEnv("KAFKA_AUTO_CREATE_TOPICS_ENABLE", "false")
             .withEnv("KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS", "0");
+
+    /**
+     * Where Wallet Service asks Payment Service whether a withdrawal can go ahead.
+     */
+    protected static final String PREFLIGHT_PATH = "/api/payments/payouts/preflight";
 
     protected static final KafkaProbe kafkaProbe;
 
@@ -150,6 +156,26 @@ public abstract class WalletIntegrationTest {
                 Integer.class,
                 reference
         ) == 1);
+    }
+
+    /**
+     * Has the Payment Service stub answer every withdrawal preflight with a bank account set and the reserve
+     * sufficient.
+     */
+    protected void bankAccountReady() {
+        paymentStub.answer(PREFLIGHT_PATH, 200, "{\"bankAccount\": \"READY\", \"reserveSufficient\": true}");
+    }
+
+    protected EntityExchangeResult<String> withdraw(String userId, String amount, String key) {
+        return http.post()
+                .uri("/api/wallets/PLN/withdrawals")
+                .header("X-User-Id", userId)
+                .header("Idempotency-Key", key)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body("{\"amount\": \"%s\"}".formatted(amount))
+                .exchange()
+                .expectBody(String.class)
+                .returnResult();
     }
 
     /**

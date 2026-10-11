@@ -58,6 +58,28 @@ class SchemaChecksIT extends WalletIntegrationTest {
                 .hasMessageContaining("wallets_currency_is_upper");
     }
 
+    @ParameterizedTest(name = "{0}")
+    @CsvSource(delimiter = '|', textBlock = """
+            withdrawals_amount_positive              | SET amount = 0
+            withdrawals_status_known                 | SET status = 'LOST'
+            withdrawals_refusal_reason_when_refused  | SET status = 'REFUSED'
+            withdrawals_return_reason_when_returning | SET status = 'RETURNED'
+            """)
+    void theSchemaRefusesAWithdrawalThatBreaksItsRuleUnderTheRulesOwnName(String constraint, String write) {
+        // Guards the withdrawal's status, reasons and amount against a writer that skips Withdrawal's own methods: a
+        // REFUSED row without its reason, or a return without one, would leave the client's status read unexplained.
+        String userId = newUserId();
+        openWallet(userId, "PLN");
+        fund(userId, "PLN", new BigDecimal("10.00"));
+        bankAccountReady();
+        String key = newKey();
+        withdraw(userId, "5.00", key);
+
+        assertThatThrownBy(() -> jdbc.update("UPDATE withdrawals " + write + " WHERE transaction_reference = ?", key))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining(constraint);
+    }
+
     /**
      * Turns a row of the table into SQL: either the statement itself, or "type, amount, reference, entry" for a copy
      * of the wallet's deposit.

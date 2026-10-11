@@ -66,7 +66,9 @@ public final class WireSample {
 
     /**
      * Fails unless the JSON has the sample's fields and no others, each of the same JSON type, every decimal at the
-     * sample's scale and every timestamp an ISO-8601 instant where the sample has one. Values are the test's to check.
+     * sample's scale and every timestamp an ISO-8601 instant where the sample has one. A field the sample sets to
+     * {@code null} must still be present, and may be null or hold a value of any type, such as a payout id before any
+     * payout exists. Values are the test's to check.
      */
     public void assertSameShape(String actualJson) {
         JsonNode actual = MAPPER.readTree(actualJson);
@@ -74,6 +76,9 @@ public final class WireSample {
         for (String field : fieldNames(node)) {
             JsonNode expected = node.get(field);
             JsonNode value = actual.get(field);
+            if (expected.isNull()) {
+                continue;
+            }
             assertThat(value.getNodeType()).as("JSON type of %s", field).isEqualTo(expected.getNodeType());
             if (expected.isBigDecimal()) {
                 assertThat(value.decimalValue().scale()).as("scale of %s", field)

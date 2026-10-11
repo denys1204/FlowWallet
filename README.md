@@ -18,14 +18,14 @@ behind it commits, and a failed send is retried rather than lost; an idempotent 
 once however often an event arrives; a pluggable payment-provider abstraction (Strategy + Factory); database-per-service
 isolation; and clean module boundaries.
 
-> **Project status:** work in progress. The deposit loop works end to end. A client asks its wallet to
-> start a deposit, the wallet checks that the wallet exists and belongs to the caller, Payment Service
-> creates a Stripe PaymentIntent, a signed webhook confirms the payment, the outbox publishes to Kafka, and
-> the wallet credits the balance exactly once. A user can also send money to another user's wallet in the
-> same currency, in one local transaction inside Wallet Service, and withdraw to a bank account through Stripe
-> Connect: the wallet debits the balance, Payment Service pays out, and a payout that fails comes back as a credit.
-> Integration tests run against real Postgres and Kafka in containers. They cover the wallet's payment event consumer,
-> both halves of a deposit and transfers under concurrency so far; withdrawals and payouts are in progress. See
+> **Project status:** work in progress. The deposit loop works end to end. A client asks its wallet to start a deposit,
+> the wallet checks that the wallet exists and belongs to the caller, Payment Service creates a Stripe PaymentIntent, a
+> signed webhook confirms the payment, the outbox publishes to Kafka, and the wallet credits the balance exactly once. A
+> user can also send money to another user's wallet in the same currency, in one local transaction inside Wallet
+> Service, and withdraw to a bank account through Stripe Connect: the wallet debits the balance, Payment Service pays
+> out, and a payout that fails comes back as a credit. Integration tests run against real Postgres and Kafka in
+> containers. They cover the wallet's payment event consumer, both halves of a deposit, transfers and the wallet's side
+> of withdrawals so far; Payment Service's payout steps are in progress. See
 > [Project status & roadmap](#project-status--roadmap).
 >
 > The project runs against Stripe test mode only and is not meant for production use.
@@ -181,14 +181,14 @@ tests on real infrastructure.
    the balance end to end. For transfers they show that opposite transfers don't deadlock, that concurrent requests with
    one key move the money once, that a key raced from two senders goes to one of them whether or not the two transfers
    share a wallet, that concurrent transfers can't overdraw a wallet, and that a replay is byte for byte the first
-   answer. For withdrawals they should show that concurrent requests with one key debit once, that a key raced from two
-   wallets goes to one of them, that concurrent withdrawals and transfers can't overdraw a wallet or deadlock, that the
-   command commits with the debit, and that a returned payout credits once.
-4. ~~Transfers between wallets~~: done, with their integration tests. Same currency only, the recipient named by user id, and one local transaction that locks both wallets in
-   ascending user id.
-5. ~~Withdrawals out to the payment provider~~: done, with their automated tests on real infrastructure left to
-   stage 3. Through Stripe Connect in test mode: the wallet debits under its lock and records a refusal under the key,
-   Payment Service pays out, and a payout that fails comes back as a credit.
+   answer. For withdrawals they show that concurrent requests with one key debit once, that a key raced from two wallets
+   goes to one of them, that concurrent withdrawals and transfers can't overdraw a wallet or deadlock, that the command
+   commits with the debit, and that a returned payout credits once.
+4. ~~Transfers between wallets~~: done, with their integration tests. Same currency only, the recipient named by user
+   id, and one local transaction that locks both wallets in ascending user id.
+5. ~~Withdrawals out to the payment provider~~: done; the wallet's side has its integration tests, and Payment
+   Service's payout steps get theirs in stage 3. Through Stripe Connect in test mode: the wallet debits under its lock
+   and records a refusal under the key, Payment Service pays out, and a payout that fails comes back as a credit.
 
 Stages, definitions of done and open decisions live in `implementation_plan.md`. It is a local working file
 and deliberately isn't committed.

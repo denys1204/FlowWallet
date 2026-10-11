@@ -1,0 +1,10 @@
+{
+  "eventId": "7b3d9f1e-4a6c-4e8b-9d2f-1c5a7e3b9d0f",
+  "schemaVersion": 1,
+  "transactionReference": "5e8a1c3f-9b2d-4f6e-a7c0-3d5b7f9e1a2c",
+  "providerPayoutId": "po_wire_sample",
+  "amount": 10.0000,
+  "currency": "PLN",
+  "userId": "3f8e2a1c-5b7d-4c9e-a0f1-2d4b6c8e0a1f",
+  "paidAt": "2026-10-10T12:00:00Z"
+}

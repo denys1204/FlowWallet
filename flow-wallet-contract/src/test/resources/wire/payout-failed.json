@@ -1,0 +1,12 @@
+{
+  "eventId": "8c4e0a2f-5b7d-4f9c-ae3a-2d6b8f4c0e1a",
+  "schemaVersion": 1,
+  "transactionReference": "5e8a1c3f-9b2d-4f6e-a7c0-3d5b7f9e1a2c",
+  "providerPayoutId": null,
+  "amount": 10.0000,
+  "currency": "PLN",
+  "userId": "3f8e2a1c-5b7d-4c9e-a0f1-2d4b6c8e0a1f",
+  "reasonCode": "PAYOUT_FAILED",
+  "providerFailureCode": null,
+  "failedAt": "2026-10-10T12:00:00Z"
+}
