@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.3](https://github.com/denys1204/FlowWallet/compare/payment/v1.0.2...payment/v1.0.3) (2026-10-11)
+
+
+### Bug Fixes
+
+* **payment:** let a requeued payout go on once its stray transfers are reversed ([#11](https://github.com/denys1204/FlowWallet/issues/11)) ([29df32b](https://github.com/denys1204/FlowWallet/commit/29df32bd52b117c5042f3917c25634e999fcb0f6))
+
 ## [1.0.2](https://github.com/denys1204/FlowWallet/compare/payment/v1.0.1...payment/v1.0.2) (2026-10-11)
 
 
