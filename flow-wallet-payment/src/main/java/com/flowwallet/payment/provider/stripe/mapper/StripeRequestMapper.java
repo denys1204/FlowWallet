@@ -28,8 +28,9 @@ public class StripeRequestMapper {
         String currencyLower = context.currency().toLowerCase(Locale.ROOT);
         long amountInSmallestUnit = toSmallestCurrencyUnit(context.amount(), context.currency());
 
-        List<String> paymentMethods = properties.getPaymentMethodTypes().stream()
-                .map(StripePaymentMethodType::apiValue)
+        List<PaymentIntentCreateParams.AllowedPaymentMethodType> paymentMethods = properties.getPaymentMethodTypes()
+                .stream()
+                .map(StripePaymentMethodType::allowedType)
                 .toList();
 
         // The user id never reaches Stripe (docs/adr/0027-user-ids-stay-out-of-logs-and-provider-metadata.md); the
@@ -37,9 +38,9 @@ public class StripeRequestMapper {
         return PaymentIntentCreateParams.builder()
                 .setAmount(amountInSmallestUnit)
                 .setCurrency(currencyLower)
-                // Listing the methods leaves automatic payment methods off.
-                // See docs/adr/0028-deposits-accept-cards-only.md.
-                .addAllPaymentMethodType(paymentMethods)
+                // Listing the methods leaves automatic payment methods off. API versions from 2026-09-30.endive on
+                // refuse payment_method_types with a 400. See docs/adr/0028-deposits-accept-cards-only.md.
+                .addAllAllowedPaymentMethodType(paymentMethods)
                 .putMetadata(META_TRANSACTION_REF, context.transactionReference())
                 .build();
     }

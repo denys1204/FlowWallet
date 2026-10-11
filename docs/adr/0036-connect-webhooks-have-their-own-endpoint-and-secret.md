@@ -12,8 +12,8 @@ A payout's outcome and changes to a bank account happen on the connected account
 its own signing secret.
 
 The test-mode spike found that `stripe listen` signs both `--forward-to` and `--forward-connect-to` with one session
-secret, and that it delivers events in the account's default API version, `2025-12-15.clover`, while stripe-java is
-pinned to `2026-06-24.dahlia`. For a payout that failed, Stripe sent `payout.paid` before `payout.failed`, and
+secret, and that it delivers events in the account's default API version, `2025-12-15.clover`, while stripe-java 33.1.0
+was pinned to `2026-06-24.dahlia`. For a payout that failed, Stripe sent `payout.paid` before `payout.failed`, and
 `payout.created` after both. Stripe documents that a payout can show as paid and fail several business days later.
 
 `WebhookController` maps `/api/payments/webhooks/{provider}`, and `StripeWebhookParser.parse(payload, headers)`
@@ -100,7 +100,8 @@ stripe listen --forward-to localhost:8080/api/payments/webhooks/stripe \
   promises it, and the object arrives in the event's API version.
 - An age limit on `PAID` to `REVERSING` for webhooks. A payout can fail days after it shows paid, so a real failure
   would leave the user without the money and the wallet showing `PAID`.
-- Moving the sandbox's default API version to `2026-06-24.dahlia` in the Dashboard. It changes the version of every
+- Moving the sandbox's default API version to `2026-06-24.dahlia`, the version stripe-java 33.1.0 pinned, in the
+  Dashboard. It changes the version of every
   event the account sends, the deposits' included, while the handler reads nothing version-specific beyond the
   envelope.
 - Reading `payouts_enabled` or the external account's status from an account event's data. The data arrives in the

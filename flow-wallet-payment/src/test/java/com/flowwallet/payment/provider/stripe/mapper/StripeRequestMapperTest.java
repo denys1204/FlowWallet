@@ -4,12 +4,14 @@ import com.flowwallet.payment.provider.dto.PaymentRequestContext;
 import com.flowwallet.payment.provider.exception.InvalidPaymentRequestException;
 import com.flowwallet.payment.provider.stripe.StripeCurrencyRules;
 import com.flowwallet.payment.provider.stripe.config.StripeProperties;
+import com.stripe.param.PaymentIntentCreateParams;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -146,10 +148,12 @@ class StripeRequestMapperTest {
         // including bank debits that settle days later and redirect methods the wallet API cannot complete.
         var params = mapper.toPaymentIntentParams(context("50.00", "USD"));
 
-        assertThat(params.getPaymentMethodTypes()).containsExactly("card");
+        assertThat(params.getAllowedPaymentMethodTypes())
+                .containsExactly(PaymentIntentCreateParams.AllowedPaymentMethodType.CARD);
         assertThat(params.getAutomaticPaymentMethods()).isNull();
         assertThat(params.toMap())
-                .containsKey("payment_method_types")
+                .containsEntry("allowed_payment_method_types", List.of("card"))
+                .doesNotContainKey("payment_method_types")
                 .doesNotContainKey("automatic_payment_methods");
     }
 }

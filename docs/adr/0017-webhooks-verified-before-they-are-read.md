@@ -18,11 +18,11 @@ signing key anyone can use. With it, anyone can sign a `payment_intent.succeeded
 deposit's client secret, and a handler that reads only the intent id and the event id credits the wallet without a
 payment.
 
-`Webhook.constructEvent` deserializes the body into a Gson tree before it calls `Webhook.Signature.verifyHeader`, and
-`@RequestBody String` reads a body of any size, so together they let an unauthenticated caller make the service buffer
-and parse anything. The SDK's header parsing throws `NumberFormatException` or `ArrayIndexOutOfBoundsException` for a
-header such as `t=abc` or a bare `t`. Unless the caller counts them as a failed check, they surface as a 500 with a
-stack trace, although the fault is the sender's.
+Up to stripe-java 33, `Webhook.constructEvent` deserialized the body into a Gson tree before it called
+`Webhook.Signature.verifyHeader`; from 34.0.0 it verifies first. With the older order, and `@RequestBody String` reading
+a body of any size, an unauthenticated caller could make the service buffer and parse anything. The SDK's header parsing
+throws `NumberFormatException` or `ArrayIndexOutOfBoundsException` for a header such as `t=abc` or a bare `t`. Unless
+the caller counts them as a failed check, they surface as a 500 with a stack trace, although the fault is the sender's.
 
 ## Decision
 
@@ -63,8 +63,8 @@ the outcome.
 - Failing startup without a secret. The quickstart starts Payment Service before `stripe listen` has printed the
   secret, and deposits can be started before webhooks work.
 - Warning about a placeholder but still verifying with it. The warning does not stop a forged webhook.
-- `Webhook.constructEvent` as the only call. It parses unauthenticated input first and lets the header-parsing
-  exceptions through.
+- `Webhook.constructEvent` as the only call. Up to stripe-java 33 it parsed unauthenticated input first, and in every
+  version it lets the header-parsing exceptions through.
 - A size limit only in Tomcat or in the gateway. Tomcat's `maxPostSize` applies to form bodies only, and port 8082
   is reachable without the gateway. A gateway `RequestSize` filter checks only `Content-Length`.
 - 400 for an oversized body. The body may be well formed and signed; only its size is refused.

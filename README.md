@@ -110,7 +110,7 @@ the wallet consumer and the identity model.
 | Service-to-service HTTP | Spring declarative HTTP interface (`@HttpExchange`) over `RestClient`, no Feign |
 | Database | PostgreSQL 17, HikariCP, Liquibase migrations |
 | Messaging | Apache Kafka 4.2.1 (KRaft mode, no ZooKeeper) |
-| Payments | Stripe (`stripe-java` 33.1.0), test mode |
+| Payments | Stripe (`stripe-java` 34.0.0), test mode |
 | JSON | Jackson 3 (`tools.jackson`) |
 | Mapping | MapStruct 1.6.3 + Lombok |
 | Resilience | Spring Retry (payment); Spring Kafka `DefaultErrorHandler` + a dead-letter topic per consumer (wallet and payment) |

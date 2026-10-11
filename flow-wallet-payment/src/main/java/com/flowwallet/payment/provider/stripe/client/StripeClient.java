@@ -162,8 +162,8 @@ public class StripeClient {
     }
 
     /**
-     * Parses the body into an event. {@code Webhook.constructEvent} deserializes the body before it checks the
-     * signature, so it is called only once {@link #verifyWebhookSignature} has accepted the same body and header.
+     * Parses the body into an event. It runs only once {@link #verifyWebhookSignature} has accepted the same body and
+     * header; {@code Webhook.constructEvent} checks the signature again before it deserializes.
      */
     public Event constructVerifiedEvent(
             String payload,
