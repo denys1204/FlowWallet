@@ -11,6 +11,8 @@
     </parent>
 
     <artifactId>flow-wallet-service</artifactId>
+    <!-- The service's released version: release-please sets it from the commits under this folder. -->
+    <version>0.0.1-SNAPSHOT</version>
     <packaging>jar</packaging>
 
     <name>FlowWallet :: Wallet Service</name>
@@ -102,7 +104,6 @@
         <dependency>
             <groupId>com.flowwallet</groupId>
             <artifactId>flow-wallet-contract</artifactId>
-            <version>${project.version}</version>
             <type>test-jar</type>
             <scope>test</scope>
         </dependency>

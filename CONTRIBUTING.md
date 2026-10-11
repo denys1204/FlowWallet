@@ -66,6 +66,8 @@ live in this file.
 | `CLAUDE.md` | A summary of the architecture, each invariant as a one-line rule with its ADR, framework traps |
 | `.claude/rules/*.md` | A convention or trap for one kind of file, loaded through its `paths:` glob |
 | `flow-wallet-contract/src/test/resources/wire/` | The golden wire samples: a JSON record for each event type the integration tests use, as its producer sends it |
+| `<service>/CHANGELOG.md` | Each service's release notes, written by release-please from the commits; never edited by hand |
+| `release-please-config.json`, `.release-please-manifest.json` | The release packages, tag format and changelog sections, and each service's last released version |
 | Code comments | Only what a reader at that spot cannot get from the code and needs in order to change it safely |
 
 ## Change map
@@ -91,11 +93,12 @@ supersedes it, and only a factual correction is edited in place (see [ADRs](#adr
 | An ADR, added, extended or superseded | The next free number; its row in `docs/adr/README.md`; the status line and index row of every ADR it extends or supersedes; the one-line invariant in `CLAUDE.md` and the `.claude/rules` text when the ADR sets a rule; the `ARCHITECTURE.md` section and the code comments that point at the rule it holds |
 | A currency list, a copy of a Stripe table or a shared validation pattern | Both copies of the zero-decimal and whole-unit lists in `StripeCurrencyRules` and `AmountPrecision`, and the grid as described in `CLAUDE.md`, `docs/api.md` and `docs/business-rules.md`; `StripeChargeLimits` with its retrieval date, which is also quoted in `StripeCurrencyRules` and `docs/business-rules.md`; `StripePayoutMinimums` with its retrieval date; `TransferController.ANY_UUID` (also used by `DepositController` and `WithdrawalController`) and `CurrentUserIdResolver.RANDOM_UUID_REGEX` (also used by `TransferRequest`) |
 | The topology: a service, port, route, topic or database | The diagram in `README.md` and in `ARCHITECTURE.md`, which stay identical; the gateway routes described in `ARCHITECTURE.md`, `docs/api.md` and `CLAUDE.md`; the ports in the commands of this file, the `README.md` quickstart and `docs/development.md` |
-| A document, added, renamed or removed | The table in this file, the Documentation table in `README.md`, the list at the top of `ARCHITECTURE.md`, the introduction of `docs/development.md`, and every link to it |
+| A document, added, renamed or removed | The table in this file, the Documentation table in `README.md`, the list at the top of `ARCHITECTURE.md`, the introduction of `docs/development.md`, and every link to it. The service changelogs that release-please writes are listed only in the table above and in `README.md` |
 | The number of tests | The counts and the per-module split in `docs/development.md`, unit and integration tests apart, taken from the surefire and failsafe reports of a full build |
 | A file or package that a `.claude/rules` file names | The `paths:` globs and the text of every `.claude/rules` file that names it |
 | A dependency, a tool version or a run command | The version once, in the root `pom.xml`, `docker-compose.yml` (Postgres, Kafka, Kafka-UI) or `.mvn/wrapper/maven-wrapper.properties` (Maven); a Postgres or Kafka image tag also in each service's test `ContainerImages`, which `ContainerImagesTest` checks against `docker-compose.yml`; the versions quoted in the `README.md` badges and tech stack, the first paragraph of `CLAUDE.md`, the commands in this file and the prerequisites in `docs/development.md`; a run command also sits in the `README.md` quickstart and `docs/development.md` |
-| The module list | The modules and dependency management in the root `pom.xml`; the module count and list in `CLAUDE.md`, `README.md`, `ARCHITECTURE.md`, ADR 0002 and the command comments in this file |
+| The module list | The modules and dependency management in the root `pom.xml`; the module count and list in `CLAUDE.md`, `README.md`, `ARCHITECTURE.md`, ADR 0002 and the command comments in this file; a new service also needs its package in `release-please-config.json` and a `<version>` of its own in its pom, and a new library needs a managed entry at `flow-wallet-libraries.version` |
+| The reactor's version | The root `pom.xml`'s `<version>` and its `flow-wallet-libraries.version` property together, and each module's `<parent>` version (ADR 0040) |
 
 ## Code conventions
 
@@ -146,13 +149,36 @@ supersedes it, and only a factual correction is edited in place (see [ADRs](#adr
 
 ## Commits
 
-- Conventional commits: `type(scope): subject`, lower case and imperative, ideally within 72 characters. Types in
-  use are `feat`, `fix`, `refactor`, `test`, `docs`, `style`, `chore` and `build`. The scope is the module or area:
-  `payment`, `wallet` (`flow-wallet-service`), `platform`, `outbox`, `gateway`, `contract`, `config`, `logging`,
-  `infra` (`docker-compose.yml`) or `deps`.
+- Conventional commits: `type(scope): subject`, lower case and imperative, ideally within 72 characters. Types in use
+  are `feat`, `fix`, `perf`, `revert`, `deps`, `refactor`, `test`, `docs`, `style`, `chore`, `build` and `ci`. The scope
+  is the module or area: `payment`, `wallet` (`flow-wallet-service`), `platform`, `outbox`, `gateway`, `contract`,
+  `config`, `logging`, `infra` (`docker-compose.yml`) or `deps`.
+- The type decides whether a service is released, and the files decide which (see [Releases](#releases)): a `feat`
+  releases a minor version, a `fix`, `perf`, `revert` or `deps` a patch, and a `!` after the type or a
+  `BREAKING CHANGE:` footer a major one, for every service whose folder the commit changes. The scope only labels the
+  changelog line.
 - The body explains why the change was made and names the ADRs and docs it updates.
 - One logical change per commit. Every commit that touches code builds and passes `./mvnw clean install` on its
   own; a commit that changes only Markdown skips the build.
+
+## Releases
+
+Each service is versioned and released on its own by release-please
+([ADR 0040](docs/adr/0040-services-are-released-on-their-own.md)). The packages, the tag format and the changelog
+sections are in `release-please-config.json`; `.github/workflows/release-please.yml` runs it on every push to `main`.
+
+- release-please keeps one release PR open and updates it with every push. It sets each service's `<version>` in its
+  pom, writes its `CHANGELOG.md` and updates `.release-please-manifest.json`. Merging that PR is the release: it tags
+  each released service `<service>/vX.Y.Z` (`payment`, `wallet`, `gateway`) and creates its GitHub Release.
+- Never edit a service's `<version>`, a `CHANGELOG.md` or the manifest by hand. To force a version, put a
+  `Release-As: X.Y.Z` footer in a `feat`, `fix`, `perf`, `revert` or `deps` commit that changes that service; a
+  commit of a type that releases nothing opens no release PR on its own.
+- The reactor and the libraries (`contract`, `platform`, `outbox`) stay at `0.0.1-SNAPSHOT` and are never released. A
+  commit that changes only a library, the root `pom.xml`, `docs/` or `docker-compose.yml` releases nothing. When a
+  library change has to ship as a release, push an empty commit such as `fix(deps): take the outbox fix` to `main`;
+  it releases a patch of every service.
+- A service's pom shows its last released version between releases, never a snapshot, so nothing may tag an image or
+  an artifact from `${project.version}`; the release tag names the version.
 
 ## Definition of done
 

@@ -190,6 +190,10 @@ Each invariant here is stated once and links the ADR that holds its reasoning.
   `PayoutStore` only while the row's `version` is the one read before Stripe was asked
   ([ADR 0035](docs/adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md),
   [ADR 0037](docs/adr/0037-operator-actions-decide-from-the-row-and-stripe-as-they-are.md)).
+- Each service's `<version>`, its `CHANGELOG.md` and `.release-please-manifest.json` are written only by release-please;
+  the reactor and the libraries stay at `0.0.1-SNAPSHOT`, and the root `pom.xml` manages the libraries through
+  `flow-wallet-libraries.version`, never `${project.version}`, which a service resolves to its own released version
+  ([ADR 0040](docs/adr/0040-services-are-released-on-their-own.md)).
 - `FAILED` outbox rows are never deleted automatically; they are the dead-letter store
   ([ADR 0008](docs/adr/0008-transactional-outbox.md)).
 - A `PaymentFailedEvent` moves no money, which is why the consumer does not depend on event order

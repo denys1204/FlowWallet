@@ -1,0 +1,23 @@
+# Opens and updates the release PR from the commits on main, and tags each service and creates its GitHub Release
+# when that PR is merged. The packages, tag format and changelog sections are in release-please-config.json.
+# See docs/adr/0040-services-are-released-on-their-own.md.
+name: release-please
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency: release-please
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - id: release
+        # Pinned to the commit of the v5.0.0 tag, so a moved tag cannot change what runs with write access.
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0

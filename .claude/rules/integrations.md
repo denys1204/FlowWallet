@@ -19,6 +19,10 @@ paths:
   mapper (see `PaymentEventMapperTest`). Wallet Service has no mapper: its responses are built by static
   factories, because MapStruct would turn a `BigDecimal` into a `String` with `toString`, at the ledger's scale
   ([ADR 0030](../../docs/adr/0030-amounts-in-responses-are-decimal-strings.md)).
+- The root `pom.xml` manages the shared libraries at `${flow-wallet-libraries.version}`, never `${project.version}`: a
+  service resolves `${project.version}` to its own released version, under which no library exists. A service's
+  `<version>` changes only through release-please
+  ([ADR 0040](../../docs/adr/0040-services-are-released-on-their-own.md)).
 - Jackson 3 is `tools.jackson.*`. Messages on the topic are JSON strings, so consumers use
   `StringDeserializer` and parse themselves.
 - Stripe minor units come from the explicit table in `StripeCurrencyRules`; never derive them from

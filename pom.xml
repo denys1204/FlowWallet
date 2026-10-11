@@ -19,6 +19,11 @@
     <!-- ============================================================= -->
     <groupId>com.flowwallet</groupId>
     <artifactId>flow-wallet</artifactId>
+    <!--
+      The reactor's version, which the shared libraries inherit. It is never released: release-please versions the
+      three services in their own poms, and the libraries reach them through the services' images. Change it together
+      with flow-wallet-libraries.version below. See docs/adr/0040-services-are-released-on-their-own.md.
+    -->
     <version>0.0.1-SNAPSHOT</version>
     <packaging>pom</packaging>
 
@@ -53,6 +58,13 @@
         <mapstruct.version>1.6.3</mapstruct.version>
         <lombok-mapstruct-binding.version>0.2.0</lombok-mapstruct-binding.version>
         <stripe.version>33.1.0</stripe.version>
+
+        <!--
+          The version of the shared libraries (contract, platform, outbox), which must equal the reactor's <version>
+          above. It is a property rather than ${project.version} because a service resolves ${project.version} to its
+          own released version, under which no library exists.
+        -->
+        <flow-wallet-libraries.version>0.0.1-SNAPSHOT</flow-wallet-libraries.version>
     </properties>
 
     <!-- ============================================================= -->
@@ -73,17 +85,23 @@
             <dependency>
                 <groupId>com.flowwallet</groupId>
                 <artifactId>flow-wallet-platform</artifactId>
-                <version>${project.version}</version>
+                <version>${flow-wallet-libraries.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.flowwallet</groupId>
                 <artifactId>flow-wallet-contract</artifactId>
-                <version>${project.version}</version>
+                <version>${flow-wallet-libraries.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.flowwallet</groupId>
+                <artifactId>flow-wallet-contract</artifactId>
+                <version>${flow-wallet-libraries.version}</version>
+                <type>test-jar</type>
             </dependency>
             <dependency>
                 <groupId>com.flowwallet</groupId>
                 <artifactId>flow-wallet-outbox</artifactId>
-                <version>${project.version}</version>
+                <version>${flow-wallet-libraries.version}</version>
             </dependency>
 
             <!-- MapStruct -->

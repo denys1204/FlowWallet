@@ -94,7 +94,8 @@ the wallet consumer and the identity model.
 | [docs/events.md](docs/events.md) | The Kafka topics and event contracts |
 | [docs/development.md](docs/development.md) | How to run, configure and test the project |
 | [docs/operations.md](docs/operations.md) | The operator runbook: signals, checks and actions for withdrawals, payouts and deposits |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | How to change the code: commands, conventions, and what has to change together |
+| `flow-wallet-*/CHANGELOG.md` | Each service's release notes, written by release-please when the service is released |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | How to change the code: commands, conventions, what has to change together, and how a release is made |
 
 ## Tech stack
 
@@ -113,6 +114,7 @@ the wallet consumer and the identity model.
 | Resilience | Spring Retry (payment); Spring Kafka `DefaultErrorHandler` + a dead-letter topic per consumer (wallet and payment) |
 | Testing | JUnit 6 and Mockito; integration tests on Testcontainers (PostgreSQL, Kafka) |
 | Build & infra | Maven multi-module, Docker Compose |
+| Releases | release-please on GitHub Actions: one version, tag and changelog per service (`payment/v1.0.0`) |
 
 ## Quickstart
 
@@ -170,7 +172,9 @@ See [docs/development.md](docs/development.md) for the full guide, configuration
 
 This is a showcase that keeps changing. The deposit loop works end to end, transfers between wallets work against
 real Postgres, and withdrawals to a bank account work through Stripe Connect in test mode, each with integration tests
-on real Postgres and Kafka. What's left before a 1.0 tag is a last pass over the documents.
+on real Postgres and Kafka. Release 1.0 is the three services at `1.0.0`, released by release-please with a tag per
+service ([ADR 0040](docs/adr/0040-services-are-released-on-their-own.md)); what's left before it is a last pass over the
+documents.
 
 1. ~~Wallet comes alive~~: done. Domain model and migrations, an idempotent Kafka consumer, and retries with
    backoff plus a dead-letter topic.
