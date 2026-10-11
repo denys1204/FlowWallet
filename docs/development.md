@@ -264,8 +264,8 @@ endpoint's webhooks.
 
 ## Testing
 
-There are 2062 tests, all green: 2044 unit tests (1384 in the payment service, 554 in the wallet service, 53 in the
-outbox module, 44 in platform and 9 in the gateway) and 18 integration tests (14 in the wallet service, 4 in the
+There are 2074 tests, all green: 2044 unit tests (1384 in the payment service, 554 in the wallet service, 53 in the
+outbox module, 44 in platform and 9 in the gateway) and 30 integration tests (26 in the wallet service, 4 in the
 payment service).
 
 `./mvnw test` runs the unit tests only. `./mvnw verify` and `./mvnw clean install` also run the integration tests
@@ -287,9 +287,16 @@ leave one outcome, six events for one reference credit once and store five `DUPL
 different payments to one wallet at once are all credited. A deposit started through `POST
 /api/wallets/{currency}/deposits` reaches a stub of Payment Service with the caller's key as its reference and the
 caller's id, passes the provider's data back, and the completed payment that comes back is shown in the balance; a
-deposit to a wallet the caller does not hold is refused before Payment Service is called. The tests publish the
-contract's golden wire samples, and after every test `LedgerAudit` checks that each wallet's balance and entry numbers
-match its ledger.
+deposit to a wallet the caller does not hold is refused before Payment Service is called. Transfers run over HTTP into
+the service under real concurrency: 400 transfers between two wallets in both directions and 300 around a ring of three,
+over 16 threads, all succeed without a deadlock, each with exactly one `TRANSFER_OUT` and one `TRANSFER_IN`, and every
+balance ends where it started; twenty parallel requests with one key move the money once and get the same answer byte
+for byte; one key raced from two senders, with and without a wallet in common, goes to one of them and the other gets
+`409`; two `25.00` transfers from a `30.00` wallet let one through and refuse the other with `422`, and the winner's
+replay is its first answer. The schema refuses direct SQL writes of a negative balance, a zero amount, a transfer leg
+without a counterparty, a duplicate entry number, a second ledger row of one type under one reference and a lower-case
+currency, each under its own constraint name. The tests publish the contract's golden wire samples, and after every test
+`LedgerAudit` checks that each wallet's balance and entry numbers match its ledger.
 
 In the payment service they run a deposit from the wallet's intent call to the record on `payment.events`: a signed
 `payment_intent.succeeded` webhook settles the payment and its outbox row commits with it, the record the outbox sends
@@ -487,28 +494,12 @@ The unit tests mock their collaborators, so they can't prove the real database b
 the unique `processed_events.event_id` and `balance_history (transaction_reference, type)`, the classification by
 read-back (with `DEPOSIT` as the expected ledger type; that it looks at that one type only, and the
 `WITHDRAWAL_RETURNED` case, are pinned by mocks), and concurrent credits to one wallet under its row lock. The unique
-`balance_history (wallet_id, entry_no)`, the entry-number history queries and the migration that numbers existing ledger
-rows were checked by hand on a scratch database seeded with interleaved ids: numbering follows id order within each
-wallet, `last_entry_no` equals each wallet's row count, history pages by entry number, and a later transfer takes the
-next number on both wallets. Payment changeset 006 ran by hand against a schema migrated through 005. The payout
-reconciler's selections and its claim have run only against real Postgres in the live run, where the selection of
-created payouts used `idx_payouts_created`.
+`balance_history (wallet_id, entry_no)` and the numbering of both transfer legs run in the integration tests too
+(`SchemaChecksIT`, and `LedgerAudit` after every test). The entry-number history queries and the migration that numbers
+existing ledger rows were checked by hand on a scratch database seeded with interleaved ids: numbering follows id order
+within each wallet, `last_entry_no` equals each wallet's row count, and history pages by entry number. Payment changeset
+006 ran by hand against a schema migrated through 005. The payout reconciler's selections and its claim have run only
+against real Postgres in the live run, where the selection of created payouts used `idx_payouts_created`.
 
-For transfers the mocks pin the order of the calls and the decision after each one. What they can't show was
-checked by hand against real Postgres, through the running wallet service on a scratch database:
-
-- 400 transfers between two wallets in both directions and 300 around a ring of three, over 16 threads: no
-  deadlock, every reference with exactly one `TRANSFER_OUT` and one `TRANSFER_IN`, and each balance equal to
-  its seed plus what came in minus what went out.
-- Twenty parallel requests with one key: all `200` with identical bodies, and one pair of legs, so the money
-  moved once.
-- One key raced from two senders, with and without a wallet in common: one sender gets `200`, the other
-  `409`. Without a shared wallet, the unique index settles the race.
-- Two concurrent `25.00` transfers from a `30.00` wallet: one `200`, one `422`, and the balance ends at
-  `5.00`.
-- A replay after the balance was spent still gets the original receipt, byte for byte.
-- The three CHECKs refuse a direct SQL write of a negative balance, a zero amount or a transfer leg without
-  a counterparty.
-
-No automated test runs these checks yet. Integration tests with Testcontainers are the roadmap's "Proof
-that it works" stage.
+For transfers the mocks pin the order of the calls and the decision after each one; the integration tests above show
+what the mocks cannot: the lock order, the unique key and the overdraft check under real concurrency.

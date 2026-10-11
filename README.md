@@ -24,8 +24,8 @@ isolation; and clean module boundaries.
 > the wallet credits the balance exactly once. A user can also send money to another user's wallet in the
 > same currency, in one local transaction inside Wallet Service, and withdraw to a bank account through Stripe
 > Connect: the wallet debits the balance, Payment Service pays out, and a payout that fails comes back as a credit.
-> Integration tests run against real Postgres and Kafka in containers. They cover the wallet's payment event consumer
-> and both halves of a deposit so far, and the rest of the roadmap's third stage is in progress. See
+> Integration tests run against real Postgres and Kafka in containers. They cover the wallet's payment event consumer,
+> both halves of a deposit and transfers under concurrency so far; withdrawals and payouts are in progress. See
 > [Project status & roadmap](#project-status--roadmap).
 >
 > The project runs against Stripe test mode only and is not meant for production use.
@@ -176,17 +176,15 @@ tests on real infrastructure.
 1. ~~Wallet comes alive~~: done. Domain model and migrations, an idempotent Kafka consumer, and retries with
    backoff plus a dead-letter topic.
 2. ~~The client drives the wallet~~: done. Wallet endpoints and deposits started through the wallet.
-3. Proof that it works: integration tests against real Postgres and Kafka showing that a redelivery doesn't
-   credit twice, a duplicate reference is refused, a poison record lands in the dead-letter topic, and a
-   deposit raises the balance end to end. For transfers they should show that opposite transfers don't
-   deadlock, that concurrent requests with one key move the money once, that a key raced from two senders
-   goes to one of them whether or not the two transfers share a wallet, that concurrent transfers can't
-   overdraw a wallet, and that a replay is byte for byte the first answer. For withdrawals they should show that
-   concurrent requests with one key debit once, that a key raced from two wallets goes to one of them, that concurrent
-   withdrawals and transfers can't overdraw a wallet or deadlock, that the command commits with the debit, and that a
-   returned payout credits once.
-4. ~~Transfers between wallets~~: done, with their automated tests on real infrastructure left to stage 3.
-   Same currency only, the recipient named by user id, and one local transaction that locks both wallets in
+3. Proof that it works: in progress. Integration tests against real Postgres and Kafka show that a redelivery doesn't
+   credit twice, a duplicate reference is refused, a poison record lands in the dead-letter topic, and a deposit raises
+   the balance end to end. For transfers they show that opposite transfers don't deadlock, that concurrent requests with
+   one key move the money once, that a key raced from two senders goes to one of them whether or not the two transfers
+   share a wallet, that concurrent transfers can't overdraw a wallet, and that a replay is byte for byte the first
+   answer. For withdrawals they should show that concurrent requests with one key debit once, that a key raced from two
+   wallets goes to one of them, that concurrent withdrawals and transfers can't overdraw a wallet or deadlock, that the
+   command commits with the debit, and that a returned payout credits once.
+4. ~~Transfers between wallets~~: done, with their integration tests. Same currency only, the recipient named by user id, and one local transaction that locks both wallets in
    ascending user id.
 5. ~~Withdrawals out to the payment provider~~: done, with their automated tests on real infrastructure left to
    stage 3. Through Stripe Connect in test mode: the wallet debits under its lock and records a refusal under the key,

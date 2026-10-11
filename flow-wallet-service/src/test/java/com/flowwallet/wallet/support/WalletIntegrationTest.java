@@ -1,5 +1,6 @@
 package com.flowwallet.wallet.support;
 
+import com.flowwallet.contract.constant.KafkaConstants;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,11 +23,13 @@ import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.lifecycle.Startables;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 /**
  * Base of every Wallet Service integration test. The containers start once per test JVM and every test class
@@ -123,6 +126,30 @@ public abstract class WalletIntegrationTest {
                 .body("{\"currency\":\"" + currency + "\"}")
                 .exchange()
                 .expectStatus().isCreated();
+    }
+
+    /**
+     * Credits the wallet as a completed payment does, through the consumer, and returns once the credit is in.
+     */
+    protected void fund(String userId, String currency, BigDecimal amount) {
+        String reference = newKey();
+        kafkaProbe.publish(
+                KafkaConstants.PAYMENT_EVENTS_TOPIC,
+                reference,
+                KafkaConstants.EVENT_TYPE_PAYMENT_COMPLETED,
+                WireSample.of("payment-completed")
+                        .with("eventId", UUID.randomUUID().toString())
+                        .with("transactionReference", reference)
+                        .with("userId", userId)
+                        .with("currency", currency)
+                        .with("amount", amount)
+                        .json()
+        );
+        await().until(() -> jdbc.queryForObject(
+                "SELECT count(*) FROM balance_history WHERE transaction_reference = ? AND type = 'DEPOSIT'",
+                Integer.class,
+                reference
+        ) == 1);
     }
 
     /**
