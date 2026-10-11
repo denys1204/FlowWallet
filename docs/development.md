@@ -264,8 +264,8 @@ endpoint's webhooks.
 
 ## Testing
 
-There are 2048 tests, all green: 2043 unit tests (1383 in the payment service, 554 in the wallet service, 53 in the
-outbox module, 44 in platform and 9 in the gateway) and 5 integration tests in the wallet service.
+There are 2055 tests, all green: 2043 unit tests (1383 in the payment service, 554 in the wallet service, 53 in the
+outbox module, 44 in platform and 9 in the gateway) and 12 integration tests in the wallet service.
 
 `./mvnw test` runs the unit tests only. `./mvnw verify` and `./mvnw clean install` also run the integration tests
 (`*IT`), which failsafe starts from each module's `target/` directory against `postgres:17-alpine` and
@@ -277,9 +277,14 @@ first build downloads the Testcontainers jars and the Ryuk image.
 
 The integration tests cover the wallet's payment event consumer over a real broker and database: a completed payment
 credits once, a redelivered event changes nothing and reaches no dead-letter topic, a redelivered failure is recorded
-once, a failed payment retried to success is credited once, and a failure that arrives after the credit takes nothing
-back. They publish the contract's golden wire samples, and after every test
-`LedgerAudit` checks that each wallet's balance and entry numbers match its ledger.
+once, a failed payment retried to success is credited once, a failure that arrives after the credit takes nothing back,
+a second event for a credited reference is stored as `DUPLICATE_REFERENCE`, and a payment for a user without a wallet is
+stored with its payload and opens no wallet. An unreadable record goes to `payment.events.wallet.DLT`, is counted, stays
+there without a time limit and leaves the next payment on its partition free to credit; a record with an unknown
+`eventType` goes there too and credits nothing. Under concurrency, eight threads handling one event credit once and
+leave one outcome, six events for one reference credit once and store five `DUPLICATE_REFERENCE` rows, and eight
+different payments to one wallet at once are all credited. The tests publish the contract's golden wire samples, and
+after every test `LedgerAudit` checks that each wallet's balance and entry numbers match its ledger.
 
 Among the unit tests, the gateway's bind its own `application.yml`, so a YAML regression that drops the response or
 connect timeout, or binds the gateway beyond loopback, fails there rather than in a live request; they also check that
@@ -465,18 +470,16 @@ every response record fails on a numeric money field; a request amount is accept
 ./mvnw test
 ```
 
-The unit tests mock their collaborators, so they can't prove the real database barrier. The integration tests run part
-of it: a redelivered event against the unique `processed_events.event_id` and its classification by read-back, and a
-credit under the wallet's row lock, one at a time. The unique `balance_history (transaction_reference, type)`, the
-lookup by the one expected ledger type (`DEPOSIT` or `WITHDRAWAL_RETURNED`) and concurrent credits to one wallet have
-run only against mocks and by hand against real Postgres and Kafka (duplicate references, forty concurrent credits to
-one wallet); the hand check ran while the classification read any entry under the reference. The unique `balance_history
-(wallet_id, entry_no)`, the entry-number history queries and the migration that numbers existing ledger rows were
-checked by hand on a scratch database seeded with interleaved ids: numbering follows id order within each wallet,
-`last_entry_no` equals each wallet's row count, history pages by entry number, and a later transfer takes the next
-number on both wallets. Payment changeset 006 ran by hand against a schema migrated through 005. The payout reconciler's
-selections and its claim have run only against real Postgres in the live run, where the selection of created payouts
-used `idx_payouts_created`.
+The unit tests mock their collaborators, so they can't prove the real database barrier. The integration tests run it:
+the unique `processed_events.event_id` and `balance_history (transaction_reference, type)`, the classification by
+read-back (with `DEPOSIT` as the expected ledger type; that it looks at that one type only, and the
+`WITHDRAWAL_RETURNED` case, are pinned by mocks), and concurrent credits to one wallet under its row lock. The unique
+`balance_history (wallet_id, entry_no)`, the entry-number history queries and the migration that numbers existing ledger
+rows were checked by hand on a scratch database seeded with interleaved ids: numbering follows id order within each
+wallet, `last_entry_no` equals each wallet's row count, history pages by entry number, and a later transfer takes the
+next number on both wallets. Payment changeset 006 ran by hand against a schema migrated through 005. The payout
+reconciler's selections and its claim have run only against real Postgres in the live run, where the selection of
+created payouts used `idx_payouts_created`.
 
 For transfers the mocks pin the order of the calls and the decision after each one. What they can't show was
 checked by hand against real Postgres, through the running wallet service on a scratch database:

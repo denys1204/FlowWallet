@@ -4,11 +4,16 @@ import com.flowwallet.contract.constant.KafkaConstants;
 import com.flowwallet.wallet.config.KafkaConsumerConfig;
 import com.flowwallet.wallet.support.WalletIntegrationTest;
 import com.flowwallet.wallet.support.WireSample;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -19,6 +24,9 @@ import static org.awaitility.Awaitility.await;
  * JSON is what Payment Service sends, and the barriers are the real unique indexes.
  */
 class PaymentEventConsumerIT extends WalletIntegrationTest {
+    @Autowired
+    private MeterRegistry meterRegistry;
+
     @Test
     void aCompletedPaymentCreditsTheWalletOnce() {
         // Guards the whole consumer path the unit tests mock: the header dispatch, the JSON as Payment Service writes
@@ -108,6 +116,102 @@ class PaymentEventConsumerIT extends WalletIntegrationTest {
         assertThat(outcomes(reference)).containsExactlyInAnyOrder("CREDITED", "FAILURE_RECORDED");
     }
 
+    @Test
+    void aSecondEventForACreditedReferenceIsRefusedAsADuplicate() {
+        // Guards two credits for one payment, as when the webhook and the reconciler both settle it under different
+        // event ids: the unique (reference, type) in the ledger refuses the second, and the refusal is stored.
+        String userId = newUserId();
+        openWallet(userId, "PLN");
+        String reference = newKey();
+
+        publishCompleted(UUID.randomUUID().toString(), reference, userId, null);
+        RecordMetadata second = publishCompleted(UUID.randomUUID().toString(), reference, userId, null);
+        kafkaProbe.awaitConsumed(consumerGroup, second);
+
+        assertThat(balance(userId, "PLN")).isEqualByComparingTo("10.00");
+        assertThat(ledgerTypes(reference)).containsExactly("DEPOSIT");
+        assertThat(outcomes(reference)).containsExactly("CREDITED", "REJECTED");
+        assertThat(rejectionReasons(reference)).containsExactly("DUPLICATE_REFERENCE");
+    }
+
+    @Test
+    void aPaymentForAUserWithoutAWalletIsStoredAsRefusedAndOpensNoWallet() {
+        // Guards a wallet created as a side effect of a payment (ADR 0004), and a refusal stored without the payload
+        // an operator needs to republish it once the wallet exists.
+        String userId = newUserId();
+        String reference = newKey();
+
+        RecordMetadata record = publishCompleted(UUID.randomUUID().toString(), reference, userId, null);
+        kafkaProbe.awaitConsumed(consumerGroup, record);
+
+        assertThat(outcomes(reference)).containsExactly("REJECTED");
+        assertThat(rejectionReasons(reference)).containsExactly("WALLET_NOT_FOUND");
+        assertThat(jdbc.queryForObject(
+                "SELECT payload FROM processed_events WHERE transaction_reference = ?",
+                String.class,
+                reference
+        )).contains(reference);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM wallets WHERE user_id = ?", Integer.class, userId))
+                .isZero();
+    }
+
+    @Test
+    void anUnreadableRecordIsDeadLetteredAndTheNextPaymentOnItsPartitionStillCredits() {
+        // Guards a poison record that blocks its partition, is retried forever, or is dropped: it goes to the
+        // dead-letter topic, is counted, and the topic keeps it without a time limit (ADR 0020). That it skips the
+        // retries is pinned by KafkaConsumerConfigTest; three short retries would pass here too.
+        String userId = newUserId();
+        openWallet(userId, "PLN");
+        String reference = newKey();
+        Map<TopicPartition, Long> deadLetters = kafkaProbe.endOffsets(KafkaConsumerConfig.DEAD_LETTER_TOPIC);
+        double counted = deadLettersCounted();
+
+        kafkaProbe.publish(
+                KafkaConstants.PAYMENT_EVENTS_TOPIC,
+                reference,
+                KafkaConstants.EVENT_TYPE_PAYMENT_COMPLETED,
+                "{not json"
+        );
+        RecordMetadata next = publishCompleted(UUID.randomUUID().toString(), reference, userId, null);
+        kafkaProbe.awaitConsumed(consumerGroup, next);
+
+        assertThat(balance(userId, "PLN")).isEqualByComparingTo("10.00");
+        assertThat(kafkaProbe.recordsSince(deadLetters)).singleElement().satisfies(letter -> {
+            assertThat(letter.key()).isEqualTo(reference);
+            assertThat(letter.value()).isEqualTo("{not json");
+        });
+        assertThat(deadLettersCounted()).isEqualTo(counted + 1);
+        assertThat(kafkaProbe.topicConfig(KafkaConsumerConfig.DEAD_LETTER_TOPIC, "retention.ms")).isEqualTo("-1");
+    }
+
+    @Test
+    void aRecordWithAnUnknownEventTypeIsDeadLetteredRatherThanGuessedFromItsJson() {
+        // Guards dispatch on the shape of the JSON: a completed payment's payload under a header the wallet does not
+        // know must not credit anything.
+        String userId = newUserId();
+        openWallet(userId, "PLN");
+        String reference = newKey();
+        Map<TopicPartition, Long> deadLetters = kafkaProbe.endOffsets(KafkaConsumerConfig.DEAD_LETTER_TOPIC);
+        String json = WireSample.of("payment-completed")
+                .with("eventId", UUID.randomUUID().toString())
+                .with("transactionReference", reference)
+                .with("userId", userId)
+                .json();
+
+        RecordMetadata record = kafkaProbe.publish(
+                KafkaConstants.PAYMENT_EVENTS_TOPIC,
+                reference,
+                "PaymentRefundedEvent",
+                json
+        );
+        kafkaProbe.awaitConsumed(consumerGroup, record);
+
+        assertThat(balance(userId, "PLN")).isEqualByComparingTo("0");
+        assertThat(outcomes(reference)).isEmpty();
+        assertThat(kafkaProbe.recordsSince(deadLetters)).singleElement()
+                .satisfies(letter -> assertThat(letter.value()).isEqualTo(json));
+    }
+
     /**
      * @param amount the amount to send, or null to send the sample's own 10.0000
      */
@@ -156,6 +260,20 @@ class PaymentEventConsumerIT extends WalletIntegrationTest {
                 String.class,
                 reference
         );
+    }
+
+    private List<String> rejectionReasons(String reference) {
+        return jdbc.queryForList(
+                "SELECT rejection_reason FROM processed_events WHERE transaction_reference = ? "
+                        + "AND rejection_reason IS NOT NULL ORDER BY id",
+                String.class,
+                reference
+        );
+    }
+
+    private double deadLettersCounted() {
+        Counter counter = meterRegistry.find("wallet.consumer.dead.letters").counter();
+        return counter == null ? 0 : counter.count();
     }
 
     private List<String> outcomes(String reference) {

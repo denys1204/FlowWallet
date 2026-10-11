@@ -7,6 +7,7 @@ paths:
   - "**/support/PeerTopics.java"
   - "**/support/WireSample.java"
   - "**/support/ContainerImages*.java"
+  - "**/support/Concurrently.java"
   - "**/integration-test.properties"
   - "flow-wallet-contract/src/test/resources/wire/*.json"
 ---
