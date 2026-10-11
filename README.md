@@ -6,7 +6,7 @@
 ![Kafka](https://img.shields.io/badge/Apache%20Kafka-4.2%20(KRaft)-231f20)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-336791)
 ![Stripe](https://img.shields.io/badge/Stripe-test%20mode-635bff)
-![Status](https://img.shields.io/badge/status-work%20in%20progress-yellow)
+![Release](https://img.shields.io/badge/release-1.0.0-blue)
 
 > **Event-driven microservices wallet system, built as an engineering showcase.**
 
@@ -18,13 +18,13 @@ behind it commits, and a failed send is retried rather than lost; an idempotent 
 once however often an event arrives; a pluggable payment-provider abstraction (Strategy + Factory); database-per-service
 isolation; and clean module boundaries.
 
-> **Project status:** work in progress. The deposit loop works end to end. A client asks its wallet to start a deposit,
-> the wallet checks that the wallet exists and belongs to the caller, Payment Service creates a Stripe PaymentIntent, a
-> signed webhook confirms the payment, the outbox publishes to Kafka, and the wallet credits the balance exactly once. A
-> user can also send money to another user's wallet in the same currency, in one local transaction inside Wallet
-> Service, and withdraw to a bank account through Stripe Connect: the wallet debits the balance, Payment Service pays
-> out, and a payout that fails comes back as a credit. Integration tests run every one of these flows against real
-> Postgres and Kafka in containers. See [Project status & roadmap](#project-status--roadmap).
+> **Project status:** release 1.0, the three services at 1.0.0. The deposit loop works end to end. A client asks its
+> wallet to start a deposit, the wallet checks that the wallet exists and belongs to the caller, Payment Service creates
+> a Stripe PaymentIntent, a signed webhook confirms the payment, the outbox publishes to Kafka, and the wallet credits
+> the balance exactly once. A user can also send money to another user's wallet in the same currency, in one local
+> transaction inside Wallet Service, and withdraw to a bank account through Stripe Connect: the wallet debits the
+> balance, Payment Service pays out, and a payout that fails comes back as a credit. Integration tests run every one of
+> these flows against real Postgres and Kafka in containers. See [Project status & roadmap](#project-status--roadmap).
 >
 > The project runs against Stripe test mode only and is not meant for production use: Stripe does not allow
 > peer-to-peer money transmission on a live account.
@@ -95,7 +95,7 @@ the wallet consumer and the identity model.
 | [docs/events.md](docs/events.md) | The Kafka topics and event contracts |
 | [docs/development.md](docs/development.md) | How to run, configure and test the project |
 | [docs/operations.md](docs/operations.md) | The operator runbook: signals, checks and actions for withdrawals, payouts and deposits |
-| `flow-wallet-*/CHANGELOG.md` | Each service's release notes, written by release-please when the service is released |
+| [payment](flow-wallet-payment/CHANGELOG.md), [wallet](flow-wallet-service/CHANGELOG.md) and [gateway](flow-wallet-gateway/CHANGELOG.md) changelogs | Each service's release notes, written by release-please when the service is released |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | How to change the code: commands, conventions, what has to change together, and how a release is made |
 
 ## Tech stack
