@@ -7,6 +7,7 @@
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-336791)
 ![Stripe](https://img.shields.io/badge/Stripe-test%20mode-635bff)
 ![Release](https://img.shields.io/badge/release-1.0.0-blue)
+[![CI](https://github.com/denys1204/FlowWallet/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/denys1204/FlowWallet/actions/workflows/ci.yml)
 
 > **Event-driven microservices wallet system, built as an engineering showcase.**
 
@@ -115,6 +116,7 @@ the wallet consumer and the identity model.
 | Resilience | Spring Retry (payment); Spring Kafka `DefaultErrorHandler` + a dead-letter topic per consumer (wallet and payment) |
 | Testing | JUnit 6 and Mockito; integration tests on Testcontainers (PostgreSQL, Kafka) |
 | Build & infra | Maven multi-module, Docker Compose |
+| CI | GitHub Actions: every pull request to `main` is built and tested in full, integration tests included |
 | Releases | release-please on GitHub Actions: one version, tag and changelog per service (`payment/v1.0.0`) |
 
 ## Quickstart
@@ -194,6 +196,9 @@ service ([ADR 0040](docs/adr/0040-services-are-released-on-their-own.md)).
    commits with the debit, and that a returned payout credits once. Payment Service's tests drive the payout step
    machine through every state and show that a transfer or payout Stripe made before its answer was lost is adopted, not
    made twice.
+6. ~~Continuous integration~~: done. GitHub Actions builds and tests every pull request and every push to `main`,
+   integration tests included, and every change reaches `main` through a pull request
+   ([ADR 0041](docs/adr/0041-changes-reach-main-through-pull-requests-built-by-ci.md)).
 
 Stages, definitions of done and open decisions live in `implementation_plan.md`. It is a local working file
 and deliberately isn't committed.
