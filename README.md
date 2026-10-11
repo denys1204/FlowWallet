@@ -25,7 +25,7 @@ isolation; and clean module boundaries.
 > same currency, in one local transaction inside Wallet Service, and withdraw to a bank account through Stripe
 > Connect: the wallet debits the balance, Payment Service pays out, and a payout that fails comes back as a credit.
 > Integration tests run against real Postgres and Kafka in containers. They cover the wallet's payment event consumer
-> and the payment half of a deposit so far, and the rest of the roadmap's third stage is in progress. See
+> and both halves of a deposit so far, and the rest of the roadmap's third stage is in progress. See
 > [Project status & roadmap](#project-status--roadmap).
 >
 > The project runs against Stripe test mode only and is not meant for production use.

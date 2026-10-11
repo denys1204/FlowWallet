@@ -13,6 +13,8 @@ import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.core.env.PropertySource;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.client.RestTestClient;
 import org.testcontainers.DockerClientFactory;
@@ -57,6 +59,8 @@ public abstract class WalletIntegrationTest {
 
     protected static final KafkaProbe kafkaProbe;
 
+    protected static final PaymentStub paymentStub = PaymentStub.start();
+
     static {
         if (!DockerClientFactory.instance().isDockerAvailable()) {
             throw new IllegalStateException(
@@ -82,10 +86,20 @@ public abstract class WalletIntegrationTest {
 
     protected RestTestClient http;
 
+    @DynamicPropertySource
+    static void paymentServiceIsTheStub(DynamicPropertyRegistry registry) {
+        registry.add("wallet.payment.base-url", paymentStub::baseUrl);
+    }
+
     @BeforeEach
     void connect() {
         refuseTheDevelopersEnvFile();
         http = RestTestClient.bindToServer().baseUrl("http://127.0.0.1:" + port).build();
+    }
+
+    @AfterEach
+    void forgetTheStubbedAnswers() {
+        paymentStub.reset();
     }
 
     @AfterEach

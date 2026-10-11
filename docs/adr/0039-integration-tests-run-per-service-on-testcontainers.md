@@ -36,6 +36,9 @@ there are no images yet.
   consumer group. Scheduled jobs are off, and a test that needs one calls it.
 - Failsafe runs in `target/`, where neither of a service's optional `.env` imports finds a file, and the base fails a
   test that sees a `.env` property source.
+- In Wallet Service, Payment Service is a loopback HTTP server (`PaymentStub`) that answers the paths a test sets and
+  records what the wallet sent; the base points `wallet.payment.base-url` at it through `@DynamicPropertySource`, the
+  one setting that cannot be fixed in a file.
 - In Payment Service, `StripeClient` is a Mockito spy: each test stubs the network calls it expects, and the webhook
   signature check runs for real against bodies signed with the test secret (`StripeSignatures`). The base points
   stripe-java's API base at a closed port on loopback, so a call no test stubbed fails at once and never leaves the

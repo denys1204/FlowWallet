@@ -264,8 +264,8 @@ endpoint's webhooks.
 
 ## Testing
 
-There are 2060 tests, all green: 2044 unit tests (1384 in the payment service, 554 in the wallet service, 53 in the
-outbox module, 44 in platform and 9 in the gateway) and 16 integration tests (12 in the wallet service, 4 in the
+There are 2062 tests, all green: 2044 unit tests (1384 in the payment service, 554 in the wallet service, 53 in the
+outbox module, 44 in platform and 9 in the gateway) and 18 integration tests (14 in the wallet service, 4 in the
 payment service).
 
 `./mvnw test` runs the unit tests only. `./mvnw verify` and `./mvnw clean install` also run the integration tests
@@ -284,8 +284,12 @@ stored with its payload and opens no wallet. An unreadable record goes to `payme
 there without a time limit and leaves the next payment on its partition free to credit; a record with an unknown
 `eventType` goes there too and credits nothing. Under concurrency, eight threads handling one event credit once and
 leave one outcome, six events for one reference credit once and store five `DUPLICATE_REFERENCE` rows, and eight
-different payments to one wallet at once are all credited. The tests publish the contract's golden wire samples, and
-after every test `LedgerAudit` checks that each wallet's balance and entry numbers match its ledger.
+different payments to one wallet at once are all credited. A deposit started through `POST
+/api/wallets/{currency}/deposits` reaches a stub of Payment Service with the caller's key as its reference and the
+caller's id, passes the provider's data back, and the completed payment that comes back is shown in the balance; a
+deposit to a wallet the caller does not hold is refused before Payment Service is called. The tests publish the
+contract's golden wire samples, and after every test `LedgerAudit` checks that each wallet's balance and entry numbers
+match its ledger.
 
 In the payment service they run a deposit from the wallet's intent call to the record on `payment.events`: a signed
 `payment_intent.succeeded` webhook settles the payment and its outbox row commits with it, the record the outbox sends

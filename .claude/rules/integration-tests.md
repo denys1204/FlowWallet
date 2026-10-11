@@ -8,6 +8,7 @@ paths:
   - "**/support/WireSample.java"
   - "**/support/ContainerImages*.java"
   - "**/support/Concurrently.java"
+  - "**/support/PaymentStub.java"
   - "**/support/DatabaseFaults.java"
   - "**/support/StripeFixtures.java"
   - "**/support/StripeSignatures.java"
@@ -36,6 +37,8 @@ paths:
 - A Payment Service test stubs each `StripeClient` network call it expects on the spy (`doReturn(...).when(...)`); an
   unstubbed call fails against a closed port. Sign a webhook with `StripeSignatures.header` and the test secret, so
   the real signature check runs.
+- A Wallet Service test answers the calls to Payment Service through `PaymentStub` (`answer(path, status, json)`)
+  and checks what the wallet sent with `requests(path)`; a path with no answer gets a 404.
 - Fail a write inside the service's transaction with `DatabaseFaults` (a trigger scoped to one key, dropped on
   close), never with a spy on a `@Transactional` bean.
 - Each service's `ContainerImages` holds the image tags `docker-compose.yml` starts; change the compose file and both
