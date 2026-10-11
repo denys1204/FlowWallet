@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.2](https://github.com/denys1204/FlowWallet/compare/payment/v1.0.1...payment/v1.0.2) (2026-10-11)
+
+
+### Dependencies
+
+* bump com.stripe:stripe-java from 33.1.0 to 34.0.0 ([#6](https://github.com/denys1204/FlowWallet/issues/6)) ([cac1426](https://github.com/denys1204/FlowWallet/commit/cac14265b006405efaa47a0a9aa6dde043a83c2a))
+
 ## [1.0.1](https://github.com/denys1204/FlowWallet/compare/payment/v1.0.0...payment/v1.0.1) (2026-10-11)
 
 
