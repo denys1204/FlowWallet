@@ -10,7 +10,7 @@
 
     <artifactId>flow-wallet-service</artifactId>
     <!-- The service's released version: release-please sets it from the commits under this folder. -->
-    <version>1.0.0</version>
+    <version>1.0.1</version>
     <packaging>jar</packaging>
 
     <name>FlowWallet :: Wallet Service</name>
