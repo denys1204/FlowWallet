@@ -91,7 +91,7 @@ The first target receives the platform's events (deposits), the second the event
 bank accounts). When it starts, `stripe listen` prints a webhook signing secret (`whsec_...`) and signs every event it
 forwards, to either target, with it. Put that value in both `STRIPE_WEBHOOK_SECRET` and `STRIPE_CONNECT_WEBHOOK_SECRET`
 and restart Payment Service. Endpoints registered in the Stripe Dashboard each have their own secret: the Connect one is
-registered for connected accounts with the SDK's API version, `2026-06-24.dahlia`, and its secret goes in
+registered for connected accounts with the SDK's API version, `2026-09-30.endive`, and its secret goes in
 `STRIPE_CONNECT_WEBHOOK_SECRET`. `stripe listen` delivers events in the account's default API version instead, and
 Payment Service logs a WARN for each one it reads that way
 ([ADR 0036](adr/0036-connect-webhooks-have-their-own-endpoint-and-secret.md)). Until then that endpoint's webhooks are

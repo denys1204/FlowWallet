@@ -369,7 +369,7 @@ signed payload couldn't be processed. The reasoning is in
 POST /api/payments/webhooks/stripe/connect
 ```
 
-Register it in Stripe for connected accounts (`connect=true`) with the SDK's API version, `2026-06-24.dahlia`, and
+Register it in Stripe for connected accounts (`connect=true`) with the SDK's API version, `2026-09-30.endive`, and
 subscribe it to `payout.paid`, `payout.failed`, `payout.canceled`, `account.updated` and
 `account.external_account.updated`. It reads the body like the provider webhook, under the same size cap, and checks the
 signature with `STRIPE_CONNECT_WEBHOOK_SECRET` before it parses the body. Until that holds a real signing secret, every

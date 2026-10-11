@@ -20,14 +20,17 @@ later, or through a flow the API does not describe, makes it harder to know whic
   `card`) lists the methods a deposit intent offers. The values come from `StripePaymentMethodType`, which has the
   one constant `CARD`. A name the enum does not list fails binding, and an empty list fails validation, so either
   stops Payment Service from starting.
-- `StripeRequestMapper.toPaymentIntentParams` sends the list as `payment_method_types` and leaves
+- `StripeRequestMapper.toPaymentIntentParams` sends the list as `allowed_payment_method_types` and leaves
   `automatic_payment_methods` unset.
 - The enum holds the methods the code has been reviewed for. The setting chooses among them for an environment.
 
-In test mode on API version `2026-06-24.dahlia`, an intent created this way had `automatic_payment_methods` null and
+In test mode on API version `2026-06-24.dahlia`, an intent created with the list sent as `payment_method_types` had
+`automatic_payment_methods` null and
 confirmed server-side without a `return_url` with `pm_card_visa`. A card that requires 3D Secure answered
 `requires_action` with `use_stripe_sdk`, which Stripe.js completes on the client, rather than an error. Both were
-checked on 2026-10-04.
+checked on 2026-10-04. On API version `2026-09-30.endive`, which
+stripe-java 34.0.0 pins, an intent with `allowed_payment_method_types` set to `card` behaved the same way on
+2026-10-11, and Stripe refused `payment_method_types` with a `400`.
 
 ## Alternatives considered
 
@@ -50,8 +53,8 @@ checked on 2026-10-04.
   with different parameters and answers with an idempotency error. Payment Service maps it to a `502`, like any
   other Stripe failure that is not a refusal ([0022](0022-stripe-charge-rules-checked-before-the-reservation.md)).
   Unlike other `502`s, a retry under the same key gets the same error until Stripe forgets the key, so the client
-  has to start the deposit again with a new key. Only a deposit in flight when the method list changes can hit
-  this.
-- stripe-java 34 removes `PaymentIntentCreateParams.paymentMethodTypes` in favour of `allowedPaymentMethodTypes`
-  (available since 33.2.0). The mapper call stops compiling on that upgrade and has to move to the new
-  parameter.
+  has to start the deposit again with a new key. Only a deposit in flight when the method list, or the parameter that
+  carries it, changes can hit this.
+- The list is sent as `allowed_payment_method_types`. stripe-java 34 has no
+  `PaymentIntentCreateParams.paymentMethodTypes`, and API versions from `2026-09-30.endive` on refuse
+  `payment_method_types` with a `400`.

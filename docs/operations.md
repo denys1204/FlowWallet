@@ -626,8 +626,8 @@ Action: top up the platform's balance with a PaymentIntent paid on the platform 
 grosze, so `50000` is 500.00 PLN:
 
 ```bash
-curl https://api.stripe.com/v1/payment_intents -u "<your sk_test_ key>:" \
-  -d amount=50000 -d currency=pln -d "payment_method_types[]=card" \
+curl https://api.stripe.com/v1/payment_intents -u "<your sk_test_ key>:" -H "Stripe-Version: 2026-09-30.endive" \
+  -d amount=50000 -d currency=pln -d "allowed_payment_method_types[]=card" \
   -d payment_method=pm_card_bypassPendingInternational -d confirm=true
 ```
 

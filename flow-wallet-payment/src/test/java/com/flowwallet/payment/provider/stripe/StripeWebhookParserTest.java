@@ -151,9 +151,8 @@ class StripeWebhookParserTest {
 
     @Test
     void anUnsignedBodyThatIsNotJsonIsRefusedAsABadSignatureBecauseItIsNeverParsed() {
-        // stripe-java's constructEvent parses the body before it checks the signature, so called first it hands
-        // an unauthenticated body to the JSON parser and a broken one comes back as a 500. Verifying first keeps
-        // it a 400.
+        // Guards a broken, unsigned body coming back as a parse failure, a 500: it is a bad signature, a 400, because
+        // nothing parses a body before its signature is checked (ADR 0017).
         assertThatThrownBy(() -> parser().parse(
                 "{not json",
                 Map.of("Stripe-Signature", "t=1767225600,v1=00"),
