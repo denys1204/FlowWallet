@@ -1,6 +1,7 @@
 # 0041. Every change reaches main through a pull request that CI builds and tests in full
 
-- Status: Accepted, extends [0040](0040-services-are-released-on-their-own.md)
+- Status: Accepted, extends [0040](0040-services-are-released-on-their-own.md), extended by
+  [0042](0042-release-please-runs-as-a-github-app.md)
 - Date: 2026-10-11
 
 ## Context
@@ -17,8 +18,8 @@ this repository touches.
 Three facts about GitHub Actions shape the decision. The integration tests need a Docker daemon
 ([ADR 0039](0039-integration-tests-run-per-service-on-testcontainers.md)), and a GitHub-hosted Ubuntu runner has one. A
 required status check whose workflow a path filter skipped is never reported, so the pull request waits for it and
-cannot be merged. And a pull request or tag created with a workflow's `GITHUB_TOKEN` starts no other workflow;
-release-please opens the release PR that way.
+cannot be merged. And when a workflow opens or updates a pull request with its `GITHUB_TOKEN`, the workflow runs of
+that pull request wait until someone with write access approves them; release-please opens the release PR that way.
 
 ## Decision
 
@@ -54,9 +55,9 @@ release-please opens the release PR that way.
 ## Consequences
 
 - Every change, documentation included, waits for a full build on the runner before it can be merged.
-- The release PR, opened with `GITHUB_TOKEN`, starts no CI run, so the required `build` check is never reported on it.
-  It cannot be merged until release-please runs with a token that starts workflows, such as a GitHub App's, or the
-  ruleset lets the owner bypass the check.
+- The release PR, opened with `GITHUB_TOKEN`, gets its `build` check only after someone approves the CI run, and again
+  after every update, until release-please runs with a token whose pull requests start workflows without approval, such
+  as a GitHub App's.
 - The empty commit that releases a library change ([ADR 0040](0040-services-are-released-on-their-own.md)) reaches
   `main` through a pull request as well, squash-merged, because a rebase merge drops a commit that was empty to begin
   with.

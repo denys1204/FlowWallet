@@ -103,6 +103,7 @@ supersedes it, and only a factual correction is edited in place (see [ADRs](#adr
 | A dependency, a tool version or a run command | The version once, in the root `pom.xml`, `docker-compose.yml` (Postgres, Kafka, Kafka-UI) or `.mvn/wrapper/maven-wrapper.properties` (Maven); the Java release also as `java-version` in `.github/workflows/ci.yml`; a Postgres or Kafka image tag also in each service's test `ContainerImages`, which `ContainerImagesTest` checks against `docker-compose.yml`; the versions quoted in the `README.md` badges and tech stack, the first paragraph of `CLAUDE.md`, the commands in this file and the prerequisites in `docs/development.md`; a run command also sits in the `README.md` quickstart and `docs/development.md` |
 | The module list | The modules and dependency management in the root `pom.xml`; the module count and list in `CLAUDE.md`, `README.md`, `ARCHITECTURE.md`, ADR 0002 and the command comments in this file; a new service also needs its package in `release-please-config.json` and a `<version>` of its own in its pom, and a new library needs a managed entry at `flow-wallet-libraries.version` |
 | The reactor's version | The root `pom.xml`'s `<version>` and its `flow-wallet-libraries.version` property together, and each module's `<parent>` version (ADR 0040) |
+| The release workflow's token or the App's permissions | The `permission-*` inputs and `permissions: {}` in `release-please.yml` and the App's repository permissions on GitHub, which only the owner changes, together; the App bullet under [Releases](#releases) and the release PR bullet under [Pull requests](#pull-requests); the `CLAUDE.md` invariant on the release token; `.claude/rules/github-workflows.md`; ADR 0042 |
 | The CI workflow | The CI paragraph in `docs/development.md`, the CI line under [Build and test](#build-and-test), the CI row of the `README.md` tech stack and the `.github/workflows/` row of the table above when what it runs changes; `.claude/rules/github-workflows.md`; before the job `build` is renamed, the required check in the `main` ruleset, which only the repository owner can change (ADR 0041) |
 
 ## Code conventions
@@ -178,8 +179,9 @@ not weeks, so a larger piece of work goes in as several pull requests.
 - A pull request made of several logical changes, each a commit that follows the rules above, is rebase-merged, so
   every commit reaches `main` and the changelog as it is.
 - `main` takes no merge commits.
-- CI never runs on the release PR: release-please opens it with `GITHUB_TOKEN`, and it changes only versions and
-  changelogs. ADR 0041 records what that means for the required check.
+- The release PR follows the same rule: release-please opens it as the repository's GitHub App, so CI builds it
+  without an approval, and it is merged once `build` passes
+  ([ADR 0042](docs/adr/0042-release-please-runs-as-a-github-app.md)).
 
 ## Releases
 
@@ -199,6 +201,10 @@ sections are in `release-please-config.json`; `.github/workflows/release-please.
   through a squash-merged pull request (a rebase merge drops an empty commit); it releases a patch of every service.
 - A service's pom shows its last released version between releases, never a snapshot, so nothing may tag an image or
   an artifact from `${project.version}`; the release tag names the version.
+- release-please acts as the repository's GitHub App, not as `GITHUB_TOKEN`. The workflow creates a short-lived token
+  from the variable `BOT_CLIENT_ID` and the secret `BOT_PRIVATE_KEY`, limited to Contents, Pull requests and Issues.
+  Only the repository owner changes the App and its key
+  ([ADR 0042](docs/adr/0042-release-please-runs-as-a-github-app.md)).
 
 ## Definition of done
 
