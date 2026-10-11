@@ -16,4 +16,12 @@ public record ProviderTransfer(
         BigDecimal amountReversed,
         String currency
 ) {
+    /**
+     * Whether nothing of the transfer stays in the connected account: its reversals reach its own amount. The transfer
+     * step ignores such a transfer, and so does a return without reversal.
+     * See docs/adr/0045-a-transfer-reversed-in-full-is-ignored-and-a-spent-key-moves-on.md.
+     */
+    public boolean reversedInFull() {
+        return amountReversed.compareTo(amount) >= 0;
+    }
 }

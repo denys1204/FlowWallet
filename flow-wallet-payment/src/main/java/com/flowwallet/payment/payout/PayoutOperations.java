@@ -224,11 +224,11 @@ public class PayoutOperations {
 
     /**
      * A transfer in the payout's group that still holds money in a connected account; one reversed in full by hand
-     * does not block a return.
+     * does not block a return, and the transfer step ignores it too.
      */
     static @Nullable ProviderTransfer transferNotReversed(List<ProviderTransfer> transfers) {
         return transfers.stream()
-                .filter(transfer -> transfer.amountReversed().compareTo(transfer.amount()) < 0)
+                .filter(transfer -> !transfer.reversedInFull())
                 .findFirst()
                 .orElse(null);
     }
@@ -247,6 +247,10 @@ public class PayoutOperations {
         return found.amount().compareTo(payout.amount()) == 0 && found.currency().equalsIgnoreCase(payout.currency());
     }
 
+    /**
+     * Whether the transfer's reversals cover the payout's amount, which a return from {@code REVERSING} needs; unlike
+     * {@link ProviderTransfer#reversedInFull()}, it measures against the payout, not the transfer.
+     */
     static boolean reversedInFull(ProviderTransfer transfer, BigDecimal amount) {
         return transfer.amountReversed().compareTo(amount) >= 0;
     }

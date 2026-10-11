@@ -354,7 +354,8 @@ public class Payout {
 
     /**
      * Moves the step to a fresh idempotency key after a definite refusal it retries, because Stripe answers a retry
-     * under the same key with the stored refusal.
+     * under the same key with the stored refusal, or after Stripe answers a transfer key with a transfer reversed in
+     * full, because that key can make no other transfer.
      */
     public void raiseKeyGen() {
         this.keyGen++;

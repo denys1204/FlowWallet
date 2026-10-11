@@ -212,7 +212,9 @@ payout's own status for as long as an event takes to arrive.
 3. The payout's status:
    - `ACCEPTED` or `TRANSFERRED`: the executor is working it. `next_attempt_at` and `attempts` show where it stands, and
      the WARN lines `Payout <reference> <step> outcome unknown, attempt <n>, next at <time>: <cause>` and
-     `Payout <reference> <step> refused (<code>), retrying under key generation <n> at <time>` say why it waits. An
+     `Payout <reference> <step> refused (<code>), retrying under key generation <n> at <time>` say why it waits; the
+     WARN `Payout <reference> transfer key generation <n> answers with transfer <id>, reversed in full; the next try
+     uses generation <n+1>` means an earlier transfer was reversed in full and the next try transfers again. An
      unknown outcome is retried for about 7 hours and a payout refused for funds or a limit for about 24 hours before
      the payout comes back or an operator takes over. Check that `PAYMENT_PAYOUT_EXECUTOR_ENABLED` is not `false`.
    - `PAYOUT_CREATED`: Stripe has not paid it yet, or the Connect webhook was lost. The payout reconciler asks Stripe
@@ -492,7 +494,7 @@ WARN `Operator returned payout <reference> ...` or `Operator sent payout <refere
 | `DEFECT` | `ACCEPTED` | Report the defect, an idempotency key sent with other parameters, then `return-without-reversal` |
 | `DEFECT` | `TRANSFERRED` | Report the defect, then `reverse` |
 | `DEFECT` | `REVERSING` | Report the defect, and `requeue` once the fix is deployed |
-| `MISMATCH` or `MULTIPLE` | `ACCEPTED` | Reverse every transfer of the group `wd-<reference>` in full in the Dashboard, then `return-without-reversal`, which a transfer reversed in full does not block. `requeue` meets the same cause, because the transfer step counts a reversed transfer too |
+| `MISMATCH` or `MULTIPLE` | `ACCEPTED` | Open the transfer group `wd-<reference>` in the Dashboard and decide whether the withdrawal is paid out or the money goes back to the wallet. To pay it out, keep at most one transfer, one to the user's connected account with the payout's amount and currency and nothing reversed, and reverse every other transfer of the group in full, a transfer reversed in part included. To give the money back, reverse every transfer of the group in full. Wait until the Dashboard shows each reversal, then `requeue` to pay out or `return-without-reversal` to credit the wallet. After `requeue` the transfer step ignores the transfers reversed in full: it adopts the one left, or with none left it transfers again, under the next key generation once Stripe answers the old key with a transfer reversed in full (the WARN in step 3 of [A withdrawal that stays `PENDING`](#a-withdrawal-that-stays-pending)). The payout comes back to the wallet instead when the bank account is no longer ready or Stripe refuses the transfer. A cause that comes back names the transfers still in the way. Reverse nothing after the `requeue` |
 | `MISMATCH` or `MULTIPLE` | `TRANSFERRED` | Wait until Stripe reports each payout of the reference that may reach the bank failed or canceled, then `reverse`. When one is left with the payout's amount and currency, `requeue`, and the payout step adopts it. When one with other terms was paid, see [Cases with no template](#cases-with-no-template) |
 | `LIVE_PAYOUT` | `REVERSING` | Wait. When Stripe reports the payout failed or canceled, `requeue`, and the reversal step lists the payouts again and reverses. When it was paid, see [A second payout paid during a reversal](#a-second-payout-paid-during-a-reversal) |
 | `REVERSAL_REFUSED` | `REVERSING` | Fix what Stripe's code in the detail names, then `requeue`; the first try after it uses a fresh key generation. Or `return-without-reversal`: the wallet is credited at once, and the transfer's part that no reversal brought back stays in the connected account as the platform's loss, stated in `leftInConnectedAccount` |
@@ -502,9 +504,12 @@ The requeue's INFO line gives the cause and detail it cleared, so a second hand-
 Prefer `requeue` once the cause has cleared: Stripe reachable again, a limit lifted, a live payout reported failed or
 canceled, or one live payout with the payout's terms, which a refused `reverse` points to. The executor repeats the step
 under the same key generation after looking for what Stripe holds, so it adopts what an earlier try created and
-completes the payout. A return credits the wallet at once, and `reverse` brings the transfer back out of the connected
+completes the payout; only from `ACCEPTED`, once Stripe answers that key with a transfer reversed in full, does it move
+to the next one. A return credits the wallet at once, and `reverse` brings the transfer back out of the connected
 account once no payout of it can reach the bank. Never create a transfer or a payout by hand: the one Dashboard write
-this file asks for is a full reversal of a stray transfer.
+this file asks for is a full reversal of a transfer in the group of a payout waiting from `ACCEPTED`, made before its
+`requeue` or return. A reversal after the `requeue` can leave the payout step drawing on other money in the user's
+connected account.
 
 ### What the wallet shows afterwards
 

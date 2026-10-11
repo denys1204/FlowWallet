@@ -286,8 +286,8 @@ class PayoutOperationsTest {
 
         assertThat(refusal).isInstanceOf(PayoutActionRefusedException.class).hasMessage(
                 "Stripe holds transfer tr_2 in the payout's group, not reversed in full. Requeue adopts it if it is "
-                        + "the only one and has the payout's terms; otherwise reverse it in the Dashboard, then return "
-                        + "the payout."
+                        + "the only one not reversed in full and has the payout's terms; otherwise reverse it in full "
+                        + "in the Dashboard, then requeue to pay the payout out, or return it again."
         );
         assertThat(refusal.getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
         verifyNoWrites();

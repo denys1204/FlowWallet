@@ -359,6 +359,10 @@ public class PayoutStore {
                 payout.raiseKeyGen();
                 payout.deferAttempt(retry.nextAttemptAt());
             }
+            case StepOutcome.KeySpent _ -> {
+                payout.raiseKeyGen();
+                payout.deferAttempt(now);
+            }
             case StepOutcome.Attention attention -> {
                 if (attention.raiseKeyGen()) {
                     payout.raiseKeyGen();
