@@ -1,0 +1,40 @@
+# Keeps the Maven dependencies and the GitHub Actions current. Each pull request is built by ci.yml like any other, and
+# its title is already a conventional commit, so it is squash-merged once the versions the docs quote are updated on its
+# branch. See docs/adr/0043-dependabot-keeps-dependencies-and-actions-current.md.
+version: 2
+updates:
+  # The root pom.xml holds every version the modules use: the Spring Boot parent and the version properties.
+  - package-ecosystem: maven
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Warsaw
+    # A release is offered only once it is a week old, so one that is replaced by a fix in its first days is never
+    # offered. Security updates are not held back.
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: deps
+    groups:
+      # Minor and patch updates come together; each major update comes in a pull request of its own.
+      maven-minor-and-patch:
+        update-types: [minor, patch]
+
+  # Dependabot moves an action's pinned commit and the version comment on its line together.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Warsaw
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: ci
+      include: scope
+    groups:
+      actions:
+        patterns: ["*"]

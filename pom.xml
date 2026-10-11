@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <!-- ============================================================= -->
-    <!-- Parent: Spring Boot 4.1.0                                     -->
+    <!-- Parent: Spring Boot                                           -->
     <!-- ============================================================= -->
     <parent>
         <groupId>org.springframework.boot</groupId>

@@ -5,8 +5,10 @@ paths:
 
 # GitHub Actions workflows
 
-- Pin every action to the full commit of a release tag and name the tag in a comment
-  (`uses: actions/checkout@<sha> # v7.0.1`). A tag can be moved to other code; a commit cannot. Look the commit up with
+- Pin every action to the full commit of a release tag and name the tag in a comment on the same line that ends with
+  the tag (`uses: actions/checkout@<sha> # v7.0.1`). A tag can be moved to other code; a commit cannot. Dependabot moves
+  the commit and the comment together only in that form, and a version named in any other comment goes stale
+  ([ADR 0043](../../docs/adr/0043-dependabot-keeps-dependencies-and-actions-current.md)). Look the commit up with
   `gh api repos/<owner>/<repo>/commits/<tag> --jq .sha`.
 - Grant a workflow the least `permissions` it needs at the top level. `ci.yml` only reads the repository, and its
   checkout keeps no credentials (`persist-credentials: false`). Never trigger on `pull_request_target`, which runs with

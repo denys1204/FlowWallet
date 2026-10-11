@@ -72,6 +72,7 @@ live in this file.
 | `<service>/CHANGELOG.md` | Each service's release notes, written by release-please from the commits; never edited by hand |
 | `release-please-config.json`, `.release-please-manifest.json` | The release packages, tag format and changelog sections, and each service's last released version |
 | `.github/workflows/` | What runs on GitHub: the build and tests of every pull request (`ci.yml`) and the release job (`release-please.yml`) |
+| `.github/dependabot.yml` | Which dependencies Dependabot keeps current, how often, and how its pull requests are grouped and titled |
 | Code comments | Only what a reader at that spot cannot get from the code and needs in order to change it safely |
 
 ## Change map
@@ -100,10 +101,11 @@ supersedes it, and only a factual correction is edited in place (see [ADRs](#adr
 | A document, added, renamed or removed | The table in this file, the Documentation table in `README.md`, the list at the top of `ARCHITECTURE.md`, the introduction of `docs/development.md`, and every link to it. The service changelogs that release-please writes are listed only in the table above and in `README.md` |
 | The number of tests | The counts and the per-module split in `docs/development.md`, unit and integration tests apart, taken from the surefire and failsafe reports of a full build |
 | A file or package that a `.claude/rules` file names | The `paths:` globs and the text of every `.claude/rules` file that names it |
-| A dependency, a tool version or a run command | The version once, in the root `pom.xml`, `docker-compose.yml` (Postgres, Kafka, Kafka-UI) or `.mvn/wrapper/maven-wrapper.properties` (Maven); the Java release also as `java-version` in `.github/workflows/ci.yml`; a Postgres or Kafka image tag also in each service's test `ContainerImages`, which `ContainerImagesTest` checks against `docker-compose.yml`; the versions quoted in the `README.md` badges and tech stack, the first paragraph of `CLAUDE.md`, the commands in this file and the prerequisites in `docs/development.md`; a run command also sits in the `README.md` quickstart and `docs/development.md` |
+| A dependency, a tool version or a run command | The version once, in the root `pom.xml`, `docker-compose.yml` (Postgres, Kafka, Kafka-UI) or `.mvn/wrapper/maven-wrapper.properties` (Maven); the Java release also as `java-version` in `.github/workflows/ci.yml`; a Postgres or Kafka image tag also in each service's test `ContainerImages`, which `ContainerImagesTest` checks against `docker-compose.yml`; the versions quoted in the `README.md` badges and tech stack, the first paragraph of `CLAUDE.md`, the commands in this file and the prerequisites in `docs/development.md`; a run command also sits in the `README.md` quickstart and `docs/development.md`; a Dependabot pull request changes only the version, so these copies are updated on its branch before it is merged (ADR 0043) |
 | The module list | The modules and dependency management in the root `pom.xml`; the module count and list in `CLAUDE.md`, `README.md`, `ARCHITECTURE.md`, ADR 0002 and the command comments in this file; a new service also needs its package in `release-please-config.json` and a `<version>` of its own in its pom, and a new library needs a managed entry at `flow-wallet-libraries.version` |
 | The reactor's version | The root `pom.xml`'s `<version>` and its `flow-wallet-libraries.version` property together, and each module's `<parent>` version (ADR 0040) |
 | The release workflow's token or the App's permissions | The `permission-*` inputs and `permissions: {}` in `release-please.yml` and the App's repository permissions on GitHub, which only the owner changes, together; the App bullet under [Releases](#releases) and the release PR bullet under [Pull requests](#pull-requests); the `CLAUDE.md` invariant on the release token; `.claude/rules/github-workflows.md`; ADR 0042 |
+| The Dependabot configuration | ADR 0043 when the schedule, the cooldown, the grouping or the ecosystems change; the Dependabot bullet under [Pull requests](#pull-requests) and the Dependabot sentence under [Releases](#releases); the `.github/dependabot.yml` row of the table above; the CI row of the `README.md` tech stack when the ecosystems change; the pin format in `.claude/rules/github-workflows.md` |
 | The CI workflow | The CI paragraph in `docs/development.md`, the CI line under [Build and test](#build-and-test), the CI row of the `README.md` tech stack and the `.github/workflows/` row of the table above when what it runs changes; `.claude/rules/github-workflows.md`; before the job `build` is renamed, the required check in the `main` ruleset, which only the repository owner can change (ADR 0041) |
 
 ## Code conventions
@@ -179,6 +181,13 @@ not weeks, so a larger piece of work goes in as several pull requests.
 - A pull request made of several logical changes, each a commit that follows the rules above, is rebase-merged, so
   every commit reaches `main` and the changelog as it is.
 - `main` takes no merge commits.
+- Dependabot opens pull requests for the Maven dependencies and the GitHub Actions
+  ([ADR 0043](docs/adr/0043-dependabot-keeps-dependencies-and-actions-current.md)). Their titles are already
+  conventional commits (`deps: ...`, `ci(deps): ...`), so each is squash-merged like a one-change pull request, once the
+  versions the documentation quotes are updated on its branch. Replace its description, which carries the upstream
+  release notes, with a short one first: it becomes the commit body, and release-please would read a `BREAKING CHANGE`
+  line there. A major update is merged only after its release notes are read; one that has to wait is ignored with
+  `@dependabot ignore this major version`, so the dependency's minor and patch updates come back.
 - The release PR follows the same rule: release-please opens it as the repository's GitHub App, so CI builds it
   without an approval, and it is merged once `build` passes
   ([ADR 0042](docs/adr/0042-release-please-runs-as-a-github-app.md)).
@@ -199,6 +208,7 @@ sections are in `release-please-config.json`; `.github/workflows/release-please.
   commit that changes only a library, the root `pom.xml`, `docs/` or `docker-compose.yml` releases nothing. When a
   library change has to ship as a release, bring an empty commit such as `fix(deps): take the outbox fix` to `main`
   through a squash-merged pull request (a rebase merge drops an empty commit); it releases a patch of every service.
+  Dependabot's Maven updates change the root `pom.xml`, so they release nothing on their own either.
 - A service's pom shows its last released version between releases, never a snapshot, so nothing may tag an image or
   an artifact from `${project.version}`; the release tag names the version.
 - release-please acts as the repository's GitHub App, not as `GITHUB_TOKEN`. The workflow creates a short-lived token
