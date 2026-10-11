@@ -56,6 +56,9 @@ class PayoutStatesIT extends PaymentIntegrationTest {
     @Autowired
     private PayoutProperties properties;
 
+    @Autowired
+    private PayoutReconciler reconciler;
+
     @BeforeEach
     void startWithNoPayouts() {
         PayoutRows.clearOnceQuiet(jdbc, kafkaProbe, consumerGroup);
@@ -192,6 +195,55 @@ class PayoutStatesIT extends PaymentIntegrationTest {
 
         postConnectWebhook(webhook);
 
+        assertThat(PayoutRows.column(jdbc, reference, "status")).isEqualTo("PAID");
+        assertThat(PayoutRows.outboxRows(jdbc, reference, KafkaConstants.EVENT_TYPE_PAYOUT_PAID)).isOne();
+    }
+
+    @Test
+    void aCreatedPayoutWhoseWebhookNeverCameIsSettledPaidByTheReconcilerOnceItIsOldEnough() throws Exception {
+        // Guards a withdrawal paid at the bank that the wallet never hears of when the Connect webhook is lost
+        // (ADR 0036): the reconciler must leave a payout younger than created-min-age to its webhook, then ask Stripe
+        // about an older one and settle it through the webhook's own path, with one PayoutPaidEvent, and not ask again
+        // once it is paid.
+        String userId = newUserId();
+        String reference = newKey();
+        PayoutRows.ReadyAccount account = PayoutRows.seedReadyAccount(jdbc, userId);
+        send(command(reference, userId), reference);
+        Created created = createPayout(reference, account);
+        doReturn(payout(created.payoutId(), "paid", reference, account, null))
+                .when(stripeClient).retrievePayout(created.payoutId(), account.stripeAccountId());
+
+        reconciler.reconcile();
+
+        assertThat(PayoutRows.column(jdbc, reference, "status")).isEqualTo("PAYOUT_CREATED");
+        assertThat(PayoutRows.column(jdbc, reference, "last_reconciled_at")).isNull();
+        verify(stripeClient, never()).retrievePayout(any(), any());
+
+        // An hour back, past created-min-age (15 minutes in integration-test.properties). Relative, so the shift does
+        // not depend on how the session's time zone reads the TIMESTAMP column.
+        jdbc.update(
+                "UPDATE payouts SET created_at = created_at - interval '1 hour' WHERE transaction_reference = ?",
+                reference
+        );
+        Map<TopicPartition, Long> start = kafkaProbe.endOffsets(KafkaConstants.PAYMENT_EVENTS_TOPIC);
+
+        reconciler.reconcile();
+
+        assertThat(PayoutRows.column(jdbc, reference, "status")).isEqualTo("PAID");
+        assertThat(PayoutRows.column(jdbc, reference, "paid_at")).isNotNull();
+        assertThat(PayoutRows.column(jdbc, reference, "last_reconciled_at")).isNotNull();
+        ConsumerRecord<String, String> record = awaitEvent(start, reference, KafkaConstants.EVENT_TYPE_PAYOUT_PAID);
+        WireSample.of("payout-paid").assertSameShape(record.value());
+        JsonNode event = json.readTree(record.value());
+        assertThat(event.get("transactionReference").asString()).isEqualTo(reference);
+        assertThat(event.get("providerPayoutId").asString()).isEqualTo(created.payoutId());
+        assertThat(event.get("userId").asString()).isEqualTo(userId);
+        assertThat(event.get("amount").decimalValue()).isEqualByComparingTo("10.00");
+        assertThat(event.get("currency").asString()).isEqualTo("PLN");
+
+        reconciler.reconcile();
+
+        verify(stripeClient, times(1)).retrievePayout(created.payoutId(), account.stripeAccountId());
         assertThat(PayoutRows.column(jdbc, reference, "status")).isEqualTo("PAID");
         assertThat(PayoutRows.outboxRows(jdbc, reference, KafkaConstants.EVENT_TYPE_PAYOUT_PAID)).isOne();
     }

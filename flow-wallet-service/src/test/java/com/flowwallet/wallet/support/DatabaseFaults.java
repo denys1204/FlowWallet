@@ -7,7 +7,8 @@ import java.util.UUID;
 /**
  * Makes one write fail or wait inside the service's own transaction: a trigger acts on the rows of one key only, so
  * other tests' writes go through. A failure stands in for a lost connection or a full disk; a delay holds a
- * transaction open so that a concurrent one is sure to overlap it. Close it to drop the trigger.
+ * transaction open so that a concurrent one is sure to overlap it, and a delayed update also holds the row's lock.
+ * Close it to drop the trigger.
  */
 public final class DatabaseFaults implements AutoCloseable {
     private final JdbcTemplate jdbc;
@@ -46,6 +47,20 @@ public final class DatabaseFaults implements AutoCloseable {
             double seconds
     ) {
         return install(jdbc, "INSERT", table, column, value, "PERFORM pg_sleep(%s);".formatted(seconds));
+    }
+
+    /**
+     * Holds every UPDATE of the table's rows whose column holds the value for the given number of seconds, inside the
+     * updating transaction and after the row is locked, so a concurrent update of the row waits for it to commit.
+     */
+    public static DatabaseFaults delayUpdate(
+            JdbcTemplate jdbc,
+            String table,
+            String column,
+            String value,
+            double seconds
+    ) {
+        return install(jdbc, "UPDATE", table, column, value, "PERFORM pg_sleep(%s);".formatted(seconds));
     }
 
     private static DatabaseFaults fail(JdbcTemplate jdbc, String operation, String table, String column, String value) {

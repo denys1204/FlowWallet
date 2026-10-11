@@ -43,7 +43,8 @@ paths:
 - A Wallet Service test answers the calls to Payment Service through `PaymentStub` (`answer(path, status, json)`)
   and checks what the wallet sent with `requests(path)`; a path with no answer gets a 404.
 - Fail a write inside the service's transaction with `DatabaseFaults` (a trigger scoped to one key, dropped on
-  close), never with a spy on a `@Transactional` bean.
+  close), never with a spy on a `@Transactional` bean. To make a race real, hold one key's insert or update open with
+  `delayInsert` or `delayUpdate`, so the competing transactions overlap instead of running one after the other.
 - Each service's `ContainerImages` holds the image tags `docker-compose.yml` starts; change the compose file and both
   copies together (`ContainerImagesTest`).
 - Skip tests with `-DskipTests`, never `-Dmaven.test.skip=true`: the latter does not build the contract's test-jar,

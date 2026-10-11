@@ -1,6 +1,7 @@
 package com.flowwallet.payment.webhook;
 
 import com.flowwallet.contract.constant.KafkaConstants;
+import com.flowwallet.payment.support.Concurrently;
 import com.flowwallet.payment.support.DatabaseFaults;
 import com.flowwallet.payment.support.PaymentIntegrationTest;
 import com.flowwallet.payment.support.StripeFixtures;
@@ -15,6 +16,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -110,6 +112,32 @@ class DepositSettlementIT extends PaymentIntegrationTest {
         assertThat(status(reference)).isEqualTo("SUCCESS");
         assertThat(outboxRows(reference)).isOne();
         kafkaProbe.awaitRecord(start, r -> reference.equals(r.key()));
+    }
+
+    @Test
+    void eightDeliveriesOfOneWebhookAtOnceSettleTheDepositOnceAndAreAllAcknowledged() throws Exception {
+        // Guards a second PaymentCompletedEvent, or a 5xx that has Stripe deliver a settled payment again, when Stripe
+        // delivers one event several times at once: each delivery passes the event id check before any commits, so
+        // only the row's version lets one through, and the optimistic-lock retry must answer the rest from the
+        // settled row. The outbox insert under this reference waits half a second inside each transaction, so all
+        // eight read the PENDING row before the first one commits and the race is certain, not left to scheduling.
+        String reference = newKey();
+        String intentId = "pi_" + UUID.randomUUID().toString().replace("-", "");
+        startDeposit(newUserId(), reference, intentId);
+        String webhook = succeeded("evt_" + UUID.randomUUID(), Instant.now().getEpochSecond(), intentId);
+
+        List<Integer> statuses;
+        try (var delay = DatabaseFaults.delayInsert(jdbc, "outbox_events", "aggregate_id", reference, 0.5)) {
+            statuses = Concurrently.run(8, thread -> postWebhook(
+                    WEBHOOK_PATH,
+                    webhook,
+                    StripeSignatures.header(webhook, WEBHOOK_SECRET)
+            ).expectBody(String.class).returnResult().getStatus().value());
+        }
+
+        assertThat(statuses).hasSize(8).allSatisfy(status -> assertThat(status).isBetween(200, 299));
+        assertThat(status(reference)).isEqualTo("SUCCESS");
+        assertThat(outboxRows(reference)).isOne();
     }
 
     private void startDeposit(String userId, String reference, String intentId) throws Exception {

@@ -264,8 +264,8 @@ endpoint's webhooks.
 
 ## Testing
 
-There are 2098 tests, all green: 2044 unit tests (1384 in the payment service, 554 in the wallet service, 53 in the
-outbox module, 44 in platform and 9 in the gateway) and 54 integration tests (41 in the wallet service, 13 in the
+There are 2117 tests, all green: 2044 unit tests (1384 in the payment service, 554 in the wallet service, 53 in the
+outbox module, 44 in platform and 9 in the gateway) and 73 integration tests (42 in the wallet service, 31 in the
 payment service).
 
 `./mvnw test` runs the unit tests only. `./mvnw verify` and `./mvnw clean install` also run the integration tests
@@ -301,11 +301,12 @@ cannot be written nothing is debited and the retry under the same key goes throu
 row fails after the command was queued no command is left behind; a missing bank account is refused with `422` under the
 key and the retry repeats it, and a short platform reserve answers `503` with nothing written. Twenty withdrawals with
 one key debit once and send one command, one key raced from two wallets goes to one of them, two withdrawals that
-together overdraw a wallet let one through and record the other as refused, and withdrawals racing transfers for one
-balance never overdraw it. Two returns for one withdrawal handled at once credit it back once, and a payout that is
-paid, fails and comes back rises to `RETURNED` and is credited once. The schema's CHECKs on `withdrawals` refuse direct
-SQL writes too. The tests publish the contract's golden wire samples, and after every test `LedgerAudit` checks that
-each wallet's balance and entry numbers match its ledger.
+together overdraw a wallet let one through and record the other as refused, withdrawals racing transfers for one balance
+never overdraw it, and a withdrawal made while fifty credits land on the same wallet goes through with every credit
+counted. Two returns for one withdrawal handled at once credit it back once, and a payout that is paid, fails and comes
+back rises to `RETURNED` and is credited once. The schema's CHECKs on `withdrawals` refuse direct SQL writes too. The
+tests publish the contract's golden wire samples, and after every test `LedgerAudit` checks that each wallet's balance
+and entry numbers match its ledger.
 
 In the payment service they run a deposit from the wallet's intent call to the record on `payment.events`: a signed
 `payment_intent.succeeded` webhook settles the payment and its outbox row commits with it, the record the outbox sends
@@ -320,9 +321,15 @@ and then pays out, under the documented idempotency keys; a signed Connect `payo
 from Stripe's own payout, and a `payout.failed` sets the bank account back to `NOT_SET`, reverses the transfer and ends
 `RETURNED`, each event in the shape of its golden sample. A transfer Stripe refuses for platform funds ends `RETURNED`
 as `PLATFORM_FUNDS_SHORT`, an outcome that stays unknown up to the limit hands the payout to an operator with no event,
-and a transfer made at Stripe whose write then fails is adopted by the next try instead of made again. The payout tests
-empty `payouts` before each test, the one table the executor takes its due rows from. `StripeClient` is a spy that each
-test stubs; the signature check is real, and an unstubbed call fails against a closed local port.
+and a transfer made at Stripe whose write then fails is adopted by the next try instead of made again. Under
+concurrency, eight deliveries of one webhook at once settle the deposit once and are all acknowledged, a webhook racing
+the reconciler moves the payment once, and eight intent requests with one key reserve one row and answer either with the
+one intent or with `503` to retry (ADR 0024); two executors running at once make one transfer for a due payout. A
+transfer or a payout that Stripe made before its answer was lost is adopted by the next try instead of made again,
+`PayoutReconciler` settles a created payout whose webhook never came once it is old enough, and the CHECKs on `payouts`
+and `payout_accounts` refuse direct SQL writes under their own names. The payout tests empty `payouts` before each test,
+the one table the executor takes its due rows from. `StripeClient` is a spy that each test stubs; the signature check is
+real, and an unstubbed call fails against a closed local port.
 
 Among the unit tests, the gateway's bind its own `application.yml`, so a YAML regression that drops the response or
 connect timeout, or binds the gateway beyond loopback, fails there rather than in a live request; they also check that

@@ -3,17 +3,24 @@ package com.flowwallet.wallet.withdrawal;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import com.flowwallet.contract.constant.KafkaConstants;
+import com.flowwallet.wallet.balance.PaymentEventListener;
 import com.flowwallet.wallet.support.Concurrently;
 import com.flowwallet.wallet.support.DatabaseFaults;
 import com.flowwallet.wallet.support.WalletIntegrationTest;
+import com.flowwallet.wallet.support.WireSample;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.client.EntityExchangeResult;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -24,6 +31,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class WithdrawalConcurrencyIT extends WalletIntegrationTest {
     private final JsonMapper json = JsonMapper.builder().build();
+
+    @Autowired
+    private PaymentEventListener listener;
 
     @Test
     void twentyRequestsWithOneKeyDebitOnceSendOneCommandAndAllGetTheSameAnswer() {
@@ -133,6 +143,51 @@ class WithdrawalConcurrencyIT extends WalletIntegrationTest {
         assertThat(statuses).containsOnly(200, 202, 422);
         assertThat(statuses.stream().filter(status -> status != 422)).hasSize(20);
         assertThat(balance(userId)).isEqualByComparingTo("0");
+    }
+
+    @Test
+    void aWithdrawalWhileFiftyCreditsLandOnTheSameWalletIsNeitherRefusedForTheLockNorLost() {
+        // Guards an unlocked read of the wallet before its lock (CLAUDE.md, ADR 0011): with fifty credits committing
+        // around it, a withdrawal that loaded the wallet first would fail its version check and answer 503. Every
+        // credit and the withdrawal must land, and the balance must account for all of them.
+        String userId = newUserId();
+        openWallet(userId, "PLN");
+        fund(userId, "PLN", new BigDecimal("30.00"));
+        bankAccountReady();
+        String key = newKey();
+
+        List<Integer> outcomes = Concurrently.run(51, thread -> {
+            if (thread == 0) {
+                return withdraw(userId, "10.00", key).getStatus().value();
+            }
+            listener.onPaymentEvent(credit(userId, newKey()));
+            return 0;
+        });
+
+        assertThat(outcomes.getFirst()).isEqualTo(202);
+        assertThat(balance(userId)).isEqualByComparingTo("70.00");
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM balance_history h JOIN wallets w ON w.id = h.wallet_id "
+                        + "WHERE w.user_id = ? AND h.type = 'DEPOSIT'",
+                Integer.class,
+                userId
+        )).isEqualTo(51);
+    }
+
+    private static ConsumerRecord<String, String> credit(String userId, String reference) {
+        String json = WireSample.of("payment-completed")
+                .with("eventId", UUID.randomUUID().toString())
+                .with("transactionReference", reference)
+                .with("userId", userId)
+                .with("amount", new BigDecimal("1.00"))
+                .json();
+        ConsumerRecord<String, String> record =
+                new ConsumerRecord<>(KafkaConstants.PAYMENT_EVENTS_TOPIC, 0, 0L, reference, json);
+        record.headers().add(
+                KafkaConstants.HEADER_EVENT_TYPE,
+                KafkaConstants.EVENT_TYPE_PAYMENT_COMPLETED.getBytes(StandardCharsets.UTF_8)
+        );
+        return record;
     }
 
     private EntityExchangeResult<String> transfer(String from, String to, String amount, String key) {
