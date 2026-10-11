@@ -23,10 +23,8 @@ isolation; and clean module boundaries.
 > signed webhook confirms the payment, the outbox publishes to Kafka, and the wallet credits the balance exactly once. A
 > user can also send money to another user's wallet in the same currency, in one local transaction inside Wallet
 > Service, and withdraw to a bank account through Stripe Connect: the wallet debits the balance, Payment Service pays
-> out, and a payout that fails comes back as a credit. Integration tests run against real Postgres and Kafka in
-> containers. They cover the wallet's payment event consumer, both halves of a deposit, transfers and the wallet's side
-> of withdrawals, and Payment Service's payout steps. See
-> [Project status & roadmap](#project-status--roadmap).
+> out, and a payout that fails comes back as a credit. Integration tests run every one of these flows against real
+> Postgres and Kafka in containers. See [Project status & roadmap](#project-status--roadmap).
 >
 > The project runs against Stripe test mode only and is not meant for production use.
 
@@ -113,6 +111,7 @@ the wallet consumer and the identity model.
 | JSON | Jackson 3 (`tools.jackson`) |
 | Mapping | MapStruct 1.6.3 + Lombok |
 | Resilience | Spring Retry (payment); Spring Kafka `DefaultErrorHandler` + a dead-letter topic per consumer (wallet and payment) |
+| Testing | JUnit 6 and Mockito; integration tests on Testcontainers (PostgreSQL, Kafka) |
 | Build & infra | Maven multi-module, Docker Compose |
 
 ## Quickstart
@@ -170,20 +169,22 @@ See [docs/development.md](docs/development.md) for the full guide, configuration
 ## Project status & roadmap
 
 This is a showcase that keeps changing. The deposit loop works end to end, transfers between wallets work against
-real Postgres, and withdrawals to a bank account work through Stripe Connect in test mode. What's left is automated
-tests on real infrastructure.
+real Postgres, and withdrawals to a bank account work through Stripe Connect in test mode, each with integration tests
+on real Postgres and Kafka. What's left before a 1.0 tag is a last pass over the documents.
 
 1. ~~Wallet comes alive~~: done. Domain model and migrations, an idempotent Kafka consumer, and retries with
    backoff plus a dead-letter topic.
 2. ~~The client drives the wallet~~: done. Wallet endpoints and deposits started through the wallet.
-3. Proof that it works: in progress. Integration tests against real Postgres and Kafka show that a redelivery doesn't
+3. ~~Proof that it works~~: done. Integration tests against real Postgres and Kafka show that a redelivery doesn't
    credit twice, a duplicate reference is refused, a poison record lands in the dead-letter topic, and a deposit raises
    the balance end to end. For transfers they show that opposite transfers don't deadlock, that concurrent requests with
    one key move the money once, that a key raced from two senders goes to one of them whether or not the two transfers
    share a wallet, that concurrent transfers can't overdraw a wallet, and that a replay is byte for byte the first
    answer. For withdrawals they show that concurrent requests with one key debit once, that a key raced from two wallets
    goes to one of them, that concurrent withdrawals and transfers can't overdraw a wallet or deadlock, that the command
-   commits with the debit, and that a returned payout credits once.
+   commits with the debit, and that a returned payout credits once. Payment Service's tests drive the payout step
+   machine through every state and show that a transfer or payout Stripe made before its answer was lost is adopted, not
+   made twice.
 4. ~~Transfers between wallets~~: done, with their integration tests. Same currency only, the recipient named by user
    id, and one local transaction that locks both wallets in ascending user id.
 5. ~~Withdrawals out to the payment provider~~: done, with integration tests on both the wallet's side and Payment
