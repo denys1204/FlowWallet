@@ -6,12 +6,18 @@ import com.flowwallet.wallet.support.WalletIntegrationTest;
 import com.flowwallet.wallet.support.WireSample;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.support.KafkaHeaders;
+import org.springframework.kafka.support.LoggingProducerListener;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -26,6 +32,9 @@ import static org.awaitility.Awaitility.await;
 class PaymentEventConsumerIT extends WalletIntegrationTest {
     @Autowired
     private MeterRegistry meterRegistry;
+
+    @Autowired
+    private KafkaTemplate<String, String> kafkaTemplate;
 
     @Test
     void aCompletedPaymentCreditsTheWalletOnce() {
@@ -185,6 +194,45 @@ class PaymentEventConsumerIT extends WalletIntegrationTest {
     }
 
     @Test
+    void anUnparseableRecordIsDeadLetteredWithNothingOfItInTheExceptionHeaders() {
+        // Guards a user id in the dead letter's exception headers (ADR 0044): the stack trace header carries the cause
+        // chain, and Jackson's message quotes the record. The value itself stays as it came, for an operator.
+        String userId = newUserId();
+        String reference = newKey();
+        Map<TopicPartition, Long> deadLetters = kafkaProbe.endOffsets(KafkaConsumerConfig.DEAD_LETTER_TOPIC);
+        String json = WireSample.of("payment-completed")
+                .with("eventId", UUID.randomUUID().toString())
+                .with("transactionReference", reference)
+                .with("userId", userId)
+                .with("amount", userId)
+                .json();
+
+        kafkaProbe.publish(
+                KafkaConstants.PAYMENT_EVENTS_TOPIC,
+                reference,
+                KafkaConstants.EVENT_TYPE_PAYMENT_COMPLETED,
+                json
+        );
+
+        ConsumerRecord<String, String> letter = kafkaProbe.awaitRecord(deadLetters, r -> reference.equals(r.key()));
+        assertThat(letter.value()).isEqualTo(json);
+        assertThat(header(letter, KafkaHeaders.DLT_EXCEPTION_MESSAGE))
+                .contains("at line 1, column")
+                .doesNotContain(userId);
+        assertThat(header(letter, KafkaHeaders.DLT_EXCEPTION_STACKTRACE)).doesNotContain(userId);
+    }
+
+    @Test
+    void theKafkaTemplateSendsThroughTheListenerThatLeavesValuesOut() {
+        // Guards Spring Boot's own producer listener, which logs the start of a value that fails to send: it backs off
+        // only while a ProducerListener bean of the service's exists (ADR 0044).
+        Object producerListener = ReflectionTestUtils.getField(kafkaTemplate, "producerListener");
+
+        assertThat(producerListener).isInstanceOf(LoggingProducerListener.class);
+        assertThat(ReflectionTestUtils.getField(producerListener, "includeContents")).isEqualTo(false);
+    }
+
+    @Test
     void aRecordWithAnUnknownEventTypeIsDeadLetteredRatherThanGuessedFromItsJson() {
         // Guards dispatch on the shape of the JSON: a completed payment's payload under a header the wallet does not
         // know must not credit anything.
@@ -282,5 +330,9 @@ class PaymentEventConsumerIT extends WalletIntegrationTest {
                 String.class,
                 reference
         );
+    }
+
+    private static String header(ConsumerRecord<String, String> record, String name) {
+        return new String(record.headers().lastHeader(name).value(), StandardCharsets.UTF_8);
     }
 }

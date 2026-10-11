@@ -643,7 +643,10 @@ included, is in [docs/operations.md](docs/operations.md).
   only credential a caller has and neither a log reader nor Stripe needs it to do their job. Both datasource
   URLs set `logServerErrorDetail=false` (`DB_LOG_SERVER_ERROR_DETAIL`), so an exception message carries no
   Postgres DETAIL line, which would quote a duplicate key's user id or a refused row
-  ([ADR 0027](docs/adr/0027-user-ids-stay-out-of-logs-and-provider-metadata.md)).
+  ([ADR 0027](docs/adr/0027-user-ids-stay-out-of-logs-and-provider-metadata.md)). On the Kafka paths, a record a
+  consumer cannot parse is reported by the parser's error type and position, because Jackson's message quotes the
+  input, and a record that fails to send is logged without its value at INFO and above
+  ([ADR 0044](docs/adr/0044-unreadable-kafka-records-are-reported-without-their-content.md)).
 - Stripe webhooks are verified cryptographically (HMAC signature with a replay window). That check doesn't depend on
   user identity and stays enforced. The body is capped at 256KB by default and its signature is checked before it is
   parsed. Without a real signing secret (`whsec_...`, not a placeholder) webhooks are disabled and every delivery is

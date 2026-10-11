@@ -19,6 +19,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.support.KafkaHeaders;
+import org.springframework.kafka.support.LoggingProducerListener;
+import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -58,6 +62,9 @@ class PayoutStatesIT extends PaymentIntegrationTest {
 
     @Autowired
     private PayoutReconciler reconciler;
+
+    @Autowired
+    private KafkaTemplate<String, String> kafkaTemplate;
 
     @BeforeEach
     void startWithNoPayouts() {
@@ -104,6 +111,41 @@ class PayoutStatesIT extends PaymentIntegrationTest {
         assertThat(payoutRows(reference)).isOne();
         assertThat(new BigDecimal(PayoutRows.column(jdbc, reference, "amount"))).isEqualByComparingTo("10.00");
         assertThat(PayoutRows.column(jdbc, reference, "status")).isEqualTo("ACCEPTED");
+    }
+
+    @Test
+    void anUnparseableCommandIsDeadLetteredWithNothingOfItInTheExceptionHeaders() {
+        // Guards a user id in the dead letter's exception headers (ADR 0044): the stack trace header carries the cause
+        // chain, and Jackson's message quotes the command. The value itself stays as it came, for an operator.
+        String userId = newUserId();
+        String reference = newKey();
+        Map<TopicPartition, Long> start = kafkaProbe.endOffsets(WithdrawalCommandConsumerConfig.DEAD_LETTER_TOPIC);
+        String command = command(reference, userId).with("amount", userId).json();
+
+        kafkaProbe.publish(
+                KafkaConstants.WALLET_WITHDRAWALS_TOPIC,
+                reference,
+                KafkaConstants.EVENT_TYPE_WITHDRAWAL_REQUESTED,
+                command
+        );
+
+        ConsumerRecord<String, String> letter = kafkaProbe.awaitRecord(start, r -> reference.equals(r.key()));
+        assertThat(letter.value()).isEqualTo(command);
+        assertThat(dltHeader(letter, KafkaHeaders.DLT_EXCEPTION_MESSAGE))
+                .contains("at line 1, column")
+                .doesNotContain(userId);
+        assertThat(dltHeader(letter, KafkaHeaders.DLT_EXCEPTION_STACKTRACE)).doesNotContain(userId);
+        assertThat(payoutRows(reference)).isZero();
+    }
+
+    @Test
+    void theKafkaTemplateSendsThroughTheListenerThatLeavesValuesOut() {
+        // Guards Spring Boot's own producer listener, which logs the start of a value that fails to send: it backs off
+        // only while a ProducerListener bean of the service's exists (ADR 0044).
+        Object producerListener = ReflectionTestUtils.getField(kafkaTemplate, "producerListener");
+
+        assertThat(producerListener).isInstanceOf(LoggingProducerListener.class);
+        assertThat(ReflectionTestUtils.getField(producerListener, "includeContents")).isEqualTo(false);
     }
 
     @Test
@@ -473,5 +515,9 @@ class PayoutStatesIT extends PaymentIntegrationTest {
                 Integer.class,
                 reference
         );
+    }
+
+    private static String dltHeader(ConsumerRecord<String, String> record, String name) {
+        return new String(record.headers().lastHeader(name).value(), StandardCharsets.UTF_8);
     }
 }

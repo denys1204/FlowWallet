@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/denys1204/FlowWallet/compare/payment/v1.0.0...payment/v1.0.1) (2026-10-11)
+
+
+### Bug Fixes
+
+* keep Kafka record content out of logs and dead-letter headers ([#7](https://github.com/denys1204/FlowWallet/issues/7)) ([dd6500a](https://github.com/denys1204/FlowWallet/commit/dd6500ae5e952e653bbb9c30a625fb6922a7ea15))
+
 ## 1.0.0 (2026-10-11)
 
 

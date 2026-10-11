@@ -10,9 +10,12 @@ import org.springframework.core.NestedExceptionUtils;
 import org.springframework.kafka.listener.RetryListener;
 
 /**
- * Reports each failed attempt and each command the error handler dead-letters. Nothing consumes the dead-letter
- * topic, so the ERROR line and the {@value #DEAD_LETTER_COUNTER} counter are how an operator learns that a debited
- * withdrawal waits there. See docs/adr/0034-shared-outbox-and-the-wallet-withdrawals-command.md.
+ * Reports each failed attempt and each command the error handler dead-letters. Nothing consumes the dead-letter topic,
+ * so the ERROR line and the {@value #DEAD_LETTER_COUNTER} counter are how an operator learns that a debited withdrawal
+ * waits there. The lines carry the most specific cause's message, so an exception thrown on this path never quotes a
+ * user id, the raw value or Jackson's message.
+ * See docs/adr/0034-shared-outbox-and-the-wallet-withdrawals-command.md and
+ * docs/adr/0044-unreadable-kafka-records-are-reported-without-their-content.md.
  */
 @Slf4j
 class WithdrawalCommandRetryListener implements RetryListener {

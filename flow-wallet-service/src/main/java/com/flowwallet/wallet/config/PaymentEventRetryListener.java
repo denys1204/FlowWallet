@@ -10,10 +10,12 @@ import org.springframework.core.NestedExceptionUtils;
 import org.springframework.kafka.listener.RetryListener;
 
 /**
- * Reports each failed attempt and each record the error handler dead-letters. Nothing consumes the dead-letter
- * topic, so the ERROR line and the {@value #DEAD_LETTER_COUNTER} counter are how an operator learns that a payment
- * waits there. The listener gets the container's wrapper exception, so the lines name its most specific cause.
- * See docs/adr/0020-wallet-dead-letters-kept-and-counted.md.
+ * Reports each failed attempt and each record the error handler dead-letters. Nothing consumes the dead-letter topic,
+ * so the ERROR line and the {@value #DEAD_LETTER_COUNTER} counter are how an operator learns that a payment waits
+ * there. The listener gets the container's wrapper exception, so the lines name its most specific cause, and an
+ * exception thrown on this path never quotes a user id, the raw value, an unrecognised header or Jackson's message.
+ * See docs/adr/0020-wallet-dead-letters-kept-and-counted.md and
+ * docs/adr/0044-unreadable-kafka-records-are-reported-without-their-content.md.
  */
 @Slf4j
 class PaymentEventRetryListener implements RetryListener {

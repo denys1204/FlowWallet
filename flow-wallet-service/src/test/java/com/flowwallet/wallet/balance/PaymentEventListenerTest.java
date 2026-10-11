@@ -28,6 +28,7 @@ import java.time.Instant;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
@@ -48,6 +49,9 @@ class PaymentEventListenerTest {
     private static final String PAYOUT_FAILED = KafkaConstants.EVENT_TYPE_PAYOUT_FAILED;
     private static final String PAYOUT_RETURNED = KafkaConstants.EVENT_TYPE_PAYOUT_RETURNED;
     private static final Instant AT = Instant.parse("2026-10-10T12:00:00Z");
+    private static final String QUOTED_USER = "c7e4a1b2-5d3f-4e6a-8b9c-0d1e2f3a4b5c";
+    // Jackson quotes an unquoted token up to the first character that cannot be part of a Java identifier.
+    private static final String QUOTED_USER_PREFIX = "c7e4a1b2";
 
     private ConsumerRecord<String, String> record(String eventType, String json) {
         var consumerRecord = new ConsumerRecord<>(KafkaConstants.PAYMENT_EVENTS_TOPIC, 0, 0L, "ref-1", json);
@@ -124,6 +128,34 @@ class PaymentEventListenerTest {
                 .isInstanceOf(UnreadablePaymentEventException.class);
 
         verifyNoInteractions(handler);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("payloadsJacksonWouldQuote")
+    void anUnparseablePayloadIsRefusedWithoutQuotingIt(String shape, String json) {
+        // Guards a user id in a log line (ADR 0027): Jackson's message quotes the input, and this exception's message
+        // and cause reach the retry listener's log lines and the dead letter's headers.
+        assertThatThrownBy(() -> listener.onPaymentEvent(record(COMPLETED, json)))
+                .isInstanceOf(UnreadablePaymentEventException.class)
+                .hasNoCause()
+                .satisfies(refused -> assertThat(refused.getMessage())
+                        .contains("at line 1, column")
+                        .doesNotContain(QUOTED_USER_PREFIX));
+    }
+
+    static Stream<Arguments> payloadsJacksonWouldQuote() {
+        return Stream.of(
+                Arguments.of("a user id where the amount goes", "{\"amount\":\"" + QUOTED_USER + "\"}"),
+                Arguments.of("an unquoted user id", "{\"userId\":" + QUOTED_USER + "}")
+        );
+    }
+
+    @Test
+    void anUnrecognisedTypeIsRefusedWithoutQuotingTheHeader() {
+        // Guards a user id in a log line (ADR 0027): the header's value would reach the retry listener's log lines.
+        assertThatThrownBy(() -> listener.onPaymentEvent(record(QUOTED_USER, "{}")))
+                .isInstanceOf(UnreadablePaymentEventException.class)
+                .satisfies(refused -> assertThat(refused.getMessage()).doesNotContain(QUOTED_USER_PREFIX));
     }
 
     @Test

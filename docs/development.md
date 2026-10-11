@@ -12,7 +12,7 @@ payout or deposit is stuck. How to change the code, and what has to change with 
 ### Prerequisites
 
 - JDK 25 (for example Amazon Corretto 25).
-- Maven is optional: `./mvnw` downloads Maven 3.9.9 on first run.
+- Maven is optional: `./mvnw` downloads Maven 3.10.0 on first run.
 - Docker and Docker Compose. A full build runs the integration tests, which start Postgres and Kafka through
   Testcontainers and need a running Docker daemon (see [Testing](#testing)).
 - A Stripe account in test mode, plus the [Stripe CLI](https://docs.stripe.com/cli/install) to forward
@@ -246,6 +246,10 @@ their reconcilers. `.env.example` has the full list with comments. The main ones
 | `LOG_LEVEL` / `APP_LOG_LEVEL` | `INFO` / `DEBUG` | Payment, Wallet |
 | `KAFKA_EXTERNAL_PORT` / `KAFKA_UI_PORT` | `9092` / `8090` | Docker Compose |
 
+At `DEBUG` the root level (`LOG_LEVEL`) lets Spring Kafka's `KafkaTemplate` log the whole record of a failed send, and
+at `TRACE` every record it sends, user ids included, so raise it only knowingly
+([ADR 0044](adr/0044-unreadable-kafka-records-are-reported-without-their-content.md)).
+
 The wallet service won't start with values that make no sense, such as a negative retry count, a retry multiplier below
 1.0, an initial interval above the maximum, a maximum interval above 60000 ms, a blank Payment Service URL, a Payment
 Service timeout below 1ms, a provider other than `STRIPE`, a `wallet.withdrawals` topic with more in-sync replicas than
@@ -269,8 +273,8 @@ endpoint's webhooks.
 
 ## Testing
 
-There are 2117 tests, all green: 2044 unit tests (1384 in the payment service, 554 in the wallet service, 53 in the
-outbox module, 44 in platform and 9 in the gateway) and 73 integration tests (42 in the wallet service, 31 in the
+There are 2130 tests, all green: 2053 unit tests (1388 in the payment service, 559 in the wallet service, 53 in the
+outbox module, 44 in platform and 9 in the gateway) and 77 integration tests (44 in the wallet service, 33 in the
 payment service).
 
 `./mvnw test` runs the unit tests only. `./mvnw verify` and `./mvnw clean install` also run the integration tests
@@ -292,10 +296,11 @@ credits once, a redelivered event changes nothing and reaches no dead-letter top
 once, a failed payment retried to success is credited once, a failure that arrives after the credit takes nothing back,
 a second event for a credited reference is stored as `DUPLICATE_REFERENCE`, and a payment for a user without a wallet is
 stored with its payload and opens no wallet. An unreadable record goes to `payment.events.wallet.DLT`, is counted, stays
-there without a time limit and leaves the next payment on its partition free to credit; a record with an unknown
-`eventType` goes there too and credits nothing. Under concurrency, eight threads handling one event credit once and
-leave one outcome, six events for one reference credit once and store five `DUPLICATE_REFERENCE` rows, and eight
-different payments to one wallet at once are all credited. A deposit started through `POST
+there without a time limit and leaves the next payment on its partition free to credit, and a record Jackson rejects
+reaches it with exception headers that name the parse error and its position but not the user id it quoted; a record
+with an unknown `eventType` goes there too and credits nothing. Under concurrency, eight threads handling one event
+credit once and leave one outcome, six events for one reference credit once and store five `DUPLICATE_REFERENCE` rows,
+and eight different payments to one wallet at once are all credited. A deposit started through `POST
 /api/wallets/{currency}/deposits` reaches a stub of Payment Service with the caller's key as its reference and the
 caller's id, passes the provider's data back, and the completed payment that comes back is shown in the balance; a
 deposit to a wallet the caller does not hold is refused before Payment Service is called. Transfers run over HTTP into
@@ -326,21 +331,23 @@ signed with another secret is refused and changes nothing. When the outbox row c
 `PENDING` and Stripe's redelivery settles it once. A paid deposit whose webhook never came is settled by
 `PendingPaymentReconciler` through the same handler, and the late webhook then adds nothing. For payouts they publish
 the wallet's golden command to `wallet.withdrawals` and drive `PayoutExecutor` directly: a command is accepted as one
-payout and its redeliveries add none, the same reference with other terms goes to `wallet.withdrawals.payment.DLT`, and
-a currency the payout terms refuse is stored `RETURNED` with its event. The executor transfers to the connected account
-and then pays out, under the documented idempotency keys; a signed Connect `payout.paid` settles the payout as `PAID`
-from Stripe's own payout, and a `payout.failed` sets the bank account back to `NOT_SET`, reverses the transfer and ends
-`RETURNED`, each event in the shape of its golden sample. A transfer Stripe refuses for platform funds ends `RETURNED`
-as `PLATFORM_FUNDS_SHORT`, an outcome that stays unknown up to the limit hands the payout to an operator with no event,
-and a transfer made at Stripe whose write then fails is adopted by the next try instead of made again. Under
-concurrency, eight deliveries of one webhook at once settle the deposit once and are all acknowledged, a webhook racing
-the reconciler moves the payment once, and eight intent requests with one key reserve one row and answer either with the
-one intent or with `503` to retry (ADR 0024); two executors running at once make one transfer for a due payout. A
-transfer or a payout that Stripe made before its answer was lost is adopted by the next try instead of made again,
-`PayoutReconciler` settles a created payout whose webhook never came once it is old enough, and the CHECKs on `payouts`
-and `payout_accounts` refuse direct SQL writes under their own names. The payout tests empty `payouts` before each test,
-the one table the executor takes its due rows from. `StripeClient` is a spy that each test stubs; the signature check is
-real, and an unstubbed call fails against a closed local port.
+payout and its redeliveries add none, the same reference with other terms goes to `wallet.withdrawals.payment.DLT`, a
+command Jackson rejects goes there too with exception headers that do not quote its user id, and a currency the payout
+terms refuse is stored `RETURNED` with its event. In both services the `KafkaTemplate` uses the producer listener that
+leaves a failed record's value out of the log. The executor transfers to the connected account and then pays out, under
+the documented idempotency keys; a signed Connect `payout.paid` settles the payout as `PAID` from Stripe's own payout,
+and a `payout.failed` sets the bank account back to `NOT_SET`, reverses the transfer and ends `RETURNED`, each event in
+the shape of its golden sample. A transfer Stripe refuses for platform funds ends `RETURNED` as `PLATFORM_FUNDS_SHORT`,
+an outcome that stays unknown up to the limit hands the payout to an operator with no event, and a transfer made at
+Stripe whose write then fails is adopted by the next try instead of made again. Under concurrency, eight deliveries of
+one webhook at once settle the deposit once and are all acknowledged, a webhook racing the reconciler moves the payment
+once, and eight intent requests with one key reserve one row and answer either with the one intent or with `503` to
+retry (ADR 0024); two executors running at once make one transfer for a due payout. A transfer or a payout that Stripe
+made before its answer was lost is adopted by the next try instead of made again, `PayoutReconciler` settles a created
+payout whose webhook never came once it is old enough, and the CHECKs on `payouts` and `payout_accounts` refuse direct
+SQL writes under their own names. The payout tests empty `payouts` before each test, the one table the executor takes
+its due rows from. `StripeClient` is a spy that each test stubs; the signature check is real, and an unstubbed call
+fails against a closed local port.
 
 Among the unit tests, the gateway's bind its own `application.yml`, so a YAML regression that drops the response or
 connect timeout, or binds the gateway beyond loopback, fails there rather than in a live request; they also check that
@@ -370,13 +377,16 @@ wallet is loaded, failed payments never touching a wallet (a redelivered failure
 raised), payout events reaching their own steps, a Paid event refused without its payout id, a payout refusal stored
 with its reason, a second return refused as `DUPLICATE_REFERENCE`, a withdrawal status that only rises, the payout
 handler pinned to READ COMMITTED, and the error handler (an unreadable record dead-lettered at once, any other failure
-only after its retries, each dead letter counted, and the dead-letter topic created with unlimited retention).
+only after its retries, each dead letter counted, and the dead-letter topic created with unlimited retention). A record
+Jackson rejects or an unknown `eventType` is refused with a message that quotes nothing of the record, the retry
+listener's lines for it carry no user id, and a failed send is logged without the record's value.
 
 For Payment Service's consumer of withdrawal commands they cover the `eventType` header and the shape of a command (an
 unreadable or invalid one dead-lettered at once), a redelivery with the same terms acknowledged and one with other terms
 dead-lettered, a command the payout terms refuse returned with `TERMS_REFUSED` and its `PayoutReturnedEvent` written
 after the row, any other failure dead-lettered only after its retries, each dead letter counted, and the dead-letter
-topic created with unlimited retention.
+topic created with unlimited retention. A command Jackson rejects is refused with a message that quotes nothing of it,
+the retry listener's lines for it carry no user id, and a failed send is logged without the record's value.
 
 For the payout calls to Stripe they cover the connected account opened under its key with the configured identity, a
 manual payout schedule and no user id, a bank token attached as the default for its currency, the account's default bank

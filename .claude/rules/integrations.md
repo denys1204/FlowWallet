@@ -5,6 +5,7 @@ paths:
   - "**/flow-wallet-outbox/**"
   - "**/flow-wallet-contract/**"
   - "**/*Listener.java"
+  - "**/Unreadable*Exception.java"
   - "**/*Mapper.java"
   - "**/KafkaConsumerConfig.java"
 ---
@@ -24,7 +25,10 @@ paths:
   `<version>` changes only through release-please
   ([ADR 0040](../../docs/adr/0040-services-are-released-on-their-own.md)).
 - Jackson 3 is `tools.jackson.*`. Messages on the topic are JSON strings, so consumers use
-  `StringDeserializer` and parse themselves.
+  `StringDeserializer` and parse themselves. A `JacksonException`'s message quotes the input, user ids included, so a
+  consumer never chains it or copies its message into an exception; it names the error type and position, as the
+  `unparseable` factories do
+  ([ADR 0044](../../docs/adr/0044-unreadable-kafka-records-are-reported-without-their-content.md)).
 - Stripe minor units come from the explicit table in `StripeCurrencyRules`; never derive them from
   `java.util.Currency` (ISO is wrong for Stripe on MGA, ISK and UGX).
 - A deposit intent lists its payment methods (`stripe.payment-method-types`, cards only) instead of enabling
