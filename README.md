@@ -26,7 +26,8 @@ isolation; and clean module boundaries.
 > out, and a payout that fails comes back as a credit. Integration tests run every one of these flows against real
 > Postgres and Kafka in containers. See [Project status & roadmap](#project-status--roadmap).
 >
-> The project runs against Stripe test mode only and is not meant for production use.
+> The project runs against Stripe test mode only and is not meant for production use: Stripe does not allow
+> peer-to-peer money transmission on a live account.
 
 ---
 
@@ -173,13 +174,17 @@ See [docs/development.md](docs/development.md) for the full guide, configuration
 This is a showcase that keeps changing. The deposit loop works end to end, transfers between wallets work against
 real Postgres, and withdrawals to a bank account work through Stripe Connect in test mode, each with integration tests
 on real Postgres and Kafka. Release 1.0 is the three services at `1.0.0`, released by release-please with a tag per
-service ([ADR 0040](docs/adr/0040-services-are-released-on-their-own.md)); what's left before it is a last pass over the
-documents.
+service ([ADR 0040](docs/adr/0040-services-are-released-on-their-own.md)).
 
 1. ~~Wallet comes alive~~: done. Domain model and migrations, an idempotent Kafka consumer, and retries with
    backoff plus a dead-letter topic.
 2. ~~The client drives the wallet~~: done. Wallet endpoints and deposits started through the wallet.
-3. ~~Proof that it works~~: done. Integration tests against real Postgres and Kafka show that a redelivery doesn't
+3. ~~Transfers between wallets~~: done, with their integration tests. Same currency only, the recipient named by user
+   id, and one local transaction that locks both wallets in ascending user id.
+4. ~~Withdrawals out to the payment provider~~: done, with integration tests on both the wallet's side and Payment
+   Service's payout steps. Through Stripe Connect in test mode: the wallet debits under its lock
+   and records a refusal under the key, Payment Service pays out, and a payout that fails comes back as a credit.
+5. ~~Proof that it works~~: done. Integration tests against real Postgres and Kafka show that a redelivery doesn't
    credit twice, a duplicate reference is refused, a poison record lands in the dead-letter topic, and a deposit raises
    the balance end to end. For transfers they show that opposite transfers don't deadlock, that concurrent requests with
    one key move the money once, that a key raced from two senders goes to one of them whether or not the two transfers
@@ -189,11 +194,6 @@ documents.
    commits with the debit, and that a returned payout credits once. Payment Service's tests drive the payout step
    machine through every state and show that a transfer or payout Stripe made before its answer was lost is adopted, not
    made twice.
-4. ~~Transfers between wallets~~: done, with their integration tests. Same currency only, the recipient named by user
-   id, and one local transaction that locks both wallets in ascending user id.
-5. ~~Withdrawals out to the payment provider~~: done, with integration tests on both the wallet's side and Payment
-   Service's payout steps. Through Stripe Connect in test mode: the wallet debits under its lock
-   and records a refusal under the key, Payment Service pays out, and a payout that fails comes back as a credit.
 
 Stages, definitions of done and open decisions live in `implementation_plan.md`. It is a local working file
 and deliberately isn't committed.

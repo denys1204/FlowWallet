@@ -96,8 +96,8 @@ reversal starts, and `PayoutPaidEvent` when the Connect webhook or the payout re
 ([ADR 0036](adr/0036-connect-webhooks-have-their-own-endpoint-and-secret.md)). Stripe can fail a payout days after it
 was paid, so a `PayoutFailedEvent` can follow the `PayoutPaidEvent` for the same reference. `paidAt` is when Payment
 Service saw the payout paid, not Stripe's arrival date. Wallet Service writes a command through its outbox in the
-transaction that debits the wallet. They shipped in this order: the contract, the consumers, then the producers, so no
-consumer met an event type it did not know.
+transaction that debits the wallet. A new event type reaches its consumer before any producer sends it
+([ADR 0009](adr/0009-payment-event-contract.md)).
 
 - `WithdrawalRequestedEvent`, on `wallet.withdrawals` from Wallet Service to Payment Service, carries `eventId`, `schemaVersion`, `transactionReference`, `userId`, `amount`, `currency`.
 - `PayoutPaidEvent`, on `payment.events`, carries `eventId`, `schemaVersion`, `transactionReference`, `providerPayoutId`, `amount`, `currency`, `userId`, `paidAt`.

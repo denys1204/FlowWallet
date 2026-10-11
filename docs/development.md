@@ -2,9 +2,10 @@
 
 This file explains how to set up FlowWallet locally, configure it, and run its tests. For what the project is and its
 current status, see [README.md](../README.md). For how the system works, see [ARCHITECTURE.md](../ARCHITECTURE.md). The
-other reference docs cover the [API](api.md), the [data model](data-model.md) and [Kafka topics and events](events.md),
-and the [operator runbook](operations.md) says what to do when a withdrawal, payout or deposit is stuck. How to change
-the code, and what has to change with it, is in [CONTRIBUTING.md](../CONTRIBUTING.md).
+other reference docs cover the [business rules](business-rules.md), the [API](api.md), the [data model](data-model.md)
+and [Kafka topics and events](events.md), and the [operator runbook](operations.md) says what to do when a withdrawal,
+payout or deposit is stuck. How to change the code, and what has to change with it, is in
+[CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ## Getting started
 
@@ -527,8 +528,9 @@ unique `balance_history (wallet_id, entry_no)` and the numbering of both transfe
 (`SchemaChecksIT`, and `LedgerAudit` after every test). The entry-number history queries and the migration that numbers
 existing ledger rows were checked by hand on a scratch database seeded with interleaved ids: numbering follows id order
 within each wallet, `last_entry_no` equals each wallet's row count, and history pages by entry number. Payment changeset
-006 ran by hand against a schema migrated through 005. The payout reconciler's selections and its claim have run only
-against real Postgres in the live run, where the selection of created payouts used `idx_payouts_created`.
+006 ran by hand against a schema migrated through 005. The payout reconciler's selections and its claim run in
+`PayoutStatesIT`; that the selection of created payouts uses `idx_payouts_created` was seen in a query plan in the live
+run.
 
 For transfers the mocks pin the order of the calls and the decision after each one; the integration tests above show
 what the mocks cannot: the lock order, the unique key and the overdraft check under real concurrency.

@@ -55,9 +55,10 @@ The bank account is the user's, not a wallet's, and withdrawals are paid out to 
 account token with the publishable key, so bank details never reach FlowWallet, and sends only the token with
 `tosAccepted: true`, the user's acceptance of Stripe's Connected Account Agreement. Wallet Service relays both routes to
 Payment Service and stores nothing. `state` is `READY` when a payout can go to the bank account now and `NOT_SET`
-otherwise. A new token replaces the bank account for its currency. A `400` for a refused token needs a new token,
-because Stripe accepts a token once; after a `502`, retry with the same token, which is answered from Payment Service's
-row if the first attempt went through ([ADR 0035](adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md)).
+otherwise. A user has one bank account: a new token replaces it, whatever its currency. A `400` for a refused token
+needs a new token, because Stripe accepts a token once; after a `502`, retry with the same token, which is answered from
+Payment Service's row if the first attempt went through
+([ADR 0035](adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md)).
 
 Every movement on a wallet has an `entryNo`: the wallet's movements are numbered 1, 2, 3 in the order they
 committed, with no gaps. History is sorted by it, newest first, so the first page's first `balanceAfter` is
@@ -460,7 +461,8 @@ digits and `currency` its currency. A caller with no bank account gets `NOT_SET`
 - `tosAccepted` must be `true`: the user accepts Stripe's Connected Account Agreement, which opening their
   connected account needs. Anything else is a `400`.
 - The first request opens the user's connected account. Every request with another token attaches it as the default bank
-  account for the token's currency, replacing the previous one. After it records the bank account, the request reads the
+  account for the token's currency and records it as the user's one bank account, replacing the previous one in any
+  currency. After it records the bank account, the request reads the
   connected account once more and answers with the state that read sets, so a change Stripe made in between, such as
   turning payouts on, is not lost; if that read fails, it answers with the recorded state. A request with the token last
   applied is answered from the stored row, because Stripe accepts a token once.
@@ -628,14 +630,14 @@ point writes nothing:
 An answer to a write is `{action, payout, leftInConnectedAccount}`, where `payout` is the payout after the write and
 `leftInConnectedAccount` is set only for a return from `REVERSING`.
 
-A refusal is an `application/problem+json` response in the shape of [Error responses](#error-responses). The detail
-is written by the server, never quotes the request and names only Stripe ids and statuses. The checks run in this
-order:
+A refusal is an `application/problem+json` response. The `400` and `403` answers of the request checks carry only
+`title`, `status` and `detail`; the others have the shape of [Error responses](#error-responses). The detail is written
+by the server, never quotes the request and names only Stripe ids and statuses. The checks run in this order:
 
 | Status | Action | Condition | The detail |
 |--------|--------|-----------|------------|
-| `403` | all | the request came from a web page, or reached `payouts` under a host other than loopback | Says which |
 | `400` | all | the path has a path parameter (`;`), an escape (`%`), a doubled slash or a dot segment, refused on every route of Payment Service | Says the path must be plain |
+| `403` | all | the request came from a web page, or reached `payouts` under a host other than loopback | Says which |
 | `400` | all | the request has a query string or a body | Says the endpoint takes neither |
 | `400` | write | the `X-FlowWallet-Operator` header is missing or blank | Names the header |
 | `400` | write | `action` is none of the three | Names the three actions |

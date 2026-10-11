@@ -86,7 +86,8 @@ record that blocks its partition holds up about a third of all credits.
 
 - A redelivery, including one of a refused or failed event, is acknowledged and changes nothing.
 - Every readable event the listener settles has a `processed_events` row. `REJECTED` rows keep their payload, and
-  nothing replays them automatically. A second event for a credited reference is also logged at error level.
+  nothing replays them automatically. Every refusal is logged at error level, and a second event for a credited
+  reference gets an error line of its own before its refusal.
 - `payment.events.wallet.DLT` has no consumer; its records are inspected and replayed by hand. Unreadable and
   exhausted records leave no `processed_events` row, so a dead-lettered record can be republished unchanged.
 - A failure the retries cannot fix holds its partition only for the length of the backoff.

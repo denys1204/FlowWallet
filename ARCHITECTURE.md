@@ -7,6 +7,7 @@ is and its status, see [README.md](README.md); to run, configure and test it, se
 [docs/adr/](docs/adr/) record each design decision along with its rejected alternatives and consequences.
 
 **Reference**
+- [Business rules](docs/business-rules.md)
 - [API reference](docs/api.md)
 - [Data model](docs/data-model.md)
 - [Kafka topics & events](docs/events.md)

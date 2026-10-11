@@ -2,8 +2,9 @@
 
 This file is the operator's runbook: what to do when a withdrawal, a payout or an event waits for a person. Each entry
 gives the signal, how to check it, the action and how to verify the result. The contract of each endpoint is in
-[api.md](api.md), the flows are in [ARCHITECTURE.md](../ARCHITECTURE.md), and the settings and metric names are in
-[development.md](development.md#configuration). The tables the queries read are described in
+[api.md](api.md), the flows are in [ARCHITECTURE.md](../ARCHITECTURE.md), the settings and the payout metrics are in
+[development.md](development.md#configuration), and the outbox, dead-letter and reconciliation metrics in
+[ARCHITECTURE.md](../ARCHITECTURE.md) and [events.md](events.md). The tables the queries read are described in
 [data-model.md](data-model.md), and the topics in [events.md](events.md).
 
 ## Before you act
@@ -36,8 +37,8 @@ other than `none`, which curl never sends. Wallet Service's `outbox` endpoint ha
   the transfer group `wd-<reference>`, and the transfer, the payout and the reversal in the metadata key
   `flowwallet_withdrawal`. A deposit's PaymentIntent carries it in the metadata key `transactionReference`.
 - Metrics: `curl -s localhost:8082/actuator/metrics/<name>`, narrowed to one tag value with `?tag=from:transferred`.
-  A counter appears only after its first increment, and each counter counts from zero again when its service
-  restarts. The gauges read the database each time they are read.
+  The payout, reconciler and operator-action counters appear only after their first increment; the two dead-letter
+  counters exist at 0 from startup. Each counter counts from zero again when its service restarts. The gauges read the database each time they are read.
 
 ### Rules
 
@@ -397,8 +398,10 @@ SELECT event_id, event_type, transaction_reference, rejection_reason, processed_
   FROM processed_events WHERE outcome = 'REJECTED' ORDER BY processed_at DESC LIMIT 50;
 ```
 
-A `REJECTED` row holds the event's id, so the payload republished unchanged meets that barrier: the wallet logs `Event
-<id> was already processed; nothing changed` and credits nothing. What to do depends on the reason:
+A `REJECTED` row holds the event's id, so the payload republished unchanged meets that barrier and credits nothing. For a
+refusal the handler decided, the wallet logs `Event <id> was already processed; nothing changed`; for `INVALID_AMOUNT`
+and `INVALID_ENVELOPE` it logs the ERROR `Refused event ...` again and then `Event <id> was already refused; the refusal
+is on record`. What to do depends on the reason:
 
 | Reason | Event | Action |
 |---|---|---|
@@ -450,8 +453,7 @@ Payment Service's ERROR `Payout <reference> needs attention from <step> (<cause>
    curl -s localhost:8082/actuator/payouts/$REF
    ```
 
-   A payout handed over before the cause columns existed shows `cause` and `detail` as `null`. Its ERROR line in the
-   log gives them.
+   `cause` and `detail` are `null` only for a payout that is not in `NEEDS_ATTENTION`.
 4. Look at Stripe for the objects that `detail` and the Stripe ids name.
 5. Decide with the table in [What to do for each cause](#what-to-do-for-each-cause).
 6. Act, with the action's name at the end of the path:

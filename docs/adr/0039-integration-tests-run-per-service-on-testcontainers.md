@@ -12,10 +12,10 @@ it reports ([0008](0008-transactional-outbox.md)), and the consumer's barrier ro
 ([0010](0010-idempotent-payment-event-consumer.md)). The unit tests mock the database and the broker, so none of them
 can show that these rules hold. Liquibase changesets and JPQL queries run only when a service starts.
 
-The roadmap's third stage asks for a deposit that raises the balance end to end, through both services and Kafka. Both
-service jars put `application.yml` and `db/changelog/db.changelog-master.yaml` at the root of the classpath, and both
-changelogs create `outbox_events`, so the two applications cannot share one classpath. The jars are repackaged with no
-plain classifier, so another module cannot depend on them without changing how they are built, and
+The roadmap's "Proof that it works" stage asks for a deposit that raises the balance end to end, through both services
+and Kafka. Both service jars put `application.yml` and `db/changelog/db.changelog-master.yaml` at the root of the
+classpath, and both changelogs create `outbox_events`, so the two applications cannot share one classpath. The jars are
+repackaged with no plain classifier, so another module cannot depend on them without changing how they are built, and
 [0002](0002-module-boundaries.md) keeps the services from depending on each other. Running the services as processes or
 container images would need a fake Stripe server and a setting that points Payment Service's Stripe client at it, and
 there are no images yet.

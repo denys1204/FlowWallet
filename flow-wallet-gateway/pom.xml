@@ -16,7 +16,7 @@
     <packaging>jar</packaging>
 
     <name>FlowWallet :: API Gateway</name>
-    <description>Spring Cloud Gateway — routing and rate limiting</description>
+    <description>Spring Cloud Gateway: path routing to Wallet Service and Payment Service's webhooks</description>
 
     <dependencies>
         <!-- Spring Cloud Gateway (WebFlux-based, new artifact for SC 5.0) -->

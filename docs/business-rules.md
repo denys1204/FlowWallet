@@ -20,8 +20,9 @@ Details: [identity and security model](../ARCHITECTURE.md#identity--security-mod
 
 - A user opens a wallet explicitly, one per currency. A deposit, a transfer, a withdrawal or a payment event never opens
   one.
-- The currency is an ISO 4217 code, in either letter case. A code that names no currency of payment, such as
-  gold (XAU), the testing code (XTS) or "no currency" (XXX), cannot be opened, because no deposit could fund it.
+- The currency is an ISO 4217 code, in either letter case. A code with no minor unit, such as gold (XAU), the testing
+  code (XTS) or "no currency" (XXX), cannot be opened. A wallet can still be opened in a currency Stripe does not
+  charge, but no deposit can fund it.
 - A new wallet holds 0. A wallet cannot be closed, deleted or moved to another currency.
 - A wallet is addressed by its owner and currency and has no id in the API. Someone else's wallet and a wallet
   that does not exist look the same.
@@ -87,14 +88,15 @@ Reasoning: [ADR 0014](adr/0014-transfers-in-one-local-transaction.md),
 
 ## Bank account
 
-- A user sets one bank account per currency to receive withdrawals. It belongs to the user, whatever wallets
-  they hold.
+- A user sets one bank account to receive withdrawals, in the currency of its token. It belongs to the user, whatever
+  wallets they hold, and a withdrawal goes out only in that currency.
 - The bank details stay at Stripe. The client turns them into a single-use Stripe token, and FlowWallet sees only
   the token, Stripe's ids and the last four digits. Raw bank numbers are refused.
 - Setting a bank account needs the user's acceptance of Stripe's Connected Account Agreement. The first one opens
   the user's connected account at Stripe.
-- A new token replaces the bank account for its currency. A token works once: a refused token needs a new one, and
-  repeating the token that was last applied returns the stored answer.
+- A new token replaces the bank account, whatever its currency: a token in another currency leaves no ready account for
+  the old one, so withdrawals in it are refused until a token in that currency is set again. A token works once: a
+  refused token needs a new one, and repeating the token that was last applied returns the stored answer.
 - A bank account is ready when Stripe can pay out to it now. Right after a bank account is set, and whenever Stripe
   reports a change to the connected account or its bank account, FlowWallet reads the account again and sets the state
   from what it reads.
