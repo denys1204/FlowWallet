@@ -5,7 +5,8 @@ is an engineering showcase that runs against Stripe test mode only and never goe
 
 Rules for one kind of file live in `.claude/rules/` and load when a matching file is read: `web.md` (controllers,
 request and response DTOs), `persistence.md` (Liquibase and configuration), `integrations.md` (the Maven build, Kafka,
-MapStruct, Stripe), `integration-tests.md` (the `*IT` classes, their support code and the golden wire samples).
+MapStruct, Stripe), `integration-tests.md` (the `*IT` classes, their support code and the golden wire samples),
+`github-workflows.md` (the GitHub Actions workflows).
 
 How to work in this repository is in `CONTRIBUTING.md`, imported below: the build and test commands, where each
 kind of text lives, the change map, the code conventions and the definition of done. Follow the change map on
@@ -194,6 +195,9 @@ Each invariant here is stated once and links the ADR that holds its reasoning.
   the reactor and the libraries stay at `1.0.0-SNAPSHOT`, and the root `pom.xml` manages the libraries through
   `flow-wallet-libraries.version`, never `${project.version}`, which a service resolves to its own released version
   ([ADR 0040](docs/adr/0040-services-are-released-on-their-own.md)).
+- Every change reaches `main` through a pull request whose `build` check passes. `ci.yml` has no path filter and its job
+  stays named `build`, the check the `main` ruleset requires
+  ([ADR 0041](docs/adr/0041-changes-reach-main-through-pull-requests-built-by-ci.md)).
 - `FAILED` outbox rows are never deleted automatically; they are the dead-letter store
   ([ADR 0008](docs/adr/0008-transactional-outbox.md)).
 - A `PaymentFailedEvent` moves no money, which is why the consumer does not depend on event order

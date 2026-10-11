@@ -1,6 +1,6 @@
 # 0040. Each service is versioned and released on its own through release-please; the libraries are not
 
-- Status: Accepted
+- Status: Accepted, extended by [0041](0041-changes-reach-main-through-pull-requests-built-by-ci.md)
 - Date: 2026-10-11
 
 ## Context

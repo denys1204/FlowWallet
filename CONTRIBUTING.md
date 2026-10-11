@@ -39,6 +39,9 @@ stripe listen --forward-to localhost:8080/api/payments/webhooks/stripe \
 - Integration tests (`*IT`) run in the `integration-test` phase through failsafe, against Postgres and Kafka started by
   Testcontainers. Without a running Docker daemon they fail rather than skip; `-DskipITs` is the way to leave them out
   ([ADR 0039](docs/adr/0039-integration-tests-run-per-service-on-testcontainers.md)).
+- CI (`.github/workflows/ci.yml`) runs `./mvnw clean verify`, the same tests as `clean install`, on every pull request
+  to `main` and every push to `main`. Its job `build` is the check a pull request needs before it can be merged
+  ([ADR 0041](docs/adr/0041-changes-reach-main-through-pull-requests-built-by-ci.md)).
 - All three services import the repository-root `.env` through `spring.config.import` (both `./` and `../`, because
   the working directory is the module under the Maven plugin). Exported environment variables override it. Values
   stay unquoted: Spring reads the file as `.properties`, so quotes become part of the value. Compose ports bind to
@@ -68,6 +71,7 @@ live in this file.
 | `flow-wallet-contract/src/test/resources/wire/` | The golden wire samples: a JSON record for each event type the integration tests use, as its producer sends it |
 | `<service>/CHANGELOG.md` | Each service's release notes, written by release-please from the commits; never edited by hand |
 | `release-please-config.json`, `.release-please-manifest.json` | The release packages, tag format and changelog sections, and each service's last released version |
+| `.github/workflows/` | What runs on GitHub: the build and tests of every pull request (`ci.yml`) and the release job (`release-please.yml`) |
 | Code comments | Only what a reader at that spot cannot get from the code and needs in order to change it safely |
 
 ## Change map
@@ -96,9 +100,10 @@ supersedes it, and only a factual correction is edited in place (see [ADRs](#adr
 | A document, added, renamed or removed | The table in this file, the Documentation table in `README.md`, the list at the top of `ARCHITECTURE.md`, the introduction of `docs/development.md`, and every link to it. The service changelogs that release-please writes are listed only in the table above and in `README.md` |
 | The number of tests | The counts and the per-module split in `docs/development.md`, unit and integration tests apart, taken from the surefire and failsafe reports of a full build |
 | A file or package that a `.claude/rules` file names | The `paths:` globs and the text of every `.claude/rules` file that names it |
-| A dependency, a tool version or a run command | The version once, in the root `pom.xml`, `docker-compose.yml` (Postgres, Kafka, Kafka-UI) or `.mvn/wrapper/maven-wrapper.properties` (Maven); a Postgres or Kafka image tag also in each service's test `ContainerImages`, which `ContainerImagesTest` checks against `docker-compose.yml`; the versions quoted in the `README.md` badges and tech stack, the first paragraph of `CLAUDE.md`, the commands in this file and the prerequisites in `docs/development.md`; a run command also sits in the `README.md` quickstart and `docs/development.md` |
+| A dependency, a tool version or a run command | The version once, in the root `pom.xml`, `docker-compose.yml` (Postgres, Kafka, Kafka-UI) or `.mvn/wrapper/maven-wrapper.properties` (Maven); the Java release also as `java-version` in `.github/workflows/ci.yml`; a Postgres or Kafka image tag also in each service's test `ContainerImages`, which `ContainerImagesTest` checks against `docker-compose.yml`; the versions quoted in the `README.md` badges and tech stack, the first paragraph of `CLAUDE.md`, the commands in this file and the prerequisites in `docs/development.md`; a run command also sits in the `README.md` quickstart and `docs/development.md` |
 | The module list | The modules and dependency management in the root `pom.xml`; the module count and list in `CLAUDE.md`, `README.md`, `ARCHITECTURE.md`, ADR 0002 and the command comments in this file; a new service also needs its package in `release-please-config.json` and a `<version>` of its own in its pom, and a new library needs a managed entry at `flow-wallet-libraries.version` |
 | The reactor's version | The root `pom.xml`'s `<version>` and its `flow-wallet-libraries.version` property together, and each module's `<parent>` version (ADR 0040) |
+| The CI workflow | The CI paragraph in `docs/development.md`, the CI line under [Build and test](#build-and-test), the CI row of the `README.md` tech stack and the `.github/workflows/` row of the table above when what it runs changes; `.claude/rules/github-workflows.md`; before the job `build` is renamed, the required check in the `main` ruleset, which only the repository owner can change (ADR 0041) |
 
 ## Code conventions
 
@@ -123,7 +128,7 @@ supersedes it, and only a factual correction is edited in place (see [ADRs](#adr
 - Rules that depend on the kind of file are in `.claude/rules/`: `web.md` for controllers, request and response DTOs and
   their tests, `persistence.md` for migrations and configuration, `integrations.md` for the Maven build, Kafka,
   MapStruct, Stripe and the shape of fake keys in tests, `integration-tests.md` for the `*IT` classes and their support
-  code. Read the one for the file you change.
+  code, `github-workflows.md` for the workflows under `.github/`. Read the one for the file you change.
 
 ## Tests
 
@@ -161,6 +166,21 @@ supersedes it, and only a factual correction is edited in place (see [ADRs](#adr
 - One logical change per commit. Every commit that touches code builds and passes `./mvnw clean install` on its
   own; a commit that changes only Markdown skips the build.
 
+## Pull requests
+
+Every change reaches `main` through a pull request whose `build` check passes, and nothing is pushed to `main` directly
+([ADR 0041](docs/adr/0041-changes-reach-main-through-pull-requests-built-by-ci.md)). A branch lives for hours or days,
+not weeks, so a larger piece of work goes in as several pull requests.
+
+- A pull request that makes one change is squash-merged. Its title becomes the subject of the commit on `main` and its
+  description the body, so the title follows the commit rules above, type and scope included, the description explains
+  why, and a footer such as `BREAKING CHANGE:` or `Release-As:` goes at the end of the description.
+- A pull request made of several logical changes, each a commit that follows the rules above, is rebase-merged, so
+  every commit reaches `main` and the changelog as it is.
+- `main` takes no merge commits.
+- CI never runs on the release PR: release-please opens it with `GITHUB_TOKEN`, and it changes only versions and
+  changelogs. ADR 0041 records what that means for the required check.
+
 ## Releases
 
 Each service is versioned and released on its own by release-please
@@ -175,14 +195,15 @@ sections are in `release-please-config.json`; `.github/workflows/release-please.
   commit of a type that releases nothing opens no release PR on its own.
 - The reactor and the libraries (`contract`, `platform`, `outbox`) stay at `1.0.0-SNAPSHOT` and are never released. A
   commit that changes only a library, the root `pom.xml`, `docs/` or `docker-compose.yml` releases nothing. When a
-  library change has to ship as a release, push an empty commit such as `fix(deps): take the outbox fix` to `main`;
-  it releases a patch of every service.
+  library change has to ship as a release, bring an empty commit such as `fix(deps): take the outbox fix` to `main`
+  through a squash-merged pull request (a rebase merge drops an empty commit); it releases a patch of every service.
 - A service's pom shows its last released version between releases, never a snapshot, so nothing may tag an image or
   an artifact from `${project.version}`; the release tag names the version.
 
 ## Definition of done
 
 - `./mvnw clean install` passes, and the test count in `docs/development.md` matches the reports.
+- The `build` check passes on the pull request.
 - Every row of the change map that applies is done in the same commit.
 - New behaviour is pinned by a test whose name and comment follow the rules above.
 - `git grep` for the changed identifier and the old wording finds no stale copy, except in an accepted ADR whose

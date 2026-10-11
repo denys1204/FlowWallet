@@ -281,6 +281,12 @@ a running Docker daemon and fail without one; `-DskipITs` leaves them out. Testc
 path is on, so either turn that on or export `DOCKER_HOST=unix://$HOME/.orbstack/run/docker.sock` before the build. The
 first build downloads the Testcontainers jars and the Ryuk image.
 
+CI runs the same tests on every pull request to `main` and every push to `main` (`.github/workflows/ci.yml`,
+[ADR 0041](adr/0041-changes-reach-main-through-pull-requests-built-by-ci.md)): `./mvnw clean verify` on an
+`ubuntu-24.04` runner with Temurin 25, whose Docker daemon sits at the default socket. Its job `build` is the check a
+pull request needs before it can be merged. When a run fails, the surefire and failsafe reports stay on the run as the
+`test-reports` artifact for 14 days.
+
 The integration tests cover the wallet's payment event consumer over a real broker and database: a completed payment
 credits once, a redelivered event changes nothing and reaches no dead-letter topic, a redelivered failure is recorded
 once, a failed payment retried to success is credited once, a failure that arrives after the credit takes nothing back,
