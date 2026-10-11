@@ -250,13 +250,51 @@ class PayoutExecutorTest {
     @Test
     void attentionIsLoggedAtErrorAndCountedWithItsStepAndCause(CapturedOutput output) {
         // Guards a payout handed to an operator that no alert ever shows.
-        due(1, new StepOutcome.Attention(AttentionCause.MULTIPLE, false, "2 transfers in the group"));
+        due(1, new StepOutcome.Attention(
+                AttentionCause.MULTIPLE,
+                false,
+                "2 transfers in the group not reversed in full"
+        ));
 
         executor().run();
 
         assertThat(meters.counter("payment.payouts.needs.attention", "from", "accepted", "cause", "multiple").count())
                 .isEqualTo(1.0);
         assertThat(output.getAll()).contains("ERROR").contains("Payout " + REF + " needs attention from ACCEPTED");
+    }
+
+    @Test
+    void aSpentKeyIsLoggedAtWarnWithBothKeyGenerationsAndCounted(CapturedOutput output) {
+        // Guards a silent change of the transfer key, which an operator comparing Stripe's request log with the row
+        // could not trace.
+        DuePayout row = new DuePayout(1L, PayoutStatus.ACCEPTED);
+        ClaimedPayout claimed = new ClaimedPayout(
+                1L,
+                REF,
+                PayoutStatus.ACCEPTED,
+                new BigDecimal("75.0000"),
+                "PLN",
+                null,
+                null,
+                null,
+                2,
+                5,
+                true,
+                TOKEN,
+                null
+        );
+        when(store.findDue(any(), anyInt())).thenReturn(List.of(row));
+        when(store.claim(eq(row), any(), any())).thenReturn(Optional.of(claimed));
+        when(steps.work(claimed)).thenReturn(new StepOutcome.KeySpent("tr_7"));
+        when(store.record(eq(claimed), any(), any())).thenReturn(RecordResult.RECORDED);
+
+        executor().run();
+
+        assertThat(output.getAll())
+                .contains("WARN")
+                .contains("Payout " + REF + " transfer key generation 2 answers with transfer tr_7, reversed in full; "
+                        + "the next try uses generation 3");
+        assertThat(counted("transfer", "key_spent")).isEqualTo(1.0);
     }
 
     @Test

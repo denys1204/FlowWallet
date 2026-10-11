@@ -16,12 +16,13 @@ public enum AttentionCause {
     DEFECT,
 
     /**
-     * Stripe holds an object for the reference whose terms or destination are not the payout's.
+     * Stripe holds an object for the reference whose terms or destination are not the payout's, or a transfer reversed
+     * in part.
      */
     MISMATCH,
 
     /**
-     * Stripe holds more than one transfer, or more than one live payout, for the reference.
+     * Stripe holds more than one transfer not reversed in full, or more than one live payout, for the reference.
      */
     MULTIPLE,
 

@@ -89,6 +89,14 @@ public sealed interface StepOutcome {
     }
 
     /**
+     * Stripe answered the transfer key with its own transfer, which the same try's listing shows reversed in full: the
+     * key can make nothing more. The step tries again at once under the next key generation, with the try counted.
+     * See docs/adr/0045-a-transfer-reversed-in-full-is-ignored-and-a-spent-key-moves-on.md.
+     */
+    record KeySpent(String stripeTransferId) implements StepOutcome {
+    }
+
+    /**
      * An operator takes over in {@code NEEDS_ATTENTION}.
      *
      * @param raiseKeyGen whether the step moves to a fresh key, so the first try after a requeue reaches Stripe
@@ -126,6 +134,7 @@ public sealed interface StepOutcome {
             case Reversed _ -> "reversed";
             case RetryUnknown _ -> "retry_unknown";
             case RetryRefused _ -> "retry_refused";
+            case KeySpent _ -> "key_spent";
             case Attention _ -> "attention";
             case Released _ -> "released";
             case Postponed _ -> "postponed";

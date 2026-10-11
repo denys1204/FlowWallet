@@ -556,7 +556,7 @@ payout looks like this in the list, in the single read and in an action's answer
   "status": "NEEDS_ATTENTION",
   "attentionFrom": "ACCEPTED",
   "cause": "MULTIPLE",
-  "detail": "2 transfers in the group",
+  "detail": "2 transfers in the group not reversed in full: tr_3QBdtnFdkL7xwQ2r0SmFqbXz, tr_3QBdtnFdkL7xwQ2r1Y7uLmNd",
   "since": "2026-10-10T09:00:30.123456Z",
   "amount": "75.00",
   "currency": "PLN",
@@ -581,8 +581,10 @@ payout looks like this in the list, in the single read and in an action's answer
   handed over before changeset 010 stored them. `cause` is one of:
   - `UNKNOWN_LIMIT`: the step's outcome stayed unknown for `PAYMENT_PAYOUT_EXECUTOR_UNKNOWN_ATTEMPTS` tries.
   - `DEFECT`: an idempotency key was sent with other parameters, which only a defect causes.
-  - `MISMATCH`: Stripe holds an object for the reference whose terms or destination are not the payout's.
-  - `MULTIPLE`: Stripe holds more than one transfer, or more than one live payout, for the reference.
+  - `MISMATCH`: Stripe holds an object for the reference whose terms or destination are not the payout's, or a transfer
+    reversed in part.
+  - `MULTIPLE`: Stripe holds more than one transfer not reversed in full, or more than one live payout, for the
+    reference.
   - `LIVE_PAYOUT`: a reversal was due while a payout for the reference may still reach the bank.
   - `REVERSAL_REFUSED`: Stripe kept refusing the reversal for `PAYMENT_PAYOUT_EXECUTOR_REVERSAL_RETRY_ATTEMPTS` tries.
 - `attentionFrom` is the step a `requeue` returns the payout to. `nextAttemptAt` is set only in an executor step
@@ -596,7 +598,7 @@ The three actions:
 
 | Action | Allowed from | Result |
 |--------|--------------|--------|
-| `requeue` | any waiting payout | Back to `attentionFrom`, with its key generation kept. Stripe is not asked and no event is written. The executor takes the step up at its next run and looks for what Stripe holds before it creates anything |
+| `requeue` | any waiting payout | Back to `attentionFrom`, with its key generation kept. Stripe is not asked and no event is written. The executor takes the step up at its next run and looks for what Stripe holds before it creates anything; from `ACCEPTED` it ignores transfers reversed in full |
 | `return-without-reversal` | `ACCEPTED`, `REVERSING` | `RETURNED` with the reason `OPERATOR_RETURNED` and a `PayoutReturnedEvent`, which credits the wallet |
 | `reverse` | `TRANSFERRED` | `REVERSING` with the reason `PAYOUT_FAILED` and a `PayoutFailedEvent`. The executor then reverses the transfer and ends the payout in `RETURNED`, which credits the wallet |
 
@@ -647,7 +649,7 @@ by the server, never quotes the request and names only Stripe ids and statuses. 
 | `422` | `reverse` | the payout waits from `ACCEPTED` | Nothing was transferred; use `requeue` or `return-without-reversal` |
 | `422` | `reverse` | the payout waits from `REVERSING` | It is already being reversed; `requeue` retries the reversal |
 | `503` | return, `reverse` | the quiet period has not passed | Gives `since` and the time to retry after |
-| `422` | return from `ACCEPTED` | a transfer in the group is not reversed in full | Names it; `requeue` adopts it if it is the only one and has the payout's terms, otherwise reverse it in the Dashboard, then return the payout |
+| `422` | return from `ACCEPTED` | a transfer in the group is not reversed in full | Names it; `requeue` adopts it if it is the only one not reversed in full and has the payout's terms, otherwise reverse it in full in the Dashboard, then requeue to pay the payout out, or return it again |
 | `422` | `reverse` | exactly one payout of the transfer may reach the bank, and it has the payout's amount and currency | Names it and its status; `requeue`, and the payout step adopts it |
 | `422` | return from `REVERSING`, `reverse` | any other payout of the transfer that may reach the bank | Names it and its status; `requeue` once Stripe reports it failed or canceled, and a paid one needs correction by hand |
 | `422` | return from `REVERSING` | the transfer is reversed in full | Names it; `requeue`, and the reversal step records it with the payout's own reason |

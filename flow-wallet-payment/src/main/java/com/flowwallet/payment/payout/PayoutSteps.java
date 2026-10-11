@@ -17,22 +17,27 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Works one claimed step at Stripe and decides its outcome; it writes nothing and holds no transaction.
  * <p>
  * A step that an earlier claim marked attempted first looks for what Stripe may already hold, because a crash or a
  * timeout records no outcome: a transfer by its group, a payout among the connected account's payouts since an hour
- * before the transfer, a reversal by the transfer's reversed amount. A found object is adopted only when its terms
- * are the payout's. An unknown outcome keeps the key generation and backs off; only a definite refusal moves the
- * key on. Every move out of {@code TRANSFERRED} into {@code REVERSING} follows a listing in the same try that found
- * no payout that may still reach the bank, and {@code REVERSING} lists again before it reverses.
+ * before the transfer, a reversal by the transfer's reversed amount. A found object is adopted only when its terms are
+ * the payout's, and a transfer reversed in full is ignored. An unknown outcome keeps the key generation and backs off;
+ * only a definite refusal, or a transfer key that answers with a transfer the listing shows reversed in full, moves the
+ * key on. Every move out of {@code TRANSFERRED} into {@code REVERSING} follows a listing in the same try that found no
+ * payout that may still reach the bank, and {@code REVERSING} lists again before it reverses.
  * <p>
- * Rules ADR 0035 leaves implicit: more than one transfer, or more than one live payout, for a reference needs an
- * operator; a found object with other terms needs an operator; a failed or canceled payout found by the listing is
- * recorded and its transfer reversed; a payout refused for a reason that does not clear on its own reverses with
- * {@code PAYOUT_FAILED}. Before each call the step checks that its lease has room for it, and gives the claim up
- * otherwise. See docs/adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md.
+ * Rules ADR 0035 leaves implicit: more than one transfer not reversed in full, or more than one live payout, for a
+ * reference needs an operator; a found object with other terms needs an operator; a failed or canceled payout found by
+ * the listing is recorded and its transfer reversed; a payout refused for a reason that does not clear on its own
+ * reverses with {@code PAYOUT_FAILED}. Before each call the step checks that its lease has room for it, and gives the
+ * claim up otherwise.
+ * See docs/adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md and
+ * docs/adr/0045-a-transfer-reversed-in-full-is-ignored-and-a-spent-key-moves-on.md.
  */
 @Slf4j
 @Component
@@ -82,20 +87,30 @@ class PayoutSteps {
         if (!claim.earlierAttempt() && !claim.bankReady()) {
             return new StepOutcome.Returned(PayoutReason.BANK_ACCOUNT_NOT_SET, null);
         }
+        // The transfers of the group the listing shows reversed in full when none still holds money.
+        Set<String> reversed = Set.of();
         if (claim.earlierAttempt()) {
             if (!hasRoom(claim, 1)) {
                 return released();
             }
             List<ProviderTransfer> found = provider.findTransfers(claim.reference());
-            if (found.size() > 1) {
-                return attention(AttentionCause.MULTIPLE, found.size() + " transfers in the group");
+            List<ProviderTransfer> live = found.stream().filter(transfer -> !transfer.reversedInFull()).toList();
+            if (live.size() > 1) {
+                String ids = live.stream().map(ProviderTransfer::id).collect(Collectors.joining(", "));
+                return attention(
+                        AttentionCause.MULTIPLE,
+                        live.size() + " transfers in the group not reversed in full: " + ids
+                );
             }
-            if (found.size() == 1) {
-                ProviderTransfer transfer = found.getFirst();
-                return matches(claim, transfer)
-                        ? new StepOutcome.Transferred(transfer.destinationAccountId(), transfer.id(), true)
-                        : attention(AttentionCause.MISMATCH, "transfer " + transfer.id() + " has other terms");
+            if (live.size() == 1) {
+                ProviderTransfer transfer = live.getFirst();
+                if (matches(claim, transfer)) {
+                    return new StepOutcome.Transferred(transfer.destinationAccountId(), transfer.id(), true);
+                }
+                String why = transfer.amountReversed().signum() > 0 ? " is reversed in part" : " has other terms";
+                return attention(AttentionCause.MISMATCH, "transfer " + transfer.id() + why);
             }
+            reversed = found.stream().map(ProviderTransfer::id).collect(Collectors.toUnmodifiableSet());
         }
         // Only a later try gets here without an account, since READY needs both Stripe ids: nothing was sent.
         if (claim.bank() == null || claim.bank().stripeAccountId() == null) {
@@ -105,7 +120,9 @@ class PayoutSteps {
             return released();
         }
         // A later try creates under the same key even when the bank account is no longer ready: only the key settles
-        // a request Stripe may still be running, and the payout step reverses the transfer.
+        // a request Stripe may still be running, and the payout step reverses the transfer. An answer with a transfer
+        // the listing shows reversed in full is the key's replay of its own transfer, which moves the step to the next
+        // key generation. See docs/adr/0045-a-transfer-reversed-in-full-is-ignored-and-a-spent-key-moves-on.md.
         return switch (provider.createTransfer(
                 claim.reference(),
                 claim.bank().stripeAccountId(),
@@ -114,7 +131,9 @@ class PayoutSteps {
                 claim.keyGen()
         )) {
             case PayoutCallResult.Done<ProviderTransfer>(ProviderTransfer transfer) ->
-                    new StepOutcome.Transferred(transfer.destinationAccountId(), transfer.id(), false);
+                    reversed.contains(transfer.id())
+                            ? keySpent(claim, transfer)
+                            : new StepOutcome.Transferred(transfer.destinationAccountId(), transfer.id(), false);
             case PayoutCallResult.Refused<ProviderTransfer>(PayoutRefusal refusal, String code) ->
                     refusal == PayoutRefusal.INSUFFICIENT_FUNDS
                             ? new StepOutcome.Returned(PayoutReason.PLATFORM_FUNDS_SHORT, code)
@@ -292,6 +311,17 @@ class PayoutSteps {
 
     private PayoutProperties.Executor executor() {
         return properties.getExecutor();
+    }
+
+    /**
+     * Stripe answers the transfer key with its transfer as it was created, and the listing shows that transfer reversed
+     * in full, so the key can make nothing more and nothing of the payout is out. A bank account no longer ready
+     * returns the payout instead of trying under the next key.
+     */
+    private static StepOutcome keySpent(ClaimedPayout claim, ProviderTransfer replayed) {
+        return claim.bankReady()
+                ? new StepOutcome.KeySpent(replayed.id())
+                : new StepOutcome.Returned(PayoutReason.BANK_ACCOUNT_NOT_SET, null);
     }
 
     private static boolean matches(ClaimedPayout claim, ProviderTransfer transfer) {

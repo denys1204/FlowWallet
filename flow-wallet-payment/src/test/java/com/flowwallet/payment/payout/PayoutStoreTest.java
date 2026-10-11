@@ -456,6 +456,27 @@ class PayoutStoreTest {
     }
 
     @Test
+    void aSpentKeyRaisesTheGenerationCountsTheTryAndLeavesTheRowDueWithNoEvent() {
+        // Guards a retry under the spent key, which Stripe answers with the same reversed transfer for a day, a next
+        // try that skips the group lookup, and an event the wallet would act on although nothing moved.
+        Payout payout = recorded(
+                row(PayoutStatus.ACCEPTED)
+                        .transferAttemptedAt(CLAIMED_AT.minusSeconds(60))
+                        .nextAttemptAt(NOW.plusSeconds(600))
+                        .build(),
+                new StepOutcome.KeySpent("tr_1")
+        );
+
+        assertThat(payout.getStatus()).isEqualTo(PayoutStatus.ACCEPTED);
+        assertThat(payout.getKeyGen()).isEqualTo(3);
+        assertThat(payout.getAttempts()).isEqualTo(4);
+        assertThat(payout.getNextAttemptAt()).isEqualTo(NOW);
+        assertThat(payout.getClaimedUntil()).isNull();
+        assertThat(payout.getTransferAttemptedAt()).isEqualTo(CLAIMED_AT.minusSeconds(60));
+        verifyNoInteractions(outbox);
+    }
+
+    @Test
     void attentionAfterARefusedReversalSavesTheRaisedGeneration() {
         // Guards a requeue whose first try gets the stored refusal back.
         Payout payout = recorded(

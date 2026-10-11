@@ -196,6 +196,14 @@ public class PayoutExecutor {
                     claim.keyGen() + 1,
                     retry.nextAttemptAt()
             );
+            case StepOutcome.KeySpent spent -> log.warn(
+                    "Payout {} transfer key generation {} answers with transfer {}, reversed in full; the next try "
+                            + "uses generation {}",
+                    reference,
+                    claim.keyGen(),
+                    spent.stripeTransferId(),
+                    claim.keyGen() + 1
+            );
             case StepOutcome.Attention attention -> {
                 log.error(
                         "Payout {} needs attention from {} ({}): {}",

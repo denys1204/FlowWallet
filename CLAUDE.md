@@ -173,7 +173,10 @@ Each invariant here is stated once and links the ADR that holds its reasoning.
   any Stripe call, holds no transaction during its calls, records an outcome only while `claimed_until` still holds its
   token, looks for what Stripe holds before it creates on any later try, and never turns an unknown outcome into a
   return or reverses while a payout may still reach the bank
-  ([ADR 0035](docs/adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md)).
+  ([ADR 0035](docs/adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md)). Its transfer step ignores a transfer
+  reversed in full, and moves to the next key generation only when Stripe answers its current key with a transfer the
+  same try's listing shows reversed in full
+  ([ADR 0045](docs/adr/0045-a-transfer-reversed-in-full-is-ignored-and-a-spent-key-moves-on.md)).
 - The Connect webhook and `PayoutReconciler` settle a payout only through `PayoutStore.settle`, from the payout
   `Payout.retrieve` returns, never from the event's type or data, and change nothing when its account, amount, currency,
   payout id or reference differ from the row. The reconciler claims a row with a conditional update of

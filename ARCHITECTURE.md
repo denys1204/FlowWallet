@@ -539,7 +539,10 @@ a known list as a definite refusal. Any other failure leaves the outcome unknown
 a return. A step that cannot be finished safely, such as an outcome that stays unknown, an object at Stripe that does
 not match the payout, a reversal Stripe keeps refusing or a reversal due while a payout may still reach the bank, moves
 the payout to `NEEDS_ATTENTION` for an operator
-([ADR 0035](docs/adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md)).
+([ADR 0035](docs/adr/0035-payouts-run-as-a-step-machine-on-stripe-connect.md)). The transfer step ignores a transfer
+reversed in full by hand. When its key answers with such a transfer, which is Stripe's replay of the key's own, it
+moves to the next key generation and transfers again, unless the bank account is no longer ready
+([ADR 0045](docs/adr/0045-a-transfer-reversed-in-full-is-ignored-and-a-spent-key-moves-on.md)).
 
 A created payout settles at Stripe, and Payment Service learns of it from the Connect webhook,
 `POST /api/payments/webhooks/stripe/connect`, verified with its own secret

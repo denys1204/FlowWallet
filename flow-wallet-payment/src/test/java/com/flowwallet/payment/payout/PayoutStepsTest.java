@@ -24,6 +24,7 @@ import static org.assertj.core.api.Assertions.within;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -74,7 +75,11 @@ class PayoutStepsTest {
     }
 
     private static ProviderTransfer transfer(String destination, String amount, String reversed) {
-        return new ProviderTransfer("tr_1", destination, new BigDecimal(amount), new BigDecimal(reversed), "PLN");
+        return transfer("tr_1", destination, amount, reversed);
+    }
+
+    private static ProviderTransfer transfer(String id, String destination, String amount, String reversed) {
+        return new ProviderTransfer(id, destination, new BigDecimal(amount), new BigDecimal(reversed), "PLN");
     }
 
     private static ProviderPayout payout(String id, ProviderPayoutStatus status, String amount) {
@@ -171,17 +176,185 @@ class PayoutStepsTest {
 
     @ParameterizedTest(name = "to {0}, {1}, reversed {2}")
     @CsvSource({
-            "acct_other, 75.00, 0",
-            "acct_1,     70.00, 0",
-            "acct_1,     75.00, 5.00",
+            "acct_other, 75.00, 0,    has other terms",
+            "acct_1,     70.00, 0,    has other terms",
+            "acct_1,     75.00, 5.00, is reversed in part",
     })
-    void aFoundTransferWithOtherTermsNeedsAttention(String destination, String amount, String reversed) {
-        // Guards adopting a transfer that went elsewhere, moved another sum or was partly reversed by hand.
+    void aFoundTransferWithOtherTermsNeedsAttention(String destination, String amount, String reversed, String why) {
+        // Guards adopting a transfer that went elsewhere, moved another sum or was partly reversed by hand, and a
+        // detail that sends the operator after the wrong fix.
         when(provider.findTransfers(REF)).thenReturn(List.of(transfer(destination, amount, reversed)));
 
         assertThat(steps.work(claim(PayoutStatus.ACCEPTED, true, bank(true), 1)))
-                .isInstanceOfSatisfying(StepOutcome.Attention.class, attention ->
-                        assertThat(attention.cause()).isEqualTo(AttentionCause.MISMATCH));
+                .isEqualTo(new StepOutcome.Attention(AttentionCause.MISMATCH, false, "transfer tr_1 " + why));
+    }
+
+    @Test
+    void aLaterAttemptAdoptsTheOneLiveTransferBesideTransfersReversedInFull() {
+        // Guards a requeue that meets MULTIPLE again after the stray transfer was reversed by hand, and a second
+        // transfer created beside the one that still holds the money.
+        // Stripe lists the newest first, so the stray made after the executor's own transfer comes first.
+        when(provider.findTransfers(REF)).thenReturn(List.of(
+                transfer("tr_2", "acct_1", "75.00", "75.00"),
+                transfer("tr_1", "acct_1", "75.00", "0")
+        ));
+
+        assertThat(steps.work(claim(PayoutStatus.ACCEPTED, true, bank(true), 1)))
+                .isEqualTo(new StepOutcome.Transferred("acct_1", "tr_1", true));
+        verify(provider, never()).createTransfer(anyString(), anyString(), any(), anyString(), anyInt());
+    }
+
+    @Test
+    void transfersReversedInFullDoNotCountTowardsMultiple() {
+        // Guards counting a reversed transfer as money out, and adopting one of two transfers that both hold money.
+        when(provider.findTransfers(REF)).thenReturn(List.of(
+                transfer("tr_1", "acct_1", "75.00", "0"),
+                transfer("tr_2", "acct_1", "75.00", "0"),
+                transfer("tr_3", "acct_1", "75.00", "75.00")
+        ));
+
+        assertThat(steps.work(claim(PayoutStatus.ACCEPTED, true, bank(true), 1)))
+                .isEqualTo(new StepOutcome.Attention(
+                        AttentionCause.MULTIPLE,
+                        false,
+                        "2 transfers in the group not reversed in full: tr_1, tr_2"
+                ));
+        verify(provider, never()).createTransfer(anyString(), anyString(), any(), anyString(), anyInt());
+    }
+
+    @ParameterizedTest(name = "beside {0}")
+    @CsvSource({
+            "nothing,              MISMATCH",
+            "a full reversal,      MISMATCH",
+            "a live transfer,      MULTIPLE",
+    })
+    void aTransferReversedInPartStillHoldsMoneyAndNeedsAttention(String beside, AttentionCause cause) {
+        // Guards a part reversal taken for history: the rest of it sits in the connected account, and a new transfer
+        // beside it would send the money twice.
+        List<ProviderTransfer> group = switch (beside) {
+            case "nothing" -> List.of(transfer("tr_1", "acct_1", "75.00", "5.00"));
+            case "a full reversal" -> List.of(
+                    transfer("tr_2", "acct_1", "75.00", "75.00"),
+                    transfer("tr_1", "acct_1", "75.00", "5.00")
+            );
+            default -> List.of(transfer("tr_1", "acct_1", "75.00", "5.00"), transfer("tr_2", "acct_1", "75.00", "0"));
+        };
+        when(provider.findTransfers(REF)).thenReturn(group);
+
+        assertThat(steps.work(claim(PayoutStatus.ACCEPTED, true, bank(true), 1)))
+                .isInstanceOfSatisfying(StepOutcome.Attention.class, attention -> {
+                    assertThat(attention.cause()).isEqualTo(cause);
+                    if (cause == AttentionCause.MISMATCH) {
+                        assertThat(attention.detail()).isEqualTo("transfer tr_1 is reversed in part");
+                    }
+                });
+        verify(provider, never()).createTransfer(anyString(), anyString(), any(), anyString(), anyInt());
+    }
+
+    @Test
+    void aTransferWithOtherTermsReversedInFullIsIgnored() {
+        // Guards a stray transfer to another account, reversed in full by hand, blocking the payout for good.
+        when(provider.findTransfers(REF)).thenReturn(List.of(transfer("tr_1", "acct_other", "75.00", "75.00")));
+        when(provider.createTransfer(REF, "acct_1", AMOUNT, "PLN", KEY_GEN))
+                .thenReturn(new PayoutCallResult.Done<>(transfer("tr_9", "acct_1", "75.00", "0")));
+
+        assertThat(steps.work(claim(PayoutStatus.ACCEPTED, true, bank(true), 1)))
+                .isEqualTo(new StepOutcome.Transferred("acct_1", "tr_9", false));
+    }
+
+    @Test
+    void aLaterAttemptThatFindsOnlyTransfersReversedInFullCreatesUnderItsOwnKeyGeneration() {
+        // Guards a fresh key taken on the listing's word: a request still running under the old key could then land a
+        // second transfer beside the new key's.
+        when(provider.findTransfers(REF)).thenReturn(List.of(transfer("tr_1", "acct_1", "75.00", "75.00")));
+        when(provider.createTransfer(REF, "acct_1", AMOUNT, "PLN", KEY_GEN))
+                .thenReturn(new PayoutCallResult.Done<>(transfer("tr_9", "acct_1", "75.00", "0")));
+
+        assertThat(steps.work(claim(PayoutStatus.ACCEPTED, true, bank(true), 1)))
+                .isEqualTo(new StepOutcome.Transferred("acct_1", "tr_9", false));
+        verify(provider, never()).createTransfer(anyString(), anyString(), any(), anyString(), eq(KEY_GEN + 1));
+    }
+
+    @Test
+    void aCreateAnsweredWithATransferTheListingShowsReversedInFullSpendsTheKey() {
+        // Guards adopting Stripe's replay of a reversed transfer: the key answers with the transfer as it was created,
+        // nothing reversed, so the payout would go on with no money in the connected account.
+        when(provider.findTransfers(REF)).thenReturn(List.of(transfer("tr_1", "acct_1", "75.00", "75.00")));
+        when(provider.createTransfer(REF, "acct_1", AMOUNT, "PLN", KEY_GEN))
+                .thenReturn(new PayoutCallResult.Done<>(transfer("tr_1", "acct_1", "75.00", "0")));
+
+        assertThat(steps.work(claim(PayoutStatus.ACCEPTED, true, bank(true), 1)))
+                .isEqualTo(new StepOutcome.KeySpent("tr_1"));
+        verify(provider).createTransfer(anyString(), anyString(), any(), anyString(), anyInt());
+    }
+
+    @Test
+    void aSpentKeyReturnsThePayoutWhenTheBankAccountIsNoLongerReady() {
+        // Guards a fresh transfer to an account nobody can be paid out from, after the key showed nothing is out.
+        when(provider.findTransfers(REF)).thenReturn(List.of(transfer("tr_1", "acct_1", "75.00", "75.00")));
+        when(provider.createTransfer(REF, "acct_1", AMOUNT, "PLN", KEY_GEN))
+                .thenReturn(new PayoutCallResult.Done<>(transfer("tr_1", "acct_1", "75.00", "0")));
+
+        assertThat(steps.work(claim(PayoutStatus.ACCEPTED, true, bank(false), 1)))
+                .isEqualTo(new StepOutcome.Returned(PayoutReason.BANK_ACCOUNT_NOT_SET, null));
+        verify(provider).createTransfer(REF, "acct_1", AMOUNT, "PLN", KEY_GEN);
+    }
+
+    @Test
+    void aBankAccountNoLongerReadyStillLetsTheOldKeyAnswerBeforeAReturn() {
+        // Guards a return taken on the listing alone: a request still running under the old key could land its
+        // transfer after the wallet is credited, so the key answers first, and a fresh transfer goes on to be reversed.
+        when(provider.findTransfers(REF)).thenReturn(List.of(transfer("tr_1", "acct_1", "75.00", "75.00")));
+        when(provider.createTransfer(REF, "acct_1", AMOUNT, "PLN", KEY_GEN))
+                .thenReturn(new PayoutCallResult.Done<>(transfer("tr_9", "acct_1", "75.00", "0")));
+
+        assertThat(steps.work(claim(PayoutStatus.ACCEPTED, true, bank(false), 1)))
+                .isEqualTo(new StepOutcome.Transferred("acct_1", "tr_9", false));
+    }
+
+    @Test
+    void aTransferIsJudgedReversedInFullAgainstItsOwnAmountNotThePayouts() {
+        // Guards a transfer for another sum, reversed in full, read as still holding money because its reversals fall
+        // short of the payout's amount.
+        when(provider.findTransfers(REF)).thenReturn(List.of(transfer("tr_1", "acct_1", "70.00", "70.00")));
+        when(provider.createTransfer(REF, "acct_1", AMOUNT, "PLN", KEY_GEN))
+                .thenReturn(new PayoutCallResult.Done<>(transfer("tr_9", "acct_1", "75.00", "0")));
+
+        assertThat(steps.work(claim(PayoutStatus.ACCEPTED, true, bank(true), 1)))
+                .isEqualTo(new StepOutcome.Transferred("acct_1", "tr_9", false));
+    }
+
+    @Test
+    void anUnknownCreateBesideTransfersReversedInFullKeepsTheKeyGeneration() {
+        // Guards an unknown outcome taken as proof that the key is spent: the request may still be running at Stripe.
+        // StripeConnectPayoutsTest pins that a 409 for a key in use is such an unknown outcome.
+        when(provider.findTransfers(REF)).thenReturn(List.of(transfer("tr_1", "acct_1", "75.00", "75.00")));
+        when(provider.createTransfer(REF, "acct_1", AMOUNT, "PLN", KEY_GEN))
+                .thenReturn(new PayoutCallResult.Unknown<>("read timed out"));
+
+        assertThat(steps.work(claim(PayoutStatus.ACCEPTED, true, bank(true), 1)))
+                .isInstanceOf(StepOutcome.RetryUnknown.class);
+    }
+
+    @Test
+    void aRefusedCreateBesideTransfersReversedInFullReturnsThePayout() {
+        // Guards money held for a transfer Stripe refused once every earlier transfer is back.
+        when(provider.findTransfers(REF)).thenReturn(List.of(transfer("tr_1", "acct_1", "75.00", "75.00")));
+        when(provider.createTransfer(REF, "acct_1", AMOUNT, "PLN", KEY_GEN))
+                .thenReturn(new PayoutCallResult.Refused<>(PayoutRefusal.INSUFFICIENT_FUNDS, "balance_insufficient"));
+
+        assertThat(steps.work(claim(PayoutStatus.ACCEPTED, true, bank(true), 1)))
+                .isEqualTo(new StepOutcome.Returned(PayoutReason.PLATFORM_FUNDS_SHORT, "balance_insufficient"));
+    }
+
+    @Test
+    void aLaterAttemptWithoutAConnectedAccountReturnsWhenEveryTransferIsReversedInFull() {
+        // Guards a create with no destination once the group shows nothing still out.
+        when(provider.findTransfers(REF)).thenReturn(List.of(transfer("tr_1", "acct_1", "75.00", "75.00")));
+
+        assertThat(steps.work(claim(PayoutStatus.ACCEPTED, true, null, 1)))
+                .isEqualTo(new StepOutcome.Returned(PayoutReason.BANK_ACCOUNT_NOT_SET, null));
+        verify(provider, never()).createTransfer(anyString(), anyString(), any(), anyString(), anyInt());
     }
 
     @ParameterizedTest(name = "{0} -> {1}")

@@ -273,8 +273,8 @@ endpoint's webhooks.
 
 ## Testing
 
-There are 2130 tests, all green: 2053 unit tests (1388 in the payment service, 559 in the wallet service, 53 in the
-outbox module, 44 in platform and 9 in the gateway) and 77 integration tests (44 in the wallet service, 33 in the
+There are 2158 tests, all green: 2076 unit tests (1411 in the payment service, 559 in the wallet service, 53 in the
+outbox module, 44 in platform and 9 in the gateway) and 82 integration tests (44 in the wallet service, 38 in the
 payment service).
 
 `./mvnw test` runs the unit tests only. `./mvnw verify` and `./mvnw clean install` also run the integration tests
@@ -343,11 +343,14 @@ Stripe whose write then fails is adopted by the next try instead of made again. 
 one webhook at once settle the deposit once and are all acknowledged, a webhook racing the reconciler moves the payment
 once, and eight intent requests with one key reserve one row and answer either with the one intent or with `503` to
 retry (ADR 0024); two executors running at once make one transfer for a due payout. A transfer or a payout that Stripe
-made before its answer was lost is adopted by the next try instead of made again, `PayoutReconciler` settles a created
-payout whose webhook never came once it is old enough, and the CHECKs on `payouts` and `payout_accounts` refuse direct
-SQL writes under their own names. The payout tests empty `payouts` before each test, the one table the executor takes
-its due rows from. `StripeClient` is a spy that each test stubs; the signature check is real, and an unstubbed call
-fails against a closed local port.
+made before its answer was lost is adopted by the next try instead of made again. After an operator reverses a stray
+transfer in full and requeues, the step adopts the transfer left; when every transfer is reversed, the old key's replay
+moves it to the next key generation and one new transfer is made, a create of unknown outcome under the old key is
+adopted rather than made again under the next, and a bank account no longer ready returns the payout with its event.
+`PayoutReconciler` settles a created payout whose webhook never came once it is old enough, and the CHECKs on `payouts`
+and `payout_accounts` refuse direct SQL writes under their own names. The payout tests empty `payouts` before each test,
+the one table the executor takes its due rows from. `StripeClient` is a spy that each test stubs; the signature check is
+real, and an unstubbed call fails against a closed local port.
 
 Among the unit tests, the gateway's bind its own `application.yml`, so a YAML regression that drops the response or
 connect timeout, or binds the gateway beyond loopback, fails there rather than in a live request; they also check that
@@ -421,18 +424,22 @@ counted.
 For the payout executor they cover each step claimed through its own repository update, a first transfer or payout try
 that does not look up and a later one that looks for what Stripe holds before it creates (a transfer by its group, a
 payout among the account's payouts since an hour before the transfer), a reversal step that lists on every try, a found
-object adopted only when its terms and destination are the payout's, more than one found sent to an operator, a failed
-payout found recorded and reversed, a later transfer try creating under the same key even when the bank account is no
-longer ready, a move to `REVERSING` only after a listing found no payout that may reach the bank, a live payout stopping
-a reversal, definite refusals returning or reversing by their reason while funds, limit and reversal refusals wait under
-a fresh key, an unknown outcome or an unexpected exception backing off under the same key until its limit, an
-idempotency error sent to an operator, no Stripe call without room on the lease at any of the step's guards, an outcome
-recorded only under the claim's token (another claim or a transition first changes nothing and writes no event), each
-transition with its outbox event, a bank rejection resetting only the bank account the claim saw and none on a later
-try, whose refusal may be Stripe's stored answer, a run stopped by its budget, three failures in a row or an interrupt,
-an unsettled outcome seen while interrupted given up without counting a try but waiting the unknown backoff, the token
-at whole microseconds, the lease checked against three Stripe call budgets at startup, a claim that carries no user id,
-metrics, log lines naming the reference and Stripe's ids, and the executor's switch.
+object adopted only when its terms and destination are the payout's, more than one not reversed in full sent to an
+operator, a failed payout found recorded and reversed, a later transfer try creating under the same key even when the
+bank account is no longer ready, a move to `REVERSING` only after a listing found no payout that may reach the bank, a
+live payout stopping a reversal, definite refusals returning or reversing by their reason while funds, limit and
+reversal refusals wait under a fresh key, an unknown outcome or an unexpected exception backing off under the same key
+until its limit, an idempotency error sent to an operator, no Stripe call without room on the lease at any of the step's
+guards, an outcome recorded only under the claim's token (another claim or a transition first changes nothing and writes
+no event), each transition with its outbox event, a bank rejection resetting only the bank account the claim saw and
+none on a later try, whose refusal may be Stripe's stored answer, a run stopped by its budget, three failures in a row
+or an interrupt, an unsettled outcome seen while interrupted given up without counting a try but waiting the unknown
+backoff, the token at whole microseconds, the lease checked against three Stripe call budgets at startup, a claim that
+carries no user id, metrics, log lines naming the reference and Stripe's ids, and the executor's switch. The transfer
+step ignores a transfer reversed in full, adopts the one transfer left with the payout's terms, sends a part reversal or
+two transfers that still hold money to an operator, creates under its own key generation when only reversed transfers
+are left, and moves to the next generation only when that create is answered with a transfer the listing shows reversed
+in full.
 
 For the Connect webhook and the payout reconciler they cover each endpoint verifying with its own secret (a body signed
 with the platform secret refused by the Connect one, an unset, blank or placeholder Connect secret refusing every

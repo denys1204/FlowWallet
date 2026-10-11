@@ -43,8 +43,8 @@ public class PayoutActionRefusedException extends ApiException {
     static PayoutActionRefusedException transferInGroup(ProviderTransfer transfer) {
         return new PayoutActionRefusedException(
                 "Stripe holds transfer " + transfer.id() + " in the payout's group, not reversed in full. Requeue "
-                        + "adopts it if it is the only one and has the payout's terms; otherwise reverse it in the "
-                        + "Dashboard, then return the payout."
+                        + "adopts it if it is the only one not reversed in full and has the payout's terms; otherwise "
+                        + "reverse it in full in the Dashboard, then requeue to pay the payout out, or return it again."
         );
     }
 

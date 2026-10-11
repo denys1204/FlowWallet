@@ -28,6 +28,16 @@ class StepOutcomeTest {
     }
 
     @Test
+    void aSpentKeyHasItsOwnLabelAndIsNoFailure() {
+        // Guards a definite Stripe answer counted as a failure in a row, which stops a run, and a metric label that
+        // drifts from the one the runbook names.
+        StepOutcome spent = new StepOutcome.KeySpent("tr_1");
+
+        assertThat(spent.label()).isEqualTo("key_spent");
+        assertThat(spent.isFailure()).isFalse();
+    }
+
+    @Test
     void aPaidSettlementIsLabelledPaidAndIsNotAFailure() {
         // Guards a paid settlement counted under another label, or one that stops a run as if Stripe had not answered.
         StepOutcome paid = new StepOutcome.Paid();

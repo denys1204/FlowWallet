@@ -76,7 +76,7 @@ public interface PayoutProvider {
 
     /**
      * The transfers made for the reference, found by their group: an earlier attempt's transfer that was never
-     * recorded, or none.
+     * recorded, or none. Transfers reversed in full are listed too, and the caller judges them.
      */
     List<ProviderTransfer> findTransfers(String reference);
 

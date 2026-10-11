@@ -1,7 +1,10 @@
 # 0037. Operator actions decide from the row and Stripe as they are, and one sends a stuck transfer to its reversal
 
 - Status: Accepted, extends [0016](0016-error-model-and-status-codes.md) and
-  [0035](0035-payouts-run-as-a-step-machine-on-stripe-connect.md)
+  [0035](0035-payouts-run-as-a-step-machine-on-stripe-connect.md), extended by
+  [0045](0045-a-transfer-reversed-in-full-is-ignored-and-a-spent-key-moves-on.md), consequence on a requeue from
+  `ACCEPTED` on `MULTIPLE` or `MISMATCH` superseded by
+  [0045](0045-a-transfer-reversed-in-full-is-ignored-and-a-spent-key-moves-on.md)
 - Date: 2026-10-10
 
 ## Context
