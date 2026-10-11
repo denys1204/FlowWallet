@@ -5,7 +5,9 @@ import com.flowwallet.contract.event.WithdrawalRequestedEvent;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.dao.DataIntegrityViolationException;
 import tools.jackson.databind.ObjectMapper;
@@ -14,7 +16,9 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Optional;
+import java.util.stream.Stream;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -30,6 +34,9 @@ class WithdrawalCommandListenerTest {
     private static final String USER = "0b9e5c1a-7d2f-4a3b-8c4d-5e6f7a8b9c0d";
     private static final String OTHER_USER = "4c8d2e6f-1a3b-4c5d-9e7f-0a1b2c3d4e5f";
     private static final String REQUESTED = KafkaConstants.EVENT_TYPE_WITHDRAWAL_REQUESTED;
+    private static final String QUOTED_USER = "c7e4a1b2-5d3f-4e6a-8b9c-0d1e2f3a4b5c";
+    // Jackson quotes an unquoted token up to the first character that cannot be part of a Java identifier.
+    private static final String QUOTED_USER_PREFIX = "c7e4a1b2";
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final PayoutAcceptance acceptance = mock(PayoutAcceptance.class);
@@ -69,6 +76,27 @@ class WithdrawalCommandListenerTest {
                 .isInstanceOf(UnreadableWithdrawalCommandException.class);
 
         verifyNoInteractions(acceptance);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("commandsJacksonWouldQuote")
+    void anUnparseableCommandIsRefusedWithoutQuotingIt(String shape, String json) {
+        // Guards a user id in a log line (ADR 0027): Jackson's message quotes the input, and this exception's message
+        // and cause reach the retry listener's log lines and the dead letter's headers.
+        assertThatThrownBy(() -> listener.onWithdrawalCommand(record(REQUESTED, json)))
+                .isInstanceOf(UnreadableWithdrawalCommandException.class)
+                .hasNoCause()
+                .satisfies(refused -> assertThat(refused.getMessage())
+                        .contains("at line 1, column")
+                        .doesNotContain(QUOTED_USER_PREFIX));
+        verifyNoInteractions(acceptance);
+    }
+
+    static Stream<Arguments> commandsJacksonWouldQuote() {
+        return Stream.of(
+                Arguments.of("a user id where the amount goes", "{\"amount\":\"" + QUOTED_USER + "\"}"),
+                Arguments.of("an unquoted user id", "{\"userId\":" + QUOTED_USER + "}")
+        );
     }
 
     @Test
