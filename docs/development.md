@@ -12,7 +12,7 @@ payout or deposit is stuck. How to change the code, and what has to change with 
 ### Prerequisites
 
 - JDK 25 (for example Amazon Corretto 25).
-- Maven is optional: `./mvnw` downloads Maven 3.9.9 on first run.
+- Maven is optional: `./mvnw` downloads Maven 3.10.0 on first run.
 - Docker and Docker Compose. A full build runs the integration tests, which start Postgres and Kafka through
   Testcontainers and need a running Docker daemon (see [Testing](#testing)).
 - A Stripe account in test mode, plus the [Stripe CLI](https://docs.stripe.com/cli/install) to forward
