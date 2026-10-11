@@ -28,6 +28,22 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
             </plugin>
+            <!--
+              Publishes the golden wire samples under src/test/resources/wire as a test-jar. A producer's integration
+              test checks the record it sends against them and a consumer's test publishes them, so the two services
+              meet on one file without depending on each other.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>test-jar</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 

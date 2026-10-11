@@ -1,0 +1,11 @@
+{
+  "eventId": "9c4e1b7a-2f3d-4a6e-8b0c-5d7f9e1a3c5b",
+  "schemaVersion": 1,
+  "transactionReference": "0b6c1a9e-7d24-4f3b-8e5a-2c9d1f4e6a8b",
+  "providerTransactionId": "pi_wire_sample",
+  "amount": 10.0000,
+  "currency": "PLN",
+  "userId": "3f8e2a1c-5b7d-4c9e-a0f1-2d4b6c8e0a1f",
+  "reason": "Payment failed via webhook",
+  "failedAt": "2026-10-10T12:00:00Z"
+}

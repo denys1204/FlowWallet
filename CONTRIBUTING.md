@@ -13,14 +13,19 @@ the ADRs it links.
 ## Build and test
 
 ```bash
-./mvnw clean install                 # build all six modules and run every test
-./mvnw test                          # tests only (JUnit 6 + Mockito; no integration tests yet)
+./mvnw clean install                 # build all six modules and run every test, unit and integration (needs Docker)
+./mvnw clean install -DskipITs       # the same without the integration tests, for a machine without Docker
+./mvnw test                          # unit tests only (JUnit 6 + Mockito), no Docker
 ./mvnw install -DskipTests           # install modules so -pl builds can resolve siblings
 
 # one module / one class / one method (after an install, or add -am)
 ./mvnw -pl flow-wallet-payment test -Dtest=StripeRequestMapperTest
 ./mvnw -pl flow-wallet-service test -Dtest='DepositServiceTest#aMissingWalletIsRefusedBeforeAnythingIsCharged'
 ./mvnw -pl flow-wallet-service -am test -Dtest=DepositServiceTest -Dsurefire.failIfNoSpecifiedTests=false
+
+# one integration test class (Testcontainers starts Postgres and Kafka; see docs/development.md for Docker setup)
+./mvnw -pl flow-wallet-service verify -Dit.test=PaymentEventConsumerIT \
+  -Dtest=none -Dsurefire.failIfNoSpecifiedTests=false
 
 docker compose up -d                 # Postgres 17 (wallet_db + payment_db), Kafka, Kafka-UI on :8090
 ./mvnw -pl flow-wallet-gateway spring-boot:run    # :8080
@@ -31,6 +36,9 @@ stripe listen --forward-to localhost:8080/api/payments/webhooks/stripe \
 ```
 
 - Never run two Maven builds at once in one checkout. They share `target/` and clobber each other.
+- Integration tests (`*IT`) run in the `integration-test` phase through failsafe, against Postgres and Kafka started by
+  Testcontainers. Without a running Docker daemon they fail rather than skip; `-DskipITs` is the way to leave them out
+  ([ADR 0039](docs/adr/0039-integration-tests-run-per-service-on-testcontainers.md)).
 - All three services import the repository-root `.env` through `spring.config.import` (both `./` and `../`, because
   the working directory is the module under the Maven plugin). Exported environment variables override it. Values
   stay unquoted: Spring reads the file as `.properties`, so quotes become part of the value. Compose ports bind to
@@ -57,6 +65,7 @@ live in this file.
 | `docs/adr/` | One decision that spans files, with its context and rejected alternatives |
 | `CLAUDE.md` | A summary of the architecture, each invariant as a one-line rule with its ADR, framework traps |
 | `.claude/rules/*.md` | A convention or trap for one kind of file, loaded through its `paths:` glob |
+| `flow-wallet-contract/src/test/resources/wire/` | The golden wire samples: a JSON record for each event type the integration tests use, as its producer sends it |
 | Code comments | Only what a reader at that spot cannot get from the code and needs in order to change it safely |
 
 ## Change map
@@ -77,17 +86,16 @@ supersedes it, and only a factual correction is edited in place (see [ADRs](#adr
 | A configuration setting | The `@ConfigurationProperties` class, with `@Validated` checks that fail startup on nonsense, and its `*PropertiesTest` (an older setting without a properties class keeps its fallback in the `@Scheduled`, `@Retryable` or `@Value` placeholder, and a switch read by `@ConditionalOnProperty` keeps its default in `matchIfMissing` as well); the key in `application.yml` as `${ENV_VAR:default}`, with the same default as the Java code; `.env.example` with a comment; the table in `docs/development.md` when it is one of the main settings the table lists, and its paragraph on values that stop startup |
 | A default value or a timeout | Every text that quotes the value: YAML comments, `.env.example`, `docs/development.md`, `ARCHITECTURE.md` and the ADRs. The deposit's timeouts nest, and no test checks the order across modules: the Stripe call budget ends before the wallet's connect plus read timeouts for the Payment Service call, those end before the gateway's response timeout, and the database pool wait stays below both (ADRs 0024 and 0025). A withdrawal's preflight sits in the same nesting, and its three pool waits can outlast the gateway's response timeout (ADR 0033) |
 | The schema | A new Liquibase changeset with the next number in that service's `changes/` directory, because a changeset that has already run is never edited (Liquibase checksums it); the entity in the same commit (`ddl-auto: validate`); `docs/data-model.md`; constraint names quoted in `CLAUDE.md`, ADRs and Javadoc |
-| A Kafka event or the contract module | The record in the contract module's `event` package and its header value in `KafkaConstants`, following the evolution rules in the module's `package-info`; a case in its consumer (`PaymentEventListener` in Wallet Service, `WithdrawalCommandListener` in Payment Service), shipped before any producer sends the type (ADR 0009); the wire-format test for the field names (`PaymentEventWireFormatTest`, and `WithdrawalRequestedEventWireFormatTest` on both sides) and the consumer's test; `docs/events.md`; the contract lists in `ARCHITECTURE.md`, ADR 0002 and `CLAUDE.md` |
+| A Kafka event or the contract module | The record in the contract module's `event` package and its header value in `KafkaConstants`, following the evolution rules in the module's `package-info`; a case in its consumer (`PaymentEventListener` in Wallet Service, `WithdrawalCommandListener` in Payment Service), shipped before any producer sends the type (ADR 0009); the wire-format test for the field names (`PaymentEventWireFormatTest`, and `WithdrawalRequestedEventWireFormatTest` on both sides) and the consumer's test; the event's golden wire sample in `flow-wallet-contract/src/test/resources/wire` and the integration tests that publish or check it; `docs/events.md`; the contract lists in `ARCHITECTURE.md`, ADR 0002 and `CLAUDE.md` |
 | A call between two services | The request and response records copied by hand on both sides (ADR 0002) and the wire-format test on each side, as `PaymentIntentWireFormatTest` does in Payment Service and Wallet Service; the internal section of `docs/api.md`; the nested timeouts if a wait changes |
 | An ADR, added, extended or superseded | The next free number; its row in `docs/adr/README.md`; the status line and index row of every ADR it extends or supersedes; the one-line invariant in `CLAUDE.md` and the `.claude/rules` text when the ADR sets a rule; the `ARCHITECTURE.md` section and the code comments that point at the rule it holds |
 | A currency list, a copy of a Stripe table or a shared validation pattern | Both copies of the zero-decimal and whole-unit lists in `StripeCurrencyRules` and `AmountPrecision`, and the grid as described in `CLAUDE.md`, `docs/api.md` and `docs/business-rules.md`; `StripeChargeLimits` with its retrieval date, which is also quoted in `StripeCurrencyRules` and `docs/business-rules.md`; `StripePayoutMinimums` with its retrieval date; `TransferController.ANY_UUID` (also used by `DepositController` and `WithdrawalController`) and `CurrentUserIdResolver.RANDOM_UUID_REGEX` (also used by `TransferRequest`) |
 | The topology: a service, port, route, topic or database | The diagram in `README.md` and in `ARCHITECTURE.md`, which stay identical; the gateway routes described in `ARCHITECTURE.md`, `docs/api.md` and `CLAUDE.md`; the ports in the commands of this file, the `README.md` quickstart and `docs/development.md` |
 | A document, added, renamed or removed | The table in this file, the Documentation table in `README.md`, the list at the top of `ARCHITECTURE.md`, the introduction of `docs/development.md`, and every link to it |
-| The number of tests | The count and the per-module split in `docs/development.md`, taken from the test reports of a full build |
+| The number of tests | The counts and the per-module split in `docs/development.md`, unit and integration tests apart, taken from the surefire and failsafe reports of a full build |
 | A file or package that a `.claude/rules` file names | The `paths:` globs and the text of every `.claude/rules` file that names it |
-| A dependency, a tool version or a run command | The version once, in the root `pom.xml`, `docker-compose.yml` (Postgres, Kafka, Kafka-UI) or `.mvn/wrapper/maven-wrapper.properties` (Maven); the versions quoted in the `README.md` badges and tech stack, the first paragraph of `CLAUDE.md`, the commands in this file and the prerequisites in `docs/development.md`; a run command also sits in the `README.md` quickstart and `docs/development.md` |
+| A dependency, a tool version or a run command | The version once, in the root `pom.xml`, `docker-compose.yml` (Postgres, Kafka, Kafka-UI) or `.mvn/wrapper/maven-wrapper.properties` (Maven); a Postgres or Kafka image tag also in each service's test `ContainerImages`, which `ContainerImagesTest` checks against `docker-compose.yml`; the versions quoted in the `README.md` badges and tech stack, the first paragraph of `CLAUDE.md`, the commands in this file and the prerequisites in `docs/development.md`; a run command also sits in the `README.md` quickstart and `docs/development.md` |
 | The module list | The modules and dependency management in the root `pom.xml`; the module count and list in `CLAUDE.md`, `README.md`, `ARCHITECTURE.md`, ADR 0002 and the command comments in this file |
-| Integration tests arrive | The "no integration tests yet" notes in this file, `README.md` and `docs/development.md` |
 
 ## Code conventions
 
@@ -111,12 +119,15 @@ supersedes it, and only a factual correction is edited in place (see [ADRs](#adr
   stays on one line.
 - Rules that depend on the kind of file are in `.claude/rules/`: `web.md` for controllers, request and response DTOs and
   their tests, `persistence.md` for migrations and configuration, `integrations.md` for the Maven build, Kafka,
-  MapStruct, Stripe and the shape of fake keys in tests. Read the one for the file you change.
+  MapStruct, Stripe and the shape of fake keys in tests, `integration-tests.md` for the `*IT` classes and their support
+  code. Read the one for the file you change.
 
 ## Tests
 
 - A test name is a sentence describing the behaviour, and a comment says which failure the test guards against.
-- New behaviour is pinned by a test.
+- New behaviour is pinned by a test. Behaviour that rests on the database or the broker (a unique index deciding a
+  race, a lock, a CHECK, a commit that carries two writes, a consumer barrier) is pinned by an integration test as well,
+  following `.claude/rules/integration-tests.md`.
 
 ## ADRs
 

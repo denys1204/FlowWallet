@@ -24,7 +24,8 @@ isolation; and clean module boundaries.
 > the wallet credits the balance exactly once. A user can also send money to another user's wallet in the
 > same currency, in one local transaction inside Wallet Service, and withdraw to a bank account through Stripe
 > Connect: the wallet debits the balance, Payment Service pays out, and a payout that fails comes back as a credit.
-> Integration tests against real Postgres and Kafka are still to come. See
+> Integration tests run against real Postgres and Kafka in containers. They cover the wallet's payment event consumer
+> so far, and the rest of the roadmap's third stage is in progress. See
 > [Project status & roadmap](#project-status--roadmap).
 >
 > The project runs against Stripe test mode only and is not meant for production use.

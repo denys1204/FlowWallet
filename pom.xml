@@ -125,6 +125,23 @@
     <!-- Build: Plugin Management                                      -->
     <!-- ============================================================= -->
     <build>
+        <plugins>
+            <!--
+              Integration tests (*IT) run in the integration-test phase, so ./mvnw test stays a Docker-free unit run
+              and ./mvnw verify or install runs both. The working directory is target/ so that neither of the
+              services' optional .env imports finds the developer's real .env. See
+              docs/adr/0039-integration-tests-run-per-service-on-testcontainers.md.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <configuration>
+                    <workingDirectory>${project.build.directory}</workingDirectory>
+                    <redirectTestOutputToFile>true</redirectTestOutputToFile>
+                    <trimStackTrace>false</trimStackTrace>
+                </configuration>
+            </plugin>
+        </plugins>
         <pluginManagement>
             <plugins>
                 <!-- Maven Compiler with Lombok + MapStruct annotation processors -->

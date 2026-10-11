@@ -5,7 +5,7 @@ is an engineering showcase that runs against Stripe test mode only and never goe
 
 Rules for one kind of file live in `.claude/rules/` and load when a matching file is read: `web.md` (controllers,
 request and response DTOs), `persistence.md` (Liquibase and configuration), `integrations.md` (the Maven build, Kafka,
-MapStruct, Stripe).
+MapStruct, Stripe), `integration-tests.md` (the `*IT` classes, their support code and the golden wire samples).
 
 How to work in this repository is in `CONTRIBUTING.md`, imported below: the build and test commands, where each
 kind of text lives, the change map, the code conventions and the definition of done. Follow the change map on

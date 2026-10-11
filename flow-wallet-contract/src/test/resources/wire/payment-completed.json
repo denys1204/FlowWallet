@@ -1,0 +1,10 @@
+{
+  "eventId": "6a0f2c4e-3b1d-4e8f-9a2b-1c3d5e7f9a0b",
+  "schemaVersion": 1,
+  "transactionReference": "0b6c1a9e-7d24-4f3b-8e5a-2c9d1f4e6a8b",
+  "providerTransactionId": "pi_wire_sample",
+  "amount": 10.0000,
+  "currency": "PLN",
+  "userId": "3f8e2a1c-5b7d-4c9e-a0f1-2d4b6c8e0a1f",
+  "completedAt": "2026-10-10T12:00:00Z"
+}

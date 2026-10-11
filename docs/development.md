@@ -12,7 +12,8 @@ the code, and what has to change with it, is in [CONTRIBUTING.md](../CONTRIBUTIN
 
 - JDK 25 (for example Amazon Corretto 25).
 - Maven is optional: `./mvnw` downloads Maven 3.9.9 on first run.
-- Docker and Docker Compose.
+- Docker and Docker Compose. A full build runs the integration tests, which start Postgres and Kafka through
+  Testcontainers and need a running Docker daemon (see [Testing](#testing)).
 - A Stripe account in test mode, plus the [Stripe CLI](https://docs.stripe.com/cli/install) to forward
   webhooks locally.
 
@@ -263,11 +264,27 @@ endpoint's webhooks.
 
 ## Testing
 
-There are 2042 tests, all green: 1383 in the payment service, 553 in the wallet service, 53 in the outbox module, 44 in
-platform and 9 in the gateway. The gateway's tests bind its own `application.yml`, so a YAML regression that drops the
-response or connect timeout, or binds the gateway beyond loopback, fails there rather than in a live request; they also
-check that `BindAddressCheck` runs when the application is ready, warns for `0.0.0.0`, a LAN address and no address at
-all, and stays quiet for loopback. The rest go after the parts most likely to be wrong rather than the ones easiest to
+There are 2048 tests, all green: 2043 unit tests (1383 in the payment service, 554 in the wallet service, 53 in the
+outbox module, 44 in platform and 9 in the gateway) and 5 integration tests in the wallet service.
+
+`./mvnw test` runs the unit tests only. `./mvnw verify` and `./mvnw clean install` also run the integration tests
+(`*IT`), which failsafe starts from each module's `target/` directory against `postgres:17-alpine` and
+`apache/kafka:4.2.1` containers ([ADR 0039](adr/0039-integration-tests-run-per-service-on-testcontainers.md)). They need
+a running Docker daemon and fail without one; `-DskipITs` leaves them out. Testcontainers looks for the daemon at
+`/var/run/docker.sock`. OrbStack keeps its socket at `~/.orbstack/run/docker.sock` unless its setting to use the system
+path is on, so either turn that on or export `DOCKER_HOST=unix://$HOME/.orbstack/run/docker.sock` before the build. The
+first build downloads the Testcontainers jars and the Ryuk image.
+
+The integration tests cover the wallet's payment event consumer over a real broker and database: a completed payment
+credits once, a redelivered event changes nothing and reaches no dead-letter topic, a redelivered failure is recorded
+once, a failed payment retried to success is credited once, and a failure that arrives after the credit takes nothing
+back. They publish the contract's golden wire samples, and after every test
+`LedgerAudit` checks that each wallet's balance and entry numbers match its ledger.
+
+Among the unit tests, the gateway's bind its own `application.yml`, so a YAML regression that drops the response or
+connect timeout, or binds the gateway beyond loopback, fails there rather than in a live request; they also check that
+`BindAddressCheck` runs when the application is ready, warns for `0.0.0.0`, a LAN address and no address at all, and
+stays quiet for loopback. The rest go after the parts most likely to be wrong rather than the ones easiest to
 reach. That means the asymmetric webhook state machine (a later failure must not undo an earlier success, but a later
 success must override an earlier failure), the outbox's claim, retry and backoff boundaries, the outbox module's wiring
 (a service without an `OutboxTopic` bean fails to start, and the entity and repository join the service's JPA scan),
@@ -448,17 +465,18 @@ every response record fails on a numeric money field; a request amount is accept
 ./mvnw test
 ```
 
-All of these are unit tests with mocked collaborators, so they can't prove the real database barrier: the unique
-constraints on `processed_events.event_id` and `balance_history (transaction_reference, type)`, the classification by
-read-back, and the row lock. Those have been exercised by hand against real Postgres and Kafka (redelivery, duplicate
-references, forty concurrent credits to one wallet), but no automated test runs them yet. The hand check ran while the
-classification read any entry under the reference, and the lookup by the one expected ledger type (`DEPOSIT` or
-`WITHDRAWAL_RETURNED`) has run only against mocks. The unique `balance_history (wallet_id, entry_no)`, the entry-number
-history queries and the migration that numbers existing ledger rows were checked by hand on a scratch database seeded
-with interleaved ids: numbering follows id order within each wallet, `last_entry_no` equals each wallet's row count,
-history pages by entry number, and a later transfer takes the next number on both wallets. Payment changeset 006 ran by
-hand against a schema migrated through 005. The payout reconciler's selections and its claim have run only against real
-Postgres in the live run, where the selection of created payouts used `idx_payouts_created`.
+The unit tests mock their collaborators, so they can't prove the real database barrier. The integration tests run part
+of it: a redelivered event against the unique `processed_events.event_id` and its classification by read-back, and a
+credit under the wallet's row lock, one at a time. The unique `balance_history (transaction_reference, type)`, the
+lookup by the one expected ledger type (`DEPOSIT` or `WITHDRAWAL_RETURNED`) and concurrent credits to one wallet have
+run only against mocks and by hand against real Postgres and Kafka (duplicate references, forty concurrent credits to
+one wallet); the hand check ran while the classification read any entry under the reference. The unique `balance_history
+(wallet_id, entry_no)`, the entry-number history queries and the migration that numbers existing ledger rows were
+checked by hand on a scratch database seeded with interleaved ids: numbering follows id order within each wallet,
+`last_entry_no` equals each wallet's row count, history pages by entry number, and a later transfer takes the next
+number on both wallets. Payment changeset 006 ran by hand against a schema migrated through 005. The payout reconciler's
+selections and its claim have run only against real Postgres in the live run, where the selection of created payouts
+used `idx_payouts_created`.
 
 For transfers the mocks pin the order of the calls and the decision after each one. What they can't show was
 checked by hand against real Postgres, through the running wallet service on a scratch database:

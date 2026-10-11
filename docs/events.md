@@ -58,7 +58,10 @@ operator to republish it unchanged to `wallet.withdrawals` once the cause is fix
 Events are published as JSON strings keyed by `transactionReference`. Each record carries an `eventType` header set to
 the name of its event, such as `PaymentCompletedEvent` or `PaymentFailedEvent`. Consumers dispatch on that header and
 treat a record without it as unreadable. `schemaVersion` is currently `1`, and it only changes for a change that can't
-be made additively. The contract's rules are in [ADR 0009](adr/0009-payment-event-contract.md).
+be made additively. The contract's rules are in [ADR 0009](adr/0009-payment-event-contract.md). Golden samples of the
+records the integration tests use, each written as its producer sends it, sit in
+`flow-wallet-contract/src/test/resources/wire`; the consumers' integration tests publish them
+([ADR 0039](adr/0039-integration-tests-run-per-service-on-testcontainers.md)).
 
 - `PaymentCompletedEvent` carries `eventId`, `schemaVersion`, `transactionReference`, `providerTransactionId`, `amount`, `currency`, `userId`, `completedAt`.
 - `PaymentFailedEvent` carries `eventId`, `schemaVersion`, `transactionReference`, `providerTransactionId`, `amount`, `currency`, `userId`, `reason`, `failedAt`.
