@@ -29,7 +29,7 @@ jobs:
           permission-issues: write
 
       - id: release
-        # Pinned to the commit of the v5.0.0 tag, so a moved tag cannot change what runs with write access.
+        # Pinned to the commit of a release tag, so a moved tag cannot change what runs with write access.
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
           token: ${{ steps.app-token.outputs.token }}
