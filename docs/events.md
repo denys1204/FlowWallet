@@ -60,7 +60,8 @@ the name of its event, such as `PaymentCompletedEvent` or `PaymentFailedEvent`. 
 treat a record without it as unreadable. `schemaVersion` is currently `1`, and it only changes for a change that can't
 be made additively. The contract's rules are in [ADR 0009](adr/0009-payment-event-contract.md). Golden samples of the
 records the integration tests use, each written as its producer sends it, sit in
-`flow-wallet-contract/src/test/resources/wire`; the consumers' integration tests publish them
+`flow-wallet-contract/src/test/resources/wire`; the consumers' integration tests publish them, and the producer's
+integration test checks the record it sends against them
 ([ADR 0039](adr/0039-integration-tests-run-per-service-on-testcontainers.md)).
 
 - `PaymentCompletedEvent` carries `eventId`, `schemaVersion`, `transactionReference`, `providerTransactionId`, `amount`, `currency`, `userId`, `completedAt`.

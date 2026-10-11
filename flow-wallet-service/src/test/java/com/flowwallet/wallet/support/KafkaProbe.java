@@ -22,7 +22,9 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ExecutionException;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import static org.awaitility.Awaitility.await;
@@ -131,6 +133,19 @@ public final class KafkaProbe {
             }
         }
         return records;
+    }
+
+    /**
+     * Waits until a record matching the condition has been written after the given offsets, and returns it.
+     */
+    public ConsumerRecord<String, String> awaitRecord(
+            Map<TopicPartition, Long> start,
+            Predicate<ConsumerRecord<String, String>> condition
+    ) {
+        return await().until(
+                () -> recordsSince(start).stream().filter(condition).findFirst(),
+                Optional::isPresent
+        ).orElseThrow();
     }
 
     /**

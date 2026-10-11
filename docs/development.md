@@ -264,8 +264,9 @@ endpoint's webhooks.
 
 ## Testing
 
-There are 2055 tests, all green: 2043 unit tests (1383 in the payment service, 554 in the wallet service, 53 in the
-outbox module, 44 in platform and 9 in the gateway) and 12 integration tests in the wallet service.
+There are 2060 tests, all green: 2044 unit tests (1384 in the payment service, 554 in the wallet service, 53 in the
+outbox module, 44 in platform and 9 in the gateway) and 16 integration tests (12 in the wallet service, 4 in the
+payment service).
 
 `./mvnw test` runs the unit tests only. `./mvnw verify` and `./mvnw clean install` also run the integration tests
 (`*IT`), which failsafe starts from each module's `target/` directory against `postgres:17-alpine` and
@@ -285,6 +286,14 @@ there without a time limit and leaves the next payment on its partition free to 
 leave one outcome, six events for one reference credit once and store five `DUPLICATE_REFERENCE` rows, and eight
 different payments to one wallet at once are all credited. The tests publish the contract's golden wire samples, and
 after every test `LedgerAudit` checks that each wallet's balance and entry numbers match its ledger.
+
+In the payment service they run a deposit from the wallet's intent call to the record on `payment.events`: a signed
+`payment_intent.succeeded` webhook settles the payment and its outbox row commits with it, the record the outbox sends
+has the shape of the golden sample the wallet's tests publish, and a redelivered webhook adds no second event. A webhook
+signed with another secret is refused and changes nothing. When the outbox row cannot be written, the payment stays
+`PENDING` and Stripe's redelivery settles it once. A paid deposit whose webhook never came is settled by
+`PendingPaymentReconciler` through the same handler, and the late webhook then adds nothing. `StripeClient` is a spy
+that each test stubs; the signature check is real, and an unstubbed call fails against a closed local port.
 
 Among the unit tests, the gateway's bind its own `application.yml`, so a YAML regression that drops the response or
 connect timeout, or binds the gateway beyond loopback, fails there rather than in a live request; they also check that

@@ -26,16 +26,21 @@ there are no images yet.
   in the root `pom.xml`, runs them in the `integration-test` phase, so `./mvnw test` stays a unit run that needs no
   Docker and `./mvnw clean install` runs both. Without Docker every integration test fails with a message naming
   `-DskipITs`, which leaves them out explicitly; they are never skipped silently.
-- Each service has an abstract base (`WalletIntegrationTest` in Wallet Service) that starts `postgres:17-alpine` and
-  `apache/kafka:4.2.1` once per test JVM and hands them to Spring through `@ServiceConnection`. The image tags are the
-  ones `docker-compose.yml` starts, and `ContainerImagesTest` compares the two. The Postgres URL keeps
-  `logServerErrorDetail=false` ([0027](0027-user-ids-stay-out-of-logs-and-provider-metadata.md)), and the broker
-  creates no topic on first use, so every topic a service writes has to come from its own beans.
+- Each service has an abstract base (`WalletIntegrationTest`, `PaymentIntegrationTest`) that starts `postgres:17-alpine`
+  and `apache/kafka:4.2.1` once per test JVM and hands them to Spring through `@ServiceConnection`. The image tags are
+  the ones `docker-compose.yml` starts, and `ContainerImagesTest` compares the two. The Postgres URL keeps
+  `logServerErrorDetail=false` ([0027](0027-user-ids-stay-out-of-logs-and-provider-metadata.md)), and the broker creates
+  no topic on first use, so every topic a service writes has to come from its own beans.
 - All test settings live in the base and in `integration-test.properties`, read through `@TestPropertySource`, which
   outranks environment variables. A module runs one Spring context: a second one would add a second listener to the
   consumer group. Scheduled jobs are off, and a test that needs one calls it.
 - Failsafe runs in `target/`, where neither of a service's optional `.env` imports finds a file, and the base fails a
   test that sees a `.env` property source.
+- In Payment Service, `StripeClient` is a Mockito spy: each test stubs the network calls it expects, and the webhook
+  signature check runs for real against bodies signed with the test secret (`StripeSignatures`). The base points
+  stripe-java's API base at a closed port on loopback, so a call no test stubbed fails at once and never leaves the
+  machine. A fault inside the service's own transaction comes from a trigger that fails one key's writes
+  (`DatabaseFaults`), not from a spy on a transactional bean.
 - Tests isolate themselves with fresh user ids, keys and event ids, and assert only on their own rows; no test
   truncates a table. A test waits with Awaitility or for its consumer group to commit past a record
   (`KafkaProbe.awaitConsumed`), never with a sleep. In Wallet Service every test ends with `LedgerAudit`, which fails if
@@ -58,7 +63,7 @@ there are no images yet.
   or `KAFKA_SECURITY_PROTOCOL` could still steer a test, while connection details from `@ServiceConnection` outrank
   every property.
 - Skipping the integration tests when Docker is missing: a green build would then say nothing about the money rules.
-- A shared test-support module: a seventh module and a dependency for about 150 lines.
+- A shared test-support module: a seventh module and a dependency for a few hundred lines.
 - Cleaning tables between tests: a retry or an after-commit send from the previous test may still be writing.
 
 ## Consequences
@@ -66,7 +71,7 @@ there are no images yet.
 - `./mvnw clean install` needs a running Docker daemon. Testcontainers looks for `/var/run/docker.sock`, so a Docker
   runtime that keeps its socket elsewhere, such as OrbStack, needs `DOCKER_HOST` set (see `docs/development.md`).
 - The first build downloads the Testcontainers jars and the Ryuk image.
-- Wallet Service's tests depend on the contract's test-jar, which `-Dmaven.test.skip=true` does not build, so a build
+- Each service's tests depend on the contract's test-jar, which `-Dmaven.test.skip=true` does not build, so a build
   that skips tests uses `-DskipTests`.
 - Postgres already defaults to READ COMMITTED, so no integration test can tell whether a handler pins it; the unit
   tests that read the annotation stay the check.

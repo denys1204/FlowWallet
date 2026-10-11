@@ -4,6 +4,7 @@ import com.flowwallet.payment.provider.exception.InvalidWebhookSignatureExceptio
 import com.flowwallet.payment.provider.exception.WebhookProcessingException;
 import com.flowwallet.payment.provider.stripe.client.StripeClient;
 import com.flowwallet.payment.provider.stripe.config.StripeProperties;
+import com.flowwallet.payment.support.StripeSignatures;
 import com.stripe.Stripe;
 import com.stripe.exception.EventDataObjectDeserializationException;
 import com.stripe.model.Event;
@@ -44,7 +45,7 @@ class StripeWebhookParserTest {
         // Guards against a legitimately signed webhook failing verification or its fields being misparsed.
         String payload = succeededEvent(Stripe.API_VERSION);
 
-        ParsedStripeEvent result = parser().parse(payload, signatureHeader(payload, SECRET), SECRET);
+        ParsedStripeEvent result = parser().parse(payload, StripeSignatures.header(payload, SECRET), SECRET);
 
         assertThat(result.eventId()).isEqualTo("evt_1");
         assertThat(result.eventType()).isEqualTo("payment_intent.succeeded");
@@ -64,7 +65,7 @@ class StripeWebhookParserTest {
         // matched to a payout, and the payout waits for the reconciler.
         String payload = payoutPaidEvent(Stripe.API_VERSION);
 
-        ParsedStripeEvent result = parser().parse(payload, signatureHeader(payload, SECRET), SECRET);
+        ParsedStripeEvent result = parser().parse(payload, StripeSignatures.header(payload, SECRET), SECRET);
 
         assertThat(result.eventType()).isEqualTo("payout.paid");
         assertThat(result.account()).isEqualTo("acct_1");
@@ -77,7 +78,7 @@ class StripeWebhookParserTest {
         // Guards the parser verifying with a secret of its own instead of the one the endpoint passes: a body signed
         // for the Connect endpoint would then fail there, or pass at the deposit endpoint.
         String payload = payoutPaidEvent(Stripe.API_VERSION);
-        Map<String, String> signedWithConnectSecret = signatureHeader(payload, CONNECT_SECRET);
+        Map<String, String> signedWithConnectSecret = StripeSignatures.header(payload, CONNECT_SECRET);
 
         ParsedStripeEvent result = parser().parse(payload, signedWithConnectSecret, CONNECT_SECRET);
 
@@ -94,7 +95,7 @@ class StripeWebhookParserTest {
 
         assertThatThrownBy(() -> parser().parse(
                 payload,
-                signatureHeader(payload, "whsec_someone_elses_secret"),
+                StripeSignatures.header(payload, "whsec_someone_elses_secret"),
                 SECRET
         )).isInstanceOf(InvalidWebhookSignatureException.class);
     }
@@ -105,7 +106,7 @@ class StripeWebhookParserTest {
         String payload = succeededEvent(Stripe.API_VERSION);
         long tooOld = Webhook.Util.getTimeNow() - 301;
 
-        assertThatThrownBy(() -> parser().parse(payload, signatureHeader(payload, SECRET, tooOld), SECRET))
+        assertThatThrownBy(() -> parser().parse(payload, StripeSignatures.header(payload, SECRET, tooOld), SECRET))
                 .isInstanceOf(InvalidWebhookSignatureException.class);
     }
 
@@ -122,7 +123,7 @@ class StripeWebhookParserTest {
         // An HMAC key cannot be empty, so the unset cases are signed with an arbitrary one.
         String signingKey = secret == null || secret.isEmpty() ? "whsec_any" : secret;
 
-        assertThatThrownBy(() -> parser.parse(payload, signatureHeader(payload, signingKey), secret))
+        assertThatThrownBy(() -> parser.parse(payload, StripeSignatures.header(payload, signingKey), secret))
                 .isInstanceOf(InvalidWebhookSignatureException.class)
                 .hasMessage("Webhook signing secret is not configured");
         verify(client, never()).verifyWebhookSignature(anyString(), anyString(), any());
@@ -165,7 +166,7 @@ class StripeWebhookParserTest {
         // Only the holder of the secret can get this far, so the fault is on this side and a 500 is right.
         String payload = "{not json";
 
-        assertThatThrownBy(() -> parser().parse(payload, signatureHeader(payload, SECRET), SECRET))
+        assertThatThrownBy(() -> parser().parse(payload, StripeSignatures.header(payload, SECRET), SECRET))
                 .isInstanceOf(WebhookProcessingException.class);
     }
 
@@ -175,7 +176,7 @@ class StripeWebhookParserTest {
         // falling back to unsafe deserialization.
         String payload = succeededEvent("2020-08-27");
 
-        ParsedStripeEvent result = parser().parse(payload, signatureHeader(payload, SECRET), SECRET);
+        ParsedStripeEvent result = parser().parse(payload, StripeSignatures.header(payload, SECRET), SECRET);
 
         assertThat(result.dataObject()).isInstanceOf(PaymentIntent.class);
     }
@@ -186,7 +187,7 @@ class StripeWebhookParserTest {
         // version, which differs from the SDK's, and the Connect handler needs the account and the payout id from
         // exactly those events.
         String payload = payoutPaidEvent("2025-12-15.clover");
-        Map<String, String> headers = signatureHeader(payload, SECRET);
+        Map<String, String> headers = StripeSignatures.header(payload, SECRET);
         Event typed = new StripeClient(new StripeProperties())
                 .constructVerifiedEvent(payload, headers.get("Stripe-Signature"), SECRET);
         assertThat(typed.getDataObjectDeserializer().getObject()).isEmpty();
@@ -221,16 +222,6 @@ class StripeWebhookParserTest {
 
     private static StripeWebhookParser parser() {
         return new StripeWebhookParser(new StripeClient(new StripeProperties()));
-    }
-
-    private static Map<String, String> signatureHeader(String payload, String secret) throws Exception {
-        return signatureHeader(payload, secret, Webhook.Util.getTimeNow());
-    }
-
-    private static Map<String, String> signatureHeader(String payload, String secret, long timestamp)
-            throws Exception {
-        String signature = Webhook.Util.computeHmacSha256(secret, timestamp + "." + payload);
-        return Map.of("Stripe-Signature", "t=" + timestamp + ",v1=" + signature);
     }
 
     private static String succeededEvent(String apiVersion) {
