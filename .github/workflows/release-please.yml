@@ -7,10 +7,8 @@ on:
   push:
     branches: [main]
 
-permissions:
-  contents: write
-  pull-requests: write
-  issues: write
+# The job writes with the GitHub App's token, never with GITHUB_TOKEN, so GITHUB_TOKEN gets no permissions.
+permissions: {}
 
 concurrency: release-please
 
@@ -18,6 +16,20 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
+      # With GITHUB_TOKEN, ci.yml would build the release PR only after someone approves each run, and the tags and
+      # releases would start no workflow. The App's token is limited to what release-please needs. See
+      # docs/adr/0042-release-please-runs-as-a-github-app.md.
+      - id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.BOT_CLIENT_ID }}
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write
+
       - id: release
         # Pinned to the commit of the v5.0.0 tag, so a moved tag cannot change what runs with write access.
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ steps.app-token.outputs.token }}

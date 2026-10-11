@@ -1,6 +1,7 @@
 # 0040. Each service is versioned and released on its own through release-please; the libraries are not
 
-- Status: Accepted, extended by [0041](0041-changes-reach-main-through-pull-requests-built-by-ci.md)
+- Status: Accepted, extended by [0041](0041-changes-reach-main-through-pull-requests-built-by-ci.md), token superseded
+  by [0042](0042-release-please-runs-as-a-github-app.md)
 - Date: 2026-10-11
 
 ## Context
@@ -58,8 +59,9 @@ only as a dependent under its `groupId:artifactId` rather than its component, so
   such as `fix(deps): ...` pushed to `main` releases a patch of every service.
 - Between releases a service pom shows its last released version, not a snapshot, so an image is never tagged from
   `${project.version}`; the release's tag and the workflow's outputs name the version.
-- A pull request or tag that the workflow creates with `GITHUB_TOKEN` starts no other workflow. When checks become
-  required on `main`, the release PR needs a GitHub App token instead.
+- A tag or release that the workflow creates with `GITHUB_TOKEN` starts no other workflow, and the workflow runs of a
+  pull request it opens or updates wait until someone with write access approves them. When checks become required on
+  `main`, a GitHub App token lets the release PR's checks run without that approval.
 - The repository setting that lets GitHub Actions create pull requests must be on, or the workflow cannot open the
   release PR.
 - The first release PR's changelogs hold every `feat` and `fix` under each service's folder since the start.

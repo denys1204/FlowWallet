@@ -197,7 +197,9 @@ Each invariant here is stated once and links the ADR that holds its reasoning.
   ([ADR 0040](docs/adr/0040-services-are-released-on-their-own.md)).
 - Every change reaches `main` through a pull request whose `build` check passes. `ci.yml` has no path filter and its job
   stays named `build`, the check the `main` ruleset requires
-  ([ADR 0041](docs/adr/0041-changes-reach-main-through-pull-requests-built-by-ci.md)).
+  ([ADR 0041](docs/adr/0041-changes-reach-main-through-pull-requests-built-by-ci.md)). release-please writes as the
+  repository's GitHub App, never with `GITHUB_TOKEN`, so CI builds the release PR without an approval
+  ([ADR 0042](docs/adr/0042-release-please-runs-as-a-github-app.md)).
 - `FAILED` outbox rows are never deleted automatically; they are the dead-letter store
   ([ADR 0008](docs/adr/0008-transactional-outbox.md)).
 - A `PaymentFailedEvent` moves no money, which is why the consumer does not depend on event order
