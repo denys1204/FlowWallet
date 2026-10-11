@@ -589,13 +589,14 @@ class PayoutStepsTest {
     void everyStripeCallWaitsForRoomOnTheLease(String guard) {
         // Guards a call that outlives the claim at any of the step's guards, so a second executor could act on the
         // same step while it runs. One call needs its budget of 8s plus the 10s margin with the defaults; the refused
-        // create takes a second, after which the lease no longer has room for the listing.
-        Instant oneCallLeft = Instant.now().plusMillis(18_800);
+        // create takes two seconds, after which the lease no longer has room for the listing. The 1.5s of room before
+        // the create absorbs a slow machine, and the create is verified so a slower one fails instead of skipping it.
+        Instant oneCallLeft = Instant.now().plusMillis(19_500);
         Instant noCallLeft = Instant.now().plusSeconds(12);
         when(provider.findPayouts(anyString(), anyString(), any())).thenReturn(List.of());
         when(provider.findTransfers(anyString())).thenReturn(List.of());
         when(provider.createPayout(anyString(), anyString(), any(), anyString(), anyInt())).thenAnswer(call -> {
-            Thread.sleep(1000);
+            Thread.sleep(2000);
             return new PayoutCallResult.Refused<>(PayoutRefusal.OTHER, "amount_too_small");
         });
         ClaimedPayout claim = switch (guard) {
@@ -611,6 +612,7 @@ class PayoutStepsTest {
         if (!guard.equals("listing after a refusal")) {
             verifyNoInteractions(provider);
         } else {
+            verify(provider).createPayout(anyString(), anyString(), any(), anyString(), anyInt());
             verify(provider, never()).findPayouts(anyString(), anyString(), any());
         }
     }
