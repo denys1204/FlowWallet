@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.5](https://github.com/denys1204/FlowWallet/compare/payment/v1.0.4...payment/v1.0.5) (2026-11-08)
+
+
+### Bug Fixes
+
+* **deps:** release each service with its image ([#20](https://github.com/denys1204/FlowWallet/issues/20)) ([98424cd](https://github.com/denys1204/FlowWallet/commit/98424cd1cfbda1f32a32ba47485601b9a7fd9dad))
+
 ## [1.0.4](https://github.com/denys1204/FlowWallet/compare/payment/v1.0.3...payment/v1.0.4) (2026-11-08)
 
 
