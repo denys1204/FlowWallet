@@ -295,7 +295,7 @@ endpoint's webhooks.
 
 ## Testing
 
-There are 2158 tests, all green: 2076 unit tests (1411 in the payment service, 559 in the wallet service, 53 in the
+There are 2159 tests, all green: 2077 unit tests (1412 in the payment service, 559 in the wallet service, 53 in the
 outbox module, 44 in platform and 9 in the gateway) and 82 integration tests (44 in the wallet service, 38 in the
 payment service).
 
