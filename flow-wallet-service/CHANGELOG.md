@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.3](https://github.com/denys1204/FlowWallet/compare/wallet/v1.0.2...wallet/v1.0.3) (2026-11-08)
+
+
+### Bug Fixes
+
+* **deps:** release each service with its image ([#23](https://github.com/denys1204/FlowWallet/issues/23)) ([8496717](https://github.com/denys1204/FlowWallet/commit/8496717749c931415c184c9cff3da400c2abba2d))
+
 ## [1.0.2](https://github.com/denys1204/FlowWallet/compare/wallet/v1.0.1...wallet/v1.0.2) (2026-11-08)
 
 
