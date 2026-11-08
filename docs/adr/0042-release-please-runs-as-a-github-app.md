@@ -1,7 +1,8 @@
 # 0042. release-please runs as a GitHub App, so CI builds the release PR
 
 - Status: Accepted, supersedes the token of [0040](0040-services-are-released-on-their-own.md), extends
-  [0041](0041-changes-reach-main-through-pull-requests-built-by-ci.md)
+  [0041](0041-changes-reach-main-through-pull-requests-built-by-ci.md), extended by
+  [0047](0047-each-release-publishes-its-service-image-to-ghcr-once-with-provenance.md)
 - Date: 2026-10-11
 
 ## Context

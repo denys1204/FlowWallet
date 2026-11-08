@@ -203,9 +203,13 @@ Each invariant here is stated once and links the ADR that holds its reasoning.
   ([ADR 0040](docs/adr/0040-services-are-released-on-their-own.md)).
 - A service's image is built by Jib from the root `pom.xml`, on the distroless base pinned by digest, for `linux/amd64`,
   and named after the service's `jib.to.image`, never `${project.version}`. The image sets no bind address, port, label
-  or JVM flag: the deployment sets `*_ADDRESS` and the heap, and a build that publishes the image passes its name and
-  labels on the command line
+  or JVM flag: the deployment sets `*_ADDRESS` and the heap, and `publish-images.yml` passes the name and labels on the
+  command line
   ([ADR 0046](docs/adr/0046-services-are-built-into-images-by-jib-on-a-pinned-distroless-base.md)).
+- A service's image reaches ghcr.io only through `publish-images.yml`, on its release's `published` event: the `build`
+  job holds no credential, the `publish` job runs no build code, and a version is never pushed again with another
+  digest. No moving tag such as `latest` is pushed
+  ([ADR 0047](docs/adr/0047-each-release-publishes-its-service-image-to-ghcr-once-with-provenance.md)).
 - Every change reaches `main` through a pull request whose `build` check passes. `ci.yml` has no path filter and its job
   stays named `build`, the check the `main` ruleset requires
   ([ADR 0041](docs/adr/0041-changes-reach-main-through-pull-requests-built-by-ci.md)). release-please writes as the

@@ -1,7 +1,8 @@
 # 0046. Each service is built into an image by Jib on a digest-pinned distroless base, with no version of its own
 
 - Status: Accepted, extends [0040](0040-services-are-released-on-their-own.md) and
-  [0041](0041-changes-reach-main-through-pull-requests-built-by-ci.md)
+  [0041](0041-changes-reach-main-through-pull-requests-built-by-ci.md), extended by
+  [0047](0047-each-release-publishes-its-service-image-to-ghcr-once-with-provenance.md)
 - Date: 2026-11-08
 
 ## Context

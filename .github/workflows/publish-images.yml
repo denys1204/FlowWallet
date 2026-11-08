@@ -1,0 +1,190 @@
+# Builds the image of the service a release names, from the tagged commit, and pushes it to ghcr.io as
+# ghcr.io/<owner>/flowwallet-<component>:<version> with its build provenance; the digest goes to the job summary and the
+# GitHub Release. release-please publishes each release with the GitHub App's token, so a release PR that releases two
+# services starts two runs.
+# See docs/adr/0047-each-release-publishes-its-service-image-to-ghcr-once-with-provenance.md.
+name: publish-images
+
+on:
+  release:
+    types: [published]
+  # Republishes a release whose run can no longer be rerun: gh workflow run publish-images.yml --ref payment/v1.0.5.
+  # The workflow is read from the tag's commit, so only releases made after this file exists can be run this way.
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  # Two runs for one tag wait for each other; runs for different tags go in parallel.
+  group: publish-images-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  # Runs the Maven build, and so the code of every plugin and dependency, with no credential that can write anywhere:
+  # no registry login, no id-token, a read-only GITHUB_TOKEN. The image leaves the job as a tarball.
+  build:
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      image: ${{ steps.release.outputs.image }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - id: release
+        name: Check the tag
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [[ "$TAG" =~ ^(payment|wallet|gateway)/v([0-9]+\.[0-9]+\.[0-9]+)$ ]] \
+            || { echo "::error::$TAG is not a service release tag"; exit 1; }
+          component=${BASH_REMATCH[1]} version=${BASH_REMATCH[2]}
+          case $component in
+            payment) module=flow-wallet-payment ;;
+            wallet)  module=flow-wallet-service ;;
+            gateway) module=flow-wallet-gateway ;;
+          esac
+          # release-please tags only commits on main; a tag on any other commit gets no image.
+          status=$(gh api "repos/$GITHUB_REPOSITORY/compare/main...$GITHUB_SHA" --jq .status)
+          [[ $status == behind || $status == identical ]] \
+            || { echo "::error::$GITHUB_SHA is not on main ($status)"; exit 1; }
+          {
+            echo "component=$component"; echo "version=$version"; echo "module=$module"
+            echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/flowwallet-$component"
+          } >> "$GITHUB_OUTPUT"
+
+      # Each action is pinned to the commit of its release tag, so a moved tag cannot change what runs.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # A commit whose manifest records another version is not the commit release-please released.
+      - name: Check the version against the manifest
+        env:
+          MODULE: ${{ steps.release.outputs.module }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          [[ "$(jq -r --arg m "$MODULE" '.[$m]' .release-please-manifest.json)" == "$VERSION" ]] \
+            || { echo "::error::.release-please-manifest.json does not record $MODULE at $VERSION"; exit 1; }
+
+      # No Maven cache: a release image is built from what Maven Central serves, not from a cache another run wrote.
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          # The release in java.version in the root pom.xml.
+          java-version: '25'
+
+      # The tests ran on the release PR and on its push to main (ci.yml). Labels given on the command line replace the
+      # label map; the pom has none.
+      # See docs/adr/0046-services-are-built-into-images-by-jib-on-a-pinned-distroless-base.md.
+      - name: Build the image
+        env:
+          MODULE: ${{ steps.release.outputs.module }}
+          IMAGE: ${{ steps.release.outputs.image }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          labels="org.opencontainers.image.version=$VERSION"
+          labels+=",org.opencontainers.image.revision=$GITHUB_SHA"
+          labels+=",org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+          ./mvnw --batch-mode --no-transfer-progress -pl "$MODULE" -am clean package -DskipTests jib:buildTar \
+            "-Djib.to.image=$IMAGE:$VERSION" "-Djib.container.labels=$labels"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image
+          path: ${{ steps.release.outputs.module }}/target/jib-image.tar
+          if-no-files-found: error
+          # The layers are compressed already.
+          compression-level: 0
+          retention-days: 1
+
+  # Holds the credentials and runs no build code: it pushes the tarball as it is, attests it and records its digest.
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      packages: write       # push the image and its attestation to ghcr.io
+      id-token: write       # Sigstore certificate for the attestation
+      attestations: write   # store the attestation
+      contents: write       # add the digest to the GitHub Release
+    env:
+      IMAGE: ${{ needs.build.outputs.image }}
+      VERSION: ${{ needs.build.outputs.version }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: image
+
+      # The digest is read from the tarball itself, the OCI layout Jib writes; skopeo pushes those bytes unchanged. The
+      # tarball comes from build code, so anything but a sha256 digest stops the run before the push.
+      - id: image
+        name: Read the digest
+        run: |
+          digest=$(tar -xOf jib-image.tar index.json | jq -r '.manifests[0].digest')
+          [[ $digest =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::jib-image.tar names no image digest"; exit 1; }
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      # skopeo and the attestation read the credentials from ~/.docker/config.json, so the token never sits on a command
+      # line.
+      - name: Log in to ghcr.io
+        env:
+          TOKEN: ${{ github.token }}
+        run: echo "$TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+
+      # A version is pushed once and its tag never moves. A rerun that finds the same digest skips the push; a different
+      # digest fails the run. A missing tag or package (or a refusal, which the push then repeats) means a first push.
+      - name: Push the image
+        env:
+          DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          ref="$IMAGE:$VERSION"
+          # stderr stays out of the digest, so a warning cannot fail a rerun that finds the same image.
+          if out=$(skopeo inspect --format '{{.Digest}}' "docker://$ref" 2>inspect.err); then
+            [[ $out == "$DIGEST" ]] || { echo "::error::$ref already holds $out; this build gives $DIGEST"; exit 1; }
+            echo "$ref already holds $DIGEST"
+            exit 0
+          fi
+          grep -qiE 'manifest unknown|not found|denied|unauthorized|authentication required' inspect.err \
+            || { echo "::error::cannot tell whether $ref exists: $(cat inspect.err)"; exit 1; }
+          skopeo copy --preserve-digests --digestfile pushed.txt oci-archive:jib-image.tar "docker://$ref"
+          [[ "$(cat pushed.txt)" == "$DIGEST" ]] \
+            || { echo "::error::pushed $(cat pushed.txt), expected $DIGEST"; exit 1; }
+
+      # Binds the digest to this repository, workflow, tag and commit; gh attestation verify checks it. Storage records
+      # exist only for organization-owned repositories.
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ needs.build.outputs.image }}
+          subject-digest: ${{ steps.image.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Record the digest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PINNED: ${{ needs.build.outputs.image }}@${{ steps.image.outputs.digest }}
+        run: |
+          {
+            echo "### $IMAGE:$VERSION"
+            echo '```'
+            echo "$PINNED"
+            echo "gh attestation verify oci://$PINNED --repo $GITHUB_REPOSITORY --source-ref $GITHUB_REF"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          body=$(gh release view "$TAG" --json body --jq .body)
+          grep -qF "$PINNED" <<<"$body" && exit 0
+          printf '%s\n\n### Image\n\n`%s`\n' "$body" "$PINNED" > notes.md
+          # make_latest=legacy keeps GitHub's own choice of the latest release; an edit would otherwise default it to
+          # this release, which may be an older one republished by hand.
+          id=$(gh release view "$TAG" --json databaseId --jq .databaseId)
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$id" -F body=@notes.md -f make_latest=legacy \
+            > /dev/null
+
+      - name: Log out of ghcr.io
+        if: always()
+        run: docker logout ghcr.io
