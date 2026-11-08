@@ -1,8 +1,8 @@
 # FlowWallet
 
 ![Java](https://img.shields.io/badge/Java-25-f89820)
-![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.1.1-6db33f)
-![Spring Cloud](https://img.shields.io/badge/Spring%20Cloud-2025.1.3-6db33f)
+![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.1.2-6db33f)
+![Spring Cloud](https://img.shields.io/badge/Spring%20Cloud-2025.1.4-6db33f)
 ![Kafka](https://img.shields.io/badge/Apache%20Kafka-4.2%20(KRaft)-231f20)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-336791)
 ![Stripe](https://img.shields.io/badge/Stripe-test%20mode-635bff)
@@ -107,7 +107,7 @@ the wallet consumer and the identity model.
 | Area | Technology |
 |------|------------|
 | Language | Java 25 |
-| Framework | Spring Boot 4.1.1, Spring Cloud 2025.1.3 |
+| Framework | Spring Boot 4.1.2, Spring Cloud 2025.1.4 |
 | Gateway | Spring Cloud Gateway (reactive / WebFlux) |
 | Web / persistence | Spring MVC, Spring Data JPA, Hibernate |
 | Service-to-service HTTP | Spring declarative HTTP interface (`@HttpExchange`) over `RestClient`, no Feign |
