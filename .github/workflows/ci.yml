@@ -1,4 +1,5 @@
-# Builds every module and runs every test, unit and integration, on each pull request to main and each push to main.
+# Builds every module, runs every test, unit and integration, and builds each service's image, on each pull request to
+# main and each push to main.
 # The job's name, build, is the status check the main ruleset requires, so a rename blocks every pull request until the
 # ruleset names the new one. See docs/adr/0041-changes-reach-main-through-pull-requests-built-by-ci.md.
 name: ci
@@ -36,10 +37,13 @@ jobs:
           cache: maven
 
       # The integration tests start Postgres and Kafka through the runner's Docker daemon at its default socket.
+      # jib:buildTar writes each service's image to a tarball and pushes nothing, so a broken image configuration fails
+      # the pull request that breaks it.
+      # See docs/adr/0046-services-are-built-into-images-by-jib-on-a-pinned-distroless-base.md.
       # The step's own limit ends before the job's, so a hung build still fails the step and its reports are kept.
       - name: Build and test
         timeout-minutes: 25
-        run: ./mvnw --batch-mode --no-transfer-progress clean verify
+        run: ./mvnw --batch-mode --no-transfer-progress clean verify jib:buildTar
 
       - name: Keep the test reports
         if: failure()

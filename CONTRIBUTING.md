@@ -44,9 +44,11 @@ stripe listen --forward-to localhost:8080/api/payments/webhooks/stripe \
 - Integration tests (`*IT`) run in the `integration-test` phase through failsafe, against Postgres and Kafka started by
   Testcontainers. Without a running Docker daemon they fail rather than skip; `-DskipITs` is the way to leave them out
   ([ADR 0039](docs/adr/0039-integration-tests-run-per-service-on-testcontainers.md)).
-- CI (`.github/workflows/ci.yml`) runs `./mvnw clean verify`, the same tests as `clean install`, on every pull request
-  to `main` and every push to `main`. Its job `build` is the check a pull request needs before it can be merged
-  ([ADR 0041](docs/adr/0041-changes-reach-main-through-pull-requests-built-by-ci.md)).
+- CI (`.github/workflows/ci.yml`) runs `./mvnw clean verify jib:buildTar`, the same tests as `clean install` and the
+  image of each service, on every pull request to `main` and every push to `main`. Its job `build` is the check a pull
+  request needs before it can be merged
+  ([ADR 0041](docs/adr/0041-changes-reach-main-through-pull-requests-built-by-ci.md),
+  [ADR 0046](docs/adr/0046-services-are-built-into-images-by-jib-on-a-pinned-distroless-base.md)).
 - All three services import the repository-root `.env` through `spring.config.import` (both `./` and `../`, because
   the working directory is the module under the Maven plugin). Exported environment variables override it. Values
   stay unquoted: Spring reads the file as `.properties`, so quotes become part of the value. Compose ports bind to
@@ -76,7 +78,7 @@ live in this file.
 | `flow-wallet-contract/src/test/resources/wire/` | The golden wire samples: a JSON record for each event type the integration tests use, as its producer sends it |
 | `<service>/CHANGELOG.md` | Each service's release notes, written by release-please from the commits; never edited by hand |
 | `release-please-config.json`, `.release-please-manifest.json` | The release packages, tag format and changelog sections, and each service's last released version |
-| `.github/workflows/` | What runs on GitHub: the build and tests of every pull request (`ci.yml`) and the release job (`release-please.yml`) |
+| `.github/workflows/` | What runs on GitHub: the build, tests and images of every pull request (`ci.yml`) and the release job (`release-please.yml`) |
 | `.github/dependabot.yml` | Which dependencies Dependabot keeps current, how often, and how its pull requests are grouped and titled |
 | Code comments | Only what a reader at that spot cannot get from the code and needs in order to change it safely |
 

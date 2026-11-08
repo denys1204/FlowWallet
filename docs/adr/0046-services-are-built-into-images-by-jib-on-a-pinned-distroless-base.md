@@ -1,6 +1,7 @@
 # 0046. Each service is built into an image by Jib on a digest-pinned distroless base, with no version of its own
 
-- Status: Accepted, extends [0040](0040-services-are-released-on-their-own.md)
+- Status: Accepted, extends [0040](0040-services-are-released-on-their-own.md) and
+  [0041](0041-changes-reach-main-through-pull-requests-built-by-ci.md)
 - Date: 2026-11-08
 
 ## Context
@@ -40,6 +41,8 @@ Four facts shape the decision:
   default. An image is built with the full reactor or with `-pl <service> -am`.
 - The image carries no version, label, port, JVM flag or bind address, and a local build tags it `latest`. The
   deployment sets the bind address and the heap size.
+- CI's job `build` runs `jib:buildTar` after the tests, so every pull request builds the three images without pushing
+  them.
 
 ## Alternatives considered
 
@@ -62,6 +65,8 @@ Four facts shape the decision:
 - The tag or labels in the pom: [0040](0040-services-are-released-on-their-own.md) rules out a tag from
   `${project.version}`, and labels given on the command line replace the pom's labels as a whole.
 - Jib bound to the `package` phase: every build, the unit-test runs included, would pull the base image.
+- No image build in CI: a change that breaks the image configuration, a Dependabot update of the plugin or of Spring
+  Boot among them, would show up only when a release is published.
 
 ## Consequences
 
@@ -69,6 +74,8 @@ Four facts shape the decision:
   its digest to `jib-image.digest` without a Docker daemon, and `jib:dockerBuild` loads the images into the local
   daemon. Two builds of one commit give the same digests; a build of one service without `-am` takes the libraries from
   `~/.m2` and gives another.
+- Each CI run pulls the base image from `gcr.io` and takes a few seconds longer; when `gcr.io` cannot be reached, the
+  check fails.
 - Dependabot updates the plugin's version, which is a Maven property, but not the base digest. A base refresh changes
   only the root `pom.xml` and so releases no service on its own.
 - A build that publishes an image names and labels it by overriding `jib.to.image` and `jib.container.labels` on the
