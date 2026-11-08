@@ -7,8 +7,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * Sets the API key on the SDK's static holder, which the {@code PaymentIntent} calls in {@code StripeClient} read, and
- * reports at startup when either webhook endpoint is disabled for want of a signing secret.
+ * Sets the API key on the SDK's static holder, which the {@code PaymentIntent} calls in {@code StripeClient} read,
+ * turns off the SDK's telemetry, and reports at startup when either webhook endpoint is disabled for want of a signing
+ * secret.
  */
 @Slf4j
 @Configuration
@@ -19,6 +20,10 @@ public class StripeConfig {
     @PostConstruct
     public void initStripe() {
         Stripe.apiKey = properties.getApi().getKey();
+        // On by default: every request would carry the host's OS name, version and architecture, a random id the SDK
+        // writes to ~/.config/stripe/telemetry_id, and the previous request's id and latency. The service sends Stripe
+        // only what a call needs.
+        Stripe.enableTelemetry = false;
 
         if (!properties.getWebhook().hasSigningSecret()) {
             log.warn(
