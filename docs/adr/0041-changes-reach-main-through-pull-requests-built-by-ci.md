@@ -1,8 +1,8 @@
 # 0041. Every change reaches main through a pull request that CI builds and tests in full
 
 - Status: Accepted, extends [0040](0040-services-are-released-on-their-own.md), extended by
-  [0042](0042-release-please-runs-as-a-github-app.md) and
-  [0043](0043-dependabot-keeps-dependencies-and-actions-current.md)
+  [0042](0042-release-please-runs-as-a-github-app.md), [0043](0043-dependabot-keeps-dependencies-and-actions-current.md)
+  and [0046](0046-services-are-built-into-images-by-jib-on-a-pinned-distroless-base.md)
 - Date: 2026-10-11
 
 ## Context

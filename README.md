@@ -119,7 +119,7 @@ the wallet consumer and the identity model.
 | Resilience | Spring Retry (payment); Spring Kafka `DefaultErrorHandler` + a dead-letter topic per consumer (wallet and payment) |
 | Testing | JUnit 6 and Mockito; integration tests on Testcontainers (PostgreSQL, Kafka) |
 | Build & infra | Maven multi-module, Jib images on a distroless Java 25 base, Docker Compose |
-| CI | GitHub Actions: every pull request to `main` is built and tested in full, integration tests included; Dependabot keeps the Maven dependencies and the actions current |
+| CI | GitHub Actions: every pull request to `main` is built and tested in full, integration tests included, and its service images are built; Dependabot keeps the Maven dependencies and the actions current |
 | Releases | release-please on GitHub Actions: one version, tag and changelog per service (`payment/v1.0.0`) |
 
 ## Quickstart
