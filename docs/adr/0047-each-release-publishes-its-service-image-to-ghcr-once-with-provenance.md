@@ -37,11 +37,11 @@ Five facts shape the decision:
   OIDC token. It refuses a tag that is not `<payment|wallet|gateway>/vX.Y.Z`, a tagged commit that is not on `main`, and
   a version that `.release-please-manifest.json` at that commit does not record. It builds the image with
   `jib:buildTar` from Maven Central, with no Maven cache and no tests, and hands the tarball on as an artifact.
-- The job `publish` runs no build code. It reads the digest from the tarball's OCI layout and pushes the tarball with
-  `skopeo copy --preserve-digests`. A version is pushed once: when the tag already holds the same digest the push is
-  skipped, and when it holds another digest the run fails. The job then attests the digest with `actions/attest`,
-  pushing the attestation to the registry, and writes the pinned reference to the job summary and to the end of the
-  release notes.
+- The job `publish` runs no build code. It unpacks the tarball, an OCI layout, reads the digest from it and pushes the
+  layout with `skopeo copy --preserve-digests`, which keeps its bytes and so its digest. A version is pushed once: when
+  the tag already holds the same digest the push is skipped, and when it holds another digest the run fails. The job
+  then attests the digest with `actions/attest`, pushing the attestation to the registry, and writes the pinned
+  reference to the job summary and to the end of the release notes.
 - No moving tag such as `latest` is pushed. Only `linux/amd64` is built, as in
   [0046](0046-services-are-built-into-images-by-jib-on-a-pinned-distroless-base.md).
 
@@ -71,7 +71,9 @@ Five facts shape the decision:
 - Each release gets one image, pushed once; a rerun that builds another digest fails instead of moving the tag. A
   rerun that builds the same digest finishes the attestation and the release notes of a run that stopped after the
   push, and adds a second attestation for that digest.
-- Releases tagged before this workflow have no image. Each service's first image comes with its next release.
+- Releases tagged before this workflow have no image. Neither do `payment/v1.0.5`, `wallet/v1.0.2` and
+  `gateway/v1.0.1`, the first releases after it: their runs read the tarball with skopeo's `oci-archive` reader, which
+  fails without root, and pushed nothing.
 - A package starts private when the workflow first pushes it, and the owner makes it public once.
 - The release notes, which release-please writes, end in an `Image` section with the pinned reference.
 - The Java release is also `java-version` in `publish-images.yml`.

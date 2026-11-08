@@ -100,7 +100,7 @@ jobs:
           compression-level: 0
           retention-days: 1
 
-  # Holds the credentials and runs no build code: it pushes the tarball as it is, attests it and records its digest.
+  # Holds the credentials and runs no build code: it pushes the image as built, attests it and records its digest.
   publish:
     needs: build
     runs-on: ubuntu-24.04
@@ -119,12 +119,16 @@ jobs:
         with:
           name: image
 
-      # The digest is read from the tarball itself, the OCI layout Jib writes; skopeo pushes those bytes unchanged. The
-      # tarball comes from build code, so anything but a sha256 digest stops the run before the push.
+      # The tarball is the OCI layout Jib writes. It is unpacked here as the runner's user, because skopeo's own
+      # oci-archive reader changes the owner of what it unpacks and fails without root; skopeo then pushes the layout's
+      # bytes unchanged. The tarball comes from build code, so anything but a sha256 digest stops the run before the
+      # push.
       - id: image
-        name: Read the digest
+        name: Unpack the image and read its digest
         run: |
-          digest=$(tar -xOf jib-image.tar index.json | jq -r '.manifests[0].digest')
+          mkdir layout
+          tar -xf jib-image.tar -C layout --no-same-owner
+          digest=$(jq -r '.manifests[0].digest' layout/index.json)
           [[ $digest =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::jib-image.tar names no image digest"; exit 1; }
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
@@ -150,7 +154,7 @@ jobs:
           fi
           grep -qiE 'manifest unknown|not found|denied|unauthorized|authentication required' inspect.err \
             || { echo "::error::cannot tell whether $ref exists: $(cat inspect.err)"; exit 1; }
-          skopeo copy --preserve-digests --digestfile pushed.txt oci-archive:jib-image.tar "docker://$ref"
+          skopeo copy --preserve-digests --digestfile pushed.txt oci:layout "docker://$ref"
           [[ "$(cat pushed.txt)" == "$DIGEST" ]] \
             || { echo "::error::pushed $(cat pushed.txt), expected $DIGEST"; exit 1; }
 

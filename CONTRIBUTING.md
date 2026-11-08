@@ -224,8 +224,9 @@ sections are in `release-please-config.json`; `.github/workflows/release-please.
 - Each published release starts `publish-images.yml`, which builds that service's image from the tagged commit and
   pushes it as `ghcr.io/denys1204/flowwallet-<component>:<version>` once, with build provenance. The digest is in the
   run's summary and at the end of the release notes. A version already on ghcr.io is never pushed again with another
-  digest. Releases tagged before the workflow existed have no image. A release whose run can no longer be rerun is
-  published again with `gh workflow run publish-images.yml --ref <tag>`
+  digest. A release has an image when its notes end in an Image section; the releases up to `payment/v1.0.5`,
+  `wallet/v1.0.2` and `gateway/v1.0.1` have none. A release whose run can no longer be rerun is published again with
+  `gh workflow run publish-images.yml --ref <tag>`
   ([ADR 0047](docs/adr/0047-each-release-publishes-its-service-image-to-ghcr-once-with-provenance.md)).
 - release-please acts as the repository's GitHub App, not as `GITHUB_TOKEN`. The workflow creates a short-lived token
   from the variable `BOT_CLIENT_ID` and the secret `BOT_PRIVATE_KEY`, limited to Contents, Pull requests and Issues.

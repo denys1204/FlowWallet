@@ -216,7 +216,8 @@ the release is published
 digest in the release notes or the run's summary, and check its build provenance with
 `gh attestation verify oci://ghcr.io/denys1204/flowwallet-<component>@<digest> --repo denys1204/FlowWallet`. Its labels
 `org.opencontainers.image.version`, `org.opencontainers.image.revision` and `org.opencontainers.image.source` name the
-release, the commit and the repository. Releases tagged before the workflow existed have no image.
+release, the commit and the repository. A release has an image when its notes end in an Image section; the releases
+up to `payment/v1.0.5`, `wallet/v1.0.2` and `gateway/v1.0.1` have none.
 
 ## Configuration
 
