@@ -42,8 +42,8 @@ docker compose up -d
 ```
 
 This starts PostgreSQL 17 (creating `wallet_db` and `payment_db`), a single-node Kafka broker (KRaft) and
-Kafka-UI at `http://localhost:8090`. The services themselves aren't part of Compose, since there are no
-service images yet.
+Kafka-UI at `http://localhost:8090`. The services themselves aren't part of Compose: they run from Maven
+(step 4), and their [images](#images) are meant for a container deployment.
 
 Kafka-UI has no authentication of its own, so Compose runs it read-only (`KAFKA_CLUSTERS_0_READONLY`): it can
 browse topics and consumer groups but not produce to `payment.events`, which the wallet consumer would credit
@@ -187,6 +187,28 @@ curl localhost:8080/api/wallets/PLN/withdrawals/$KEY -H "X-User-Id: $USER"
 The payout settles from Stripe's Connect webhook, which needs `stripe listen` with `--forward-connect-to` (step 5) and
 `STRIPE_CONNECT_WEBHOOK_SECRET`. Without it the payout reconciler settles the withdrawal, first 15 minutes after it was
 accepted.
+
+## Images
+
+Jib builds an image of each service from the Maven build, with no Dockerfile and, for `jib:buildTar`, no Docker daemon
+([ADR 0046](adr/0046-services-are-built-into-images-by-jib-on-a-pinned-distroless-base.md)):
+
+```bash
+./mvnw clean package -DskipTests jib:buildTar     # <service>/target/jib-image.tar, its digest in jib-image.digest
+./mvnw clean package -DskipTests jib:dockerBuild  # the same images, loaded into the local Docker daemon
+```
+
+The images are `flowwallet-payment`, `flowwallet-wallet` and `flowwallet-gateway`, tagged `latest` by a local build.
+They are built for `linux/amd64` on `gcr.io/distroless/java25-debian13:nonroot`, pinned by digest in the root
+`pom.xml`, so they run as a non-root user and have no shell. Two builds of one commit give the same digest. Build them
+with the whole reactor or with `-pl <service> -am`: without `-am` the libraries come from `~/.m2` and the digest
+changes. On an Apple silicon Mac an amd64 image runs under emulation; add `-Djib.from.platforms=linux/arm64` for a
+native image to run locally.
+
+An image holds no `.env` and no secret, so its configuration comes from environment variables. It binds to loopback
+like a service run from Maven, so a container sets its `GATEWAY_ADDRESS`, `WALLET_SERVICE_ADDRESS` or
+`PAYMENT_SERVICE_ADDRESS` to `0.0.0.0` (see [Configuration](#configuration)). The image sets no JVM flags either; the
+deployment sizes the heap.
 
 ## Configuration
 

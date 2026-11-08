@@ -16,6 +16,14 @@
     <name>FlowWallet :: Payment Service</name>
     <description>Anti-corruption layer: Stripe integration, webhooks, payment events sent through the shared outbox</description>
 
+    <!--
+      The service's image. See docs/adr/0046-services-are-built-into-images-by-jib-on-a-pinned-distroless-base.md.
+    -->
+    <properties>
+        <jib.skip>false</jib.skip>
+        <jib.to.image>flowwallet-payment</jib.to.image>
+    </properties>
+
     <dependencies>
         <!-- Shared DTOs, Events, @CurrentUserId -->
         <dependency>

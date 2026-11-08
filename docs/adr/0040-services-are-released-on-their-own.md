@@ -1,7 +1,8 @@
 # 0040. Each service is versioned and released on its own through release-please; the libraries are not
 
-- Status: Accepted, extended by [0041](0041-changes-reach-main-through-pull-requests-built-by-ci.md), token superseded
-  by [0042](0042-release-please-runs-as-a-github-app.md)
+- Status: Accepted, extended by [0041](0041-changes-reach-main-through-pull-requests-built-by-ci.md) and
+  [0046](0046-services-are-built-into-images-by-jib-on-a-pinned-distroless-base.md), token superseded by
+  [0042](0042-release-please-runs-as-a-github-app.md)
 - Date: 2026-10-11
 
 ## Context

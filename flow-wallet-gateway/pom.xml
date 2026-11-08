@@ -16,6 +16,14 @@
     <name>FlowWallet :: API Gateway</name>
     <description>Spring Cloud Gateway: path routing to Wallet Service and Payment Service's webhooks</description>
 
+    <!--
+      The service's image. See docs/adr/0046-services-are-built-into-images-by-jib-on-a-pinned-distroless-base.md.
+    -->
+    <properties>
+        <jib.skip>false</jib.skip>
+        <jib.to.image>flowwallet-gateway</jib.to.image>
+    </properties>
+
     <dependencies>
         <!-- Spring Cloud Gateway (WebFlux-based, new artifact for SC 5.0) -->
         <dependency>

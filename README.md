@@ -118,7 +118,7 @@ the wallet consumer and the identity model.
 | Mapping | MapStruct 1.6.3 + Lombok |
 | Resilience | Spring Retry (payment); Spring Kafka `DefaultErrorHandler` + a dead-letter topic per consumer (wallet and payment) |
 | Testing | JUnit 6 and Mockito; integration tests on Testcontainers (PostgreSQL, Kafka) |
-| Build & infra | Maven multi-module, Docker Compose |
+| Build & infra | Maven multi-module, Jib images on a distroless Java 25 base, Docker Compose |
 | CI | GitHub Actions: every pull request to `main` is built and tested in full, integration tests included; Dependabot keeps the Maven dependencies and the actions current |
 | Releases | release-please on GitHub Actions: one version, tag and changelog per service (`payment/v1.0.0`) |
 

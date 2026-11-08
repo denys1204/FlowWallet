@@ -65,6 +65,19 @@
           own released version, under which no library exists.
         -->
         <flow-wallet-libraries.version>1.0.0-SNAPSHOT</flow-wallet-libraries.version>
+
+        <!-- Service images. See docs/adr/0046-services-are-built-into-images-by-jib-on-a-pinned-distroless-base.md. -->
+        <jib-maven-plugin.version>3.5.2</jib-maven-plugin.version>
+        <!--
+          A jib goal named on the command line runs in every module, and a library has no main class to start, so only
+          the three services set this to false, each naming its image in jib.to.image.
+        -->
+        <jib.skip>true</jib.skip>
+        <!--
+          Fixed jar entry dates, so that an image's digest depends on the code alone. Maven 3.10 uses this value by
+          default; an older Maven would date every entry at build time and give a new digest on every build.
+        -->
+        <project.build.outputTimestamp>1980-02-01T00:00:00Z</project.build.outputTimestamp>
     </properties>
 
     <!-- ============================================================= -->
@@ -190,6 +203,34 @@
                             <arg>-Amapstruct.defaultComponentModel=spring</arg>
                             <arg>-Amapstruct.unmappedTargetPolicy=IGNORE</arg>
                         </compilerArgs>
+                    </configuration>
+                </plugin>
+
+                <!--
+                  Builds each service's image, bound to no phase: run jib:buildTar, jib:dockerBuild or jib:build with
+                  the full reactor or with -pl <service> -am, because without -am the libraries come from ~/.m2 and
+                  change the digest. The image name comes from jib.to.image, never ${project.version}.
+                  The base is pinned by its index digest, which Dependabot does not read: refresh it by hand, and
+                  change its java25 with java.version. Only linux/amd64 is built, the platform the lab runs.
+                  See docs/adr/0046-services-are-built-into-images-by-jib-on-a-pinned-distroless-base.md.
+                -->
+                <plugin>
+                    <groupId>com.google.cloud.tools</groupId>
+                    <artifactId>jib-maven-plugin</artifactId>
+                    <version>${jib-maven-plugin.version}</version>
+                    <configuration>
+                        <from>
+                            <image>gcr.io/distroless/java25-debian13:nonroot@sha256:a90a5fadd78dc37b643da72dca2f744ef67eba625eca7227a5b375b548e6b1c2</image>
+                            <platforms>
+                                <platform>
+                                    <architecture>amd64</architecture>
+                                    <os>linux</os>
+                                </platform>
+                            </platforms>
+                        </from>
+                        <container>
+                            <format>OCI</format>
+                        </container>
                     </configuration>
                 </plugin>
             </plugins>

@@ -24,4 +24,5 @@ paths:
 - A job that writes with an App token asks for only the permissions it needs through the `permission-*` inputs of
   `actions/create-github-app-token`, which must not exceed the App's own, and gives `GITHUB_TOKEN` only what the job
   uses it for (`permissions: {}` in `release-please.yml`).
-- `java-version` in `ci.yml` repeats `java.version` from the root `pom.xml`; change them together.
+- `java-version` in `ci.yml` repeats `java.version` from the root `pom.xml`, as does the `java25` in the name of the
+  Jib base image there; change all three together.
