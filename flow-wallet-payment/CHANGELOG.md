@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.4](https://github.com/denys1204/FlowWallet/compare/payment/v1.0.3...payment/v1.0.4) (2026-11-08)
+
+
+### Bug Fixes
+
+* **payment:** turn off stripe-java's telemetry ([#17](https://github.com/denys1204/FlowWallet/issues/17)) ([bf97b45](https://github.com/denys1204/FlowWallet/commit/bf97b45afbeabbb63338fd7365d1ad64a0c1f1e0))
+
 ## [1.0.3](https://github.com/denys1204/FlowWallet/compare/payment/v1.0.2...payment/v1.0.3) (2026-10-11)
 
 
