@@ -24,5 +24,10 @@ paths:
 - A job that writes with an App token asks for only the permissions it needs through the `permission-*` inputs of
   `actions/create-github-app-token`, which must not exceed the App's own, and gives `GITHUB_TOKEN` only what the job
   uses it for (`permissions: {}` in `release-please.yml`).
-- `java-version` in `ci.yml` repeats `java.version` from the root `pom.xml`, as does the `java25` in the name of the
-  Jib base image there; change all three together.
+- `java-version` in `ci.yml` and `publish-images.yml` repeats `java.version` from the root `pom.xml`, as does the
+  `java25` in the name of the Jib base image there; change all four together.
+- `publish-images.yml` keeps its two jobs apart: `build` runs Maven with a read-only token and no registry login or
+  OIDC token, and `publish`, which holds `packages`, `id-token`, `attestations` and `contents` write, runs no build
+  code. A workflow that publishes has no `cache: maven`, passes every value to a script through `env`, and logs in with
+  `--password-stdin`, never with the token on the command line
+  ([ADR 0047](../../docs/adr/0047-each-release-publishes-its-service-image-to-ghcr-once-with-provenance.md)).

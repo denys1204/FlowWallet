@@ -210,6 +210,14 @@ like a service run from Maven, so a container sets its `GATEWAY_ADDRESS`, `WALLE
 `PAYMENT_SERVICE_ADDRESS` to `0.0.0.0` (see [Configuration](#configuration)). The image sets no JVM flags either; the
 deployment sizes the heap.
 
+A released image is at `ghcr.io/denys1204/flowwallet-<component>:<version>`, pushed once by `publish-images.yml` when
+the release is published
+([ADR 0047](adr/0047-each-release-publishes-its-service-image-to-ghcr-once-with-provenance.md)). Deploy it by the
+digest in the release notes or the run's summary, and check its build provenance with
+`gh attestation verify oci://ghcr.io/denys1204/flowwallet-<component>@<digest> --repo denys1204/FlowWallet`. Its labels
+`org.opencontainers.image.version`, `org.opencontainers.image.revision` and `org.opencontainers.image.source` name the
+release, the commit and the repository. Releases tagged before the workflow existed have no image.
+
 ## Configuration
 
 Every setting except the two webhook signing secrets has a local default and can be overridden in `.env` or with an
