@@ -74,7 +74,8 @@ Five facts shape the decision:
 - Releases tagged before this workflow have no image. Neither do `payment/v1.0.5`, `wallet/v1.0.2` and
   `gateway/v1.0.1`, the first releases after it: their runs read the tarball with skopeo's `oci-archive` reader, which
   fails without root, and pushed nothing.
-- A package starts private when the workflow first pushes it, and the owner makes it public once.
+- A package that the workflow pushes first is linked to the repository and takes its public visibility, so anyone can
+  pull the images without credentials.
 - The release notes, which release-please writes, end in an `Image` section with the pinned reference.
 - The Java release is also `java-version` in `publish-images.yml`.
 - Each release run downloads the dependencies from Maven Central, and the job relies on the `skopeo` the runner image
