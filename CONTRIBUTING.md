@@ -17,6 +17,8 @@ the ADRs it links.
 ./mvnw clean install -DskipITs       # the same without the integration tests, for a machine without Docker
 ./mvnw test                          # unit tests only (JUnit 6 + Mockito), no Docker
 ./mvnw install -DskipTests           # install modules so -pl builds can resolve siblings
+./mvnw clean package -DskipTests jib:buildTar     # an image per service: <service>/target/jib-image.tar and .digest
+./mvnw clean package -DskipTests jib:dockerBuild  # the same images, loaded into the local Docker daemon
 
 # one module / one class / one method (after an install, or add -am)
 ./mvnw -pl flow-wallet-payment test -Dtest=StripeRequestMapperTest
@@ -36,6 +38,9 @@ stripe listen --forward-to localhost:8080/api/payments/webhooks/stripe \
 ```
 
 - Never run two Maven builds at once in one checkout. They share `target/` and clobber each other.
+- Jib builds the images of the three services, with no Dockerfile and no daemon for `jib:buildTar`. Build them with the
+  whole reactor or with `-pl <service> -am`: without `-am` the libraries come from `~/.m2` and the digest changes
+  ([ADR 0046](docs/adr/0046-services-are-built-into-images-by-jib-on-a-pinned-distroless-base.md)).
 - Integration tests (`*IT`) run in the `integration-test` phase through failsafe, against Postgres and Kafka started by
   Testcontainers. Without a running Docker daemon they fail rather than skip; `-DskipITs` is the way to leave them out
   ([ADR 0039](docs/adr/0039-integration-tests-run-per-service-on-testcontainers.md)).
@@ -101,8 +106,8 @@ supersedes it, and only a factual correction is edited in place (see [ADRs](#adr
 | A document, added, renamed or removed | The table in this file, the Documentation table in `README.md`, the list at the top of `ARCHITECTURE.md`, the introduction of `docs/development.md`, and every link to it. The service changelogs that release-please writes are listed only in the table above and in `README.md` |
 | The number of tests | The counts and the per-module split in `docs/development.md`, unit and integration tests apart, taken from the surefire and failsafe reports of a full build |
 | A file or package that a `.claude/rules` file names | The `paths:` globs and the text of every `.claude/rules` file that names it |
-| A dependency, a tool version or a run command | The version once, in the root `pom.xml`, `docker-compose.yml` (Postgres, Kafka, Kafka-UI) or `.mvn/wrapper/maven-wrapper.properties` (Maven); the Java release also as `java-version` in `.github/workflows/ci.yml`; a Postgres or Kafka image tag also in each service's test `ContainerImages`, which `ContainerImagesTest` checks against `docker-compose.yml`; the versions quoted in the `README.md` badges and tech stack, the first paragraph of `CLAUDE.md`, the commands in this file and the prerequisites in `docs/development.md`; a run command also sits in the `README.md` quickstart and `docs/development.md`; a Dependabot pull request changes only the version, so these copies are updated on its branch before it is merged (ADR 0043); for stripe-java, also the Stripe API version it pins, quoted in `docs/api.md`, `docs/development.md` and the top-up command in `docs/operations.md` |
-| The module list | The modules and dependency management in the root `pom.xml`; the module count and list in `CLAUDE.md`, `README.md`, `ARCHITECTURE.md`, ADR 0002 and the command comments in this file; a new service also needs its package in `release-please-config.json` and a `<version>` of its own in its pom, and a new library needs a managed entry at `flow-wallet-libraries.version` |
+| A dependency, a tool version or a run command | The version once, in the root `pom.xml`, `docker-compose.yml` (Postgres, Kafka, Kafka-UI) or `.mvn/wrapper/maven-wrapper.properties` (Maven); the Java release also as `java-version` in `.github/workflows/ci.yml` and as the `java25` in the Jib base image's name in the root `pom.xml`; the Jib base image's digest, refreshed by hand because Dependabot does not read it (ADR 0046); a Postgres or Kafka image tag also in each service's test `ContainerImages`, which `ContainerImagesTest` checks against `docker-compose.yml`; the versions quoted in the `README.md` badges and tech stack, the first paragraph of `CLAUDE.md`, the commands in this file and the prerequisites in `docs/development.md`; a run command also sits in the `README.md` quickstart and `docs/development.md`; a Dependabot pull request changes only the version, so these copies are updated on its branch before it is merged (ADR 0043); for stripe-java, also the Stripe API version it pins, quoted in `docs/api.md`, `docs/development.md` and the top-up command in `docs/operations.md` |
+| The module list | The modules and dependency management in the root `pom.xml`; the module count and list in `CLAUDE.md`, `README.md`, `ARCHITECTURE.md`, ADR 0002 and the command comments in this file; a new service also needs its package in `release-please-config.json`, a `<version>` of its own in its pom and the `jib.skip` and `jib.to.image` properties that give it an image (ADR 0046), and a new library needs a managed entry at `flow-wallet-libraries.version` |
 | The reactor's version | The root `pom.xml`'s `<version>` and its `flow-wallet-libraries.version` property together, and each module's `<parent>` version (ADR 0040) |
 | The release workflow's token or the App's permissions | The `permission-*` inputs and `permissions: {}` in `release-please.yml` and the App's repository permissions on GitHub, which only the owner changes, together; the App bullet under [Releases](#releases) and the release PR bullet under [Pull requests](#pull-requests); the `CLAUDE.md` invariant on the release token; `.claude/rules/github-workflows.md`; ADR 0042 |
 | The Dependabot configuration | ADR 0043 when the schedule, the cooldown, the grouping or the ecosystems change; the Dependabot bullet under [Pull requests](#pull-requests) and the Dependabot sentence under [Releases](#releases); the `.github/dependabot.yml` row of the table above; the CI row of the `README.md` tech stack when the ecosystems change; the pin format in `.claude/rules/github-workflows.md` |
@@ -210,7 +215,9 @@ sections are in `release-please-config.json`; `.github/workflows/release-please.
   through a squash-merged pull request (a rebase merge drops an empty commit); it releases a patch of every service.
   Dependabot's Maven updates change the root `pom.xml`, so they release nothing on their own either.
 - A service's pom shows its last released version between releases, never a snapshot, so nothing may tag an image or
-  an artifact from `${project.version}`; the release tag names the version.
+  an artifact from `${project.version}`; the release tag names the version. Jib names a service's image after its
+  `jib.to.image` property (`flowwallet-payment`), which a build that publishes the image overrides on the command line
+  ([ADR 0046](docs/adr/0046-services-are-built-into-images-by-jib-on-a-pinned-distroless-base.md)).
 - release-please acts as the repository's GitHub App, not as `GITHUB_TOKEN`. The workflow creates a short-lived token
   from the variable `BOT_CLIENT_ID` and the secret `BOT_PRIVATE_KEY`, limited to Contents, Pull requests and Issues.
   Only the repository owner changes the App and its key

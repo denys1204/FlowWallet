@@ -201,6 +201,11 @@ Each invariant here is stated once and links the ADR that holds its reasoning.
   the reactor and the libraries stay at `1.0.0-SNAPSHOT`, and the root `pom.xml` manages the libraries through
   `flow-wallet-libraries.version`, never `${project.version}`, which a service resolves to its own released version
   ([ADR 0040](docs/adr/0040-services-are-released-on-their-own.md)).
+- A service's image is built by Jib from the root `pom.xml`, on the distroless base pinned by digest, for `linux/amd64`,
+  and named after the service's `jib.to.image`, never `${project.version}`. The image sets no bind address, port, label
+  or JVM flag: the deployment sets `*_ADDRESS` and the heap, and a build that publishes the image passes its name and
+  labels on the command line
+  ([ADR 0046](docs/adr/0046-services-are-built-into-images-by-jib-on-a-pinned-distroless-base.md)).
 - Every change reaches `main` through a pull request whose `build` check passes. `ci.yml` has no path filter and its job
   stays named `build`, the check the `main` ruleset requires
   ([ADR 0041](docs/adr/0041-changes-reach-main-through-pull-requests-built-by-ci.md)). release-please writes as the

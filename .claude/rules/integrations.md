@@ -24,6 +24,11 @@ paths:
   service resolves `${project.version}` to its own released version, under which no library exists. A service's
   `<version>` changes only through release-please
   ([ADR 0040](../../docs/adr/0040-services-are-released-on-their-own.md)).
+- Jib runs only in the three services: `jib.skip` is `true` in the root `pom.xml` and `false` in each service, next to
+  its `jib.to.image`, so a new service sets both. Build images with the whole reactor or `-pl <service> -am`, since
+  without `-am` the libraries come from `~/.m2` and change the digest, and keep `project.build.outputTimestamp` fixed,
+  or every build gives a new digest
+  ([ADR 0046](../../docs/adr/0046-services-are-built-into-images-by-jib-on-a-pinned-distroless-base.md)).
 - Jackson 3 is `tools.jackson.*`. Messages on the topic are JSON strings, so consumers use
   `StringDeserializer` and parse themselves. A `JacksonException`'s message quotes the input, user ids included, so a
   consumer never chains it or copies its message into an exception; it names the error type and position, as the
